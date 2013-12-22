@@ -30,12 +30,6 @@
 
 #include "s3c2440.h"
 
-#ifdef TARGET_WORDS_BIGENDIAN
-int bigendian = 1;
-#else
-int bigendian = 0;
-#endif
-
 #define logout(fmt, ...) \
     fprintf(stderr, "S3C2443\t%-24s" fmt, __func__, ##__VA_ARGS__)
 
@@ -89,7 +83,7 @@ static const char *offset2name(const OffsetNamePair *o2n, unsigned offset)
     static char buffer[12];
     const char *name = buffer;
     snprintf(buffer, sizeof(buffer), "0x%08x", offset);
-    for (; o2n->name != 0; o2n++) {
+    for (; o2n->name; o2n++) {
         if (offset == o2n->offset) {
             name = o2n->name;
             break;
@@ -922,8 +916,11 @@ static const TypeInfo tt_key_info = {
 };
 
 static struct arm_boot_info tt_binfo = {
+#if 0
     .loader_start = 0,
+#else
     .loader_start = TT_SRAM_BASE,
+#endif
     /* GO 730 */
     .board_id = 0x25d,
     .atag_revision = 0x0004000a,
