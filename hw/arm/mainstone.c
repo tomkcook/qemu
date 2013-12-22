@@ -76,7 +76,9 @@ static struct keymap map[0xE0] = {
     [0xc7] = {5,0}, /* Home */
     [0x2a] = {5,1}, /* shift */
     [0x39] = {5,2}, /* space */
+#if 0 /* always map to first column, row pair */
     [0x39] = {5,3}, /* space */
+#endif
     [0x1c] = {5,5}, /*  enter */
     [0xc8] = {6,0}, /* up */
     [0xd0] = {6,1}, /* down */
