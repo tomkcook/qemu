@@ -792,11 +792,11 @@ void define_one_arm_cp_reg_with_opaque(ARMCPU *cpu,
                                        const ARMCPRegInfo *regs, void *opaque);
 static inline void define_arm_cp_regs(ARMCPU *cpu, const ARMCPRegInfo *regs)
 {
-    define_arm_cp_regs_with_opaque(cpu, regs, 0);
+    define_arm_cp_regs_with_opaque(cpu, regs, NULL);
 }
 static inline void define_one_arm_cp_reg(ARMCPU *cpu, const ARMCPRegInfo *regs)
 {
-    define_one_arm_cp_reg_with_opaque(cpu, regs, 0);
+    define_one_arm_cp_reg_with_opaque(cpu, regs, NULL);
 }
 const ARMCPRegInfo *get_arm_cp_reginfo(ARMCPU *cpu, uint32_t encoded_cp);
 
