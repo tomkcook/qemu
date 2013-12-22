@@ -29,7 +29,7 @@
 /* Globals */
 hwaddr bcm2835_vcram_base;
 
-const uint32_t bootloader_0[] = {
+static const uint32_t bootloader_0[] = {
     0xea000006,
     0xe1a00000,
     0xe1a00000,
@@ -48,7 +48,7 @@ const uint32_t bootloader_0[] = {
     0x00008000
 };
 
-uint32_t bootloader_100[] = {
+static uint32_t bootloader_100[] = {
     0x00000005,
     0x54410001,
     0x00000001,
