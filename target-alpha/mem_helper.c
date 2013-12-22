@@ -109,9 +109,10 @@ static void do_unaligned_access(CPUAlphaState *env, target_ulong addr,
     cpu_loop_exit(env);
 }
 
-void alpha_cpu_unassigned_access(CPUState *cs, hwaddr addr,
-                                 bool is_write, bool is_exec, int unused,
-                                 unsigned size)
+void QEMU_NORETURN
+alpha_cpu_unassigned_access(CPUState *cs, hwaddr addr,
+                            bool is_write, bool is_exec, int unused,
+                            unsigned size)
 {
     AlphaCPU *cpu = ALPHA_CPU(cs);
     CPUAlphaState *env = &cpu->env;
