@@ -28,7 +28,7 @@ bool qemu_cpu_has_work(CPUState *cpu)
     return cpu_has_work(cpu);
 }
 
-void cpu_loop_exit(CPUArchState *env)
+void QEMU_NORETURN cpu_loop_exit(CPUArchState *env)
 {
     CPUState *cpu = ENV_GET_CPU(env);
 
@@ -40,7 +40,7 @@ void cpu_loop_exit(CPUArchState *env)
    restored in a state compatible with the CPU emulator
  */
 #if defined(CONFIG_SOFTMMU)
-void cpu_resume_from_signal(CPUArchState *env, void *puc)
+void QEMU_NORETURN cpu_resume_from_signal(CPUArchState *env, void *puc)
 {
     /* XXX: restore cpu registers saved in host registers */
 
@@ -692,7 +692,7 @@ int cpu_exec(CPUArchState *env)
             g_assert(cc == CPU_GET_CLASS(cpu));
 #endif
 #ifdef TARGET_I386
-            x86_cpu = X86_CPU(cpu);
+            g_assert(x86_cpu == X86_CPU(cpu));
 #endif
         }
     } /* for(;;) */
