@@ -228,4 +228,6 @@ unsigned long qemu_getauxval(unsigned long type);
 static inline unsigned long qemu_getauxval(unsigned long type) { return 0; }
 #endif
 
+void qemu_set_tty_echo(int fd, bool echo);
+
 #endif

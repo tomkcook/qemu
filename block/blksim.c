@@ -601,7 +601,7 @@ static int sim_open(BlockDriverState *bs, QDict *options, int bdrv_flags,
     Error *local_err = NULL;
     const char *filename;
 
-    QemuOpts *opts = qemu_opts_create_nofail(&runtime_opts);
+    QemuOpts *opts = qemu_opts_create(&runtime_opts, NULL, 0, &error_abort);
     qemu_opts_absorb_qdict(opts, options, &local_err);
     if (error_is_set(&local_err)) {
         qerror_report_err(local_err);
@@ -681,7 +681,7 @@ static int sim_truncate (BlockDriverState * bs, int64_t offset)
     return ftruncate (s->fd, offset);
 }
 
-BlockDriver bdrv_sim = {
+static BlockDriver bdrv_sim = {
     .format_name = "blksim",
     .protocol_name = "blksim",
     .instance_size = sizeof (BDRVSimState),

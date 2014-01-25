@@ -714,10 +714,8 @@ static gboolean gd_button_event(GtkWidget *widget, GdkEventButton *button,
 static gboolean gd_key_event(GtkWidget *widget, GdkEventKey *key, void *opaque)
 {
     GtkDisplayState *s = opaque;
-    int gdk_keycode;
+    int gdk_keycode = key->hardware_keycode;
     int i;
-
-    gdk_keycode = key->hardware_keycode;
 
 #ifdef _WIN32
     /* MapVirtualKey doesn't return scancode with needed higher byte */
