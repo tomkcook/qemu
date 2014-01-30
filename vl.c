@@ -2974,7 +2974,7 @@ int main(int argc, char **argv)
 
     bdrv_init_with_whitelist();
 
-    autostart= 1;
+    autostart = 1;
 
     /* first pass of option parsing */
     optind = 1;
