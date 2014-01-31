@@ -3931,8 +3931,10 @@ int main(int argc, char **argv)
         qemu_set_log(mask);
     }
 
-    if (!trace_backend_init(trace_events, trace_file)) {
-        exit(1);
+    if (!is_daemonized()) {
+        if (!trace_backend_init(trace_events, trace_file)) {
+            exit(1);
+        }
     }
 
     /* If no data_dir is specified then try to find it relative to the
@@ -4430,6 +4432,12 @@ int main(int argc, char **argv)
     }
 
     os_setup_post();
+
+    if (is_daemonized()) {
+        if (!trace_backend_init(trace_events, trace_file)) {
+            exit(1);
+        }
+    }
 
     main_loop();
     bdrv_close_all();
