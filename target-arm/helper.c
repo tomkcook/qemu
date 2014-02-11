@@ -2449,14 +2449,16 @@ void switch_mode(CPUARMState *env, int mode)
 
 static void v7m_push(CPUARMState *env, uint32_t val)
 {
+    CPUState *cs = ENV_GET_CPU(env);
     env->regs[13] -= 4;
-    stl_phys(env->regs[13], val);
+    stl_phys(cs->as, env->regs[13], val);
 }
 
 static uint32_t v7m_pop(CPUARMState *env)
 {
+    CPUState *cs = ENV_GET_CPU(env);
     uint32_t val;
-    val = ldl_phys(env->regs[13]);
+    val = ldl_phys(cs->as, env->regs[13]);
     env->regs[13] += 4;
     return val;
 }
@@ -2611,7 +2613,7 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     /* Clear IT bits */
     env->condexec_bits = 0;
     env->regs[14] = lr;
-    addr = ldl_phys(env->v7m.vecbase + env->v7m.exception * 4);
+    addr = ldl_phys(cs->as, env->v7m.vecbase + env->v7m.exception * 4);
     env->regs[15] = addr & 0xfffffffe;
     env->thumb = addr & 1;
 }
@@ -2819,6 +2821,7 @@ static int get_phys_addr_v5(CPUARMState *env, uint32_t address, int access_type,
                             int is_user, hwaddr *phys_ptr,
                             int *prot, target_ulong *page_size)
 {
+    CPUState *cs = ENV_GET_CPU(env);
     int code;
     uint32_t table;
     uint32_t desc;
@@ -2831,7 +2834,7 @@ static int get_phys_addr_v5(CPUARMState *env, uint32_t address, int access_type,
     /* Pagetable walk.  */
     /* Lookup l1 descriptor.  */
     table = get_level1_table_address(env, address);
-    desc = ldl_phys(table);
+    desc = ldl_phys(cs->as, table);
     type = (desc & 3);
     domain = (desc >> 5) & 0x0f;
     domain_prot = (env->cp15.c3 >> (domain * 2)) & 3;
@@ -2862,7 +2865,7 @@ static int get_phys_addr_v5(CPUARMState *env, uint32_t address, int access_type,
 	    /* Fine pagetable.  */
 	    table = (desc & 0xfffff000) | ((address >> 8) & 0xffc);
 	}
-        desc = ldl_phys(table);
+        desc = ldl_phys(cs->as, table);
         switch (desc & 3) {
         case 0: /* Page translation fault.  */
             code = 7;
@@ -2914,6 +2917,7 @@ static int get_phys_addr_v6(CPUARMState *env, uint32_t address, int access_type,
                             int is_user, hwaddr *phys_ptr,
                             int *prot, target_ulong *page_size)
 {
+    CPUState *cs = ENV_GET_CPU(env);
     int code;
     uint32_t table;
     uint32_t desc;
@@ -2928,7 +2932,7 @@ static int get_phys_addr_v6(CPUARMState *env, uint32_t address, int access_type,
     /* Pagetable walk.  */
     /* Lookup l1 descriptor.  */
     table = get_level1_table_address(env, address);
-    desc = ldl_phys(table);
+    desc = ldl_phys(cs->as, table);
     type = (desc & 3);
     if (type == 0 || (type == 3 && !arm_feature(env, ARM_FEATURE_PXN))) {
         /* Section translation fault, or attempt to use the encoding
@@ -2970,7 +2974,7 @@ static int get_phys_addr_v6(CPUARMState *env, uint32_t address, int access_type,
         }
         /* Lookup l2 entry.  */
         table = (desc & 0xfffffc00) | ((address >> 10) & 0x3fc);
-        desc = ldl_phys(table);
+        desc = ldl_phys(cs->as, table);
         ap = ((desc >> 4) & 3) | ((desc >> 7) & 4);
         switch (desc & 3) {
         case 0: /* Page translation fault.  */
@@ -3036,6 +3040,7 @@ static int get_phys_addr_lpae(CPUARMState *env, uint32_t address,
                               hwaddr *phys_ptr, int *prot,
                               target_ulong *page_size_ptr)
 {
+    CPUState *cs = ENV_GET_CPU(env);
     /* Read an LPAE long-descriptor translation table. */
     MMUFaultType fault_type = translation_fault;
     uint32_t level = 1;
@@ -3124,7 +3129,7 @@ static int get_phys_addr_lpae(CPUARMState *env, uint32_t address,
         uint64_t descriptor;
 
         descaddr |= ((address >> (9 * (4 - level))) & 0xff8);
-        descriptor = ldq_phys(descaddr);
+        descriptor = ldq_phys(cs->as, descaddr);
         if (!(descriptor & 1) ||
             (!(descriptor & 2) && (level == 3))) {
             /* Invalid, or the Reserved level 3 encoding */
