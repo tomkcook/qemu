@@ -1731,7 +1731,8 @@ static void emac_transmit(CpmacState *s, unsigned offset, uint32_t address)
         /* Real hardware sets flag when finished, we set it here. */
         flags &= ~(TCB_OWNER);
         flags |= TCB_EOQ;
-        stl_phys(address + offsetof(cpphy_tcb_t, mode), flags | packetlength);
+        stl_phys(&address_space_memory,
+                 address + offsetof(cpphy_tcb_t, mode), flags | packetlength);
 
         if (s->nic != 0) {
 #if 0
@@ -1789,9 +1790,11 @@ static void ar7_cpmac_write(CpmacState *s, unsigned offset, uint32_t val)
         assert(channel < 8);
         channel &= BITS(2, 0);
         if (txhdp != 0) {
-            uint32_t flags = ldl_phys(txhdp + offsetof(cpphy_tcb_t, mode));
+            uint32_t flags = ldl_phys(&address_space_memory,
+                                      txhdp + offsetof(cpphy_tcb_t, mode));
             flags |= TCB_TDOWNCMPLT;
-            stl_phys(txhdp + offsetof(cpphy_tcb_t, mode), flags);
+            stl_phys(&address_space_memory,
+                     txhdp + offsetof(cpphy_tcb_t, mode), flags);
         }
         reg_write(cpmac, CPMAC_TX0HDP + 4 * channel, 0);
         reg_write(cpmac, CPMAC_TX0CP + 4 * channel, 0xfffffffc);
@@ -1803,9 +1806,11 @@ static void ar7_cpmac_write(CpmacState *s, unsigned offset, uint32_t val)
         assert(channel < 8);
         channel &= BITS(2, 0);
         if (rxhdp != 0) {
-            uint32_t flags = ldl_phys(rxhdp + offsetof(cpphy_rcb_t, mode));
+            uint32_t flags = ldl_phys(&address_space_memory,
+                                      rxhdp + offsetof(cpphy_rcb_t, mode));
             flags |= RCB_TDOWNCMPLT;
-            stl_phys(rxhdp + offsetof(cpphy_rcb_t, mode), flags);
+            stl_phys(&address_space_memory,
+                     rxhdp + offsetof(cpphy_rcb_t, mode), flags);
         }
         reg_write(cpmac, CPMAC_RX0HDP + 4 * channel, 0);
         reg_write(cpmac, CPMAC_RX0CP + 4 * channel, 0xfffffffc);
@@ -3935,7 +3940,7 @@ static void ar7_common_init(QEMUMachineInitArgs *args,
         };
         fprintf(stderr, "QEMU: Warning, could not load MIPS bios '%s'.\n"
                 "QEMU added a jump instruction to flash start.\n", "mips_bios.bin");
-        cpu_physical_memory_write_rom(PROM_ADDR, jump, sizeof(jump));
+        cpu_physical_memory_write_rom(&address_space_memory, PROM_ADDR, jump, sizeof(jump));
         rom_size = 4 * KiB;
     }
 
