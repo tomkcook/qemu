@@ -27,6 +27,7 @@
 #ifndef VIXL_A64_DISASM_A64_H
 #define VIXL_A64_DISASM_A64_H
 
+#include "qemu/compiler.h"      // GCC_FMT_ATTR
 #include "globals.h"
 #include "utils.h"
 #include "instructions-a64.h"
@@ -84,7 +85,7 @@ class Disassembler: public DecoderVisitor {
   bool IsMovzMovnImm(unsigned reg_size, uint64_t value);
 
   void ResetOutput();
-  void AppendToOutput(const char* string, ...);
+  void GCC_FMT_ATTR(2, 3) AppendToOutput(const char* string, ...);
 
   char* buffer_;
   uint32_t buffer_pos_;
