@@ -239,7 +239,7 @@ static void stcb_register_ide(STCBState *stcb)
 
 static void stcb_i2c_setup(STCBState *stcb)
 {
-    i2c_bus *bus = s3c24xx_i2c_bus(stcb->soc->iic);
+    I2CBus *bus = s3c24xx_i2c_bus(stcb->soc->iic);
     uint8_t *eeprom_buf = g_malloc0(256);
     DeviceState *eeprom;
     eeprom = qdev_create((BusState *)bus, "smbus-eeprom");

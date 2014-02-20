@@ -938,7 +938,7 @@ static void tt_init(QEMUMachineInitArgs *args)
     DeviceState *key_dev;
     DeviceState *wm8750_dev;
     SysBusDevice *s;
-    i2c_bus *i2c;
+    I2CBus *i2c;
     unsigned long flash_size;
     DriveInfo *dinfo;
     ram_addr_t ram_off;
@@ -979,7 +979,7 @@ static void tt_init(QEMUMachineInitArgs *args)
 #if 0
     dev = sysbus_create_simple(TYPE_TT_GPIO, MP_GPIO_BASE, pic[MP_GPIO_IRQ]);
     i2c_dev = sysbus_create_simple("gpio_i2c", 0, NULL);
-    i2c = (i2c_bus *)qdev_get_child_bus(i2c_dev, "i2c");
+    i2c = (I2CBus *)qdev_get_child_bus(i2c_dev, "i2c");
 
     lcd_dev = sysbus_create_simple(TYPE_TT_LCD, MP_LCD_BASE, NULL);
     key_dev = sysbus_create_simple(TYPE_TT_KEY, 0, NULL);

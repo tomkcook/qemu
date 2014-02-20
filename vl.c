@@ -2311,7 +2311,7 @@ static int chardev_init_func(QemuOpts *opts, void *opaque)
     Error *local_err = NULL;
 
     qemu_chr_new_from_opts(opts, NULL, &local_err);
-    if (error_is_set(&local_err)) {
+    if (local_err) {
         error_report("%s", error_get_pretty(local_err));
         error_free(local_err);
         return -1;
@@ -3069,14 +3069,19 @@ int main(int argc, char **argv)
                         goto chs_fail;
                     if (*p == ',') {
                         p++;
-                        if (!strcmp(p, "none"))
+                        if (!strcmp(p, "large")) {
+                            translation = BIOS_ATA_TRANSLATION_LARGE;
+                        } else if (!strcmp(p, "rechs")) {
+                            translation = BIOS_ATA_TRANSLATION_RECHS;
+                        } else if (!strcmp(p, "none")) {
                             translation = BIOS_ATA_TRANSLATION_NONE;
-                        else if (!strcmp(p, "lba"))
+                        } else if (!strcmp(p, "lba")) {
                             translation = BIOS_ATA_TRANSLATION_LBA;
-                        else if (!strcmp(p, "auto"))
+                        } else if (!strcmp(p, "auto")) {
                             translation = BIOS_ATA_TRANSLATION_AUTO;
-                        else
+                        } else {
                             goto chs_fail;
+                        }
                     } else if (*p != '\0') {
                     chs_fail:
                         fprintf(stderr, "qemu: invalid physical CHS format\n");
@@ -3090,10 +3095,15 @@ int main(int argc, char **argv)
                         qemu_opt_set(hda_opts, "heads", num);
                         snprintf(num, sizeof(num), "%d", secs);
                         qemu_opt_set(hda_opts, "secs", num);
-                        if (translation == BIOS_ATA_TRANSLATION_LBA)
+                        if (translation == BIOS_ATA_TRANSLATION_LARGE) {
+                            qemu_opt_set(hda_opts, "trans", "large");
+                        } else if (translation == BIOS_ATA_TRANSLATION_RECHS) {
+                            qemu_opt_set(hda_opts, "trans", "rechs");
+                        } else if (translation == BIOS_ATA_TRANSLATION_LBA) {
                             qemu_opt_set(hda_opts, "trans", "lba");
-                        if (translation == BIOS_ATA_TRANSLATION_NONE)
+                        } else if (translation == BIOS_ATA_TRANSLATION_NONE) {
                             qemu_opt_set(hda_opts, "trans", "none");
+                        }
                     }
                 }
                 break;
@@ -4077,7 +4087,13 @@ int main(int argc, char **argv)
     configure_accelerator();
 
     if (qtest_chrdev) {
-        qtest_init(qtest_chrdev, qtest_log);
+        Error *local_err = NULL;
+        qtest_init(qtest_chrdev, qtest_log, &local_err);
+        if (local_err) {
+            error_report("%s", error_get_pretty(local_err));
+            error_free(local_err);
+            exit(1);
+        }
     }
 
     machine_opts = qemu_get_machine_opts();
