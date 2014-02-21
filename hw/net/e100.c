@@ -1534,7 +1534,7 @@ static void e100_execute_cb_list(E100State *s, int is_resume)
                                     break;
                             }
 
-                            /* In extend TCB mode, TDB array point to the thrid TBD
+                            /* In extend TCB mode, TDB array point to the third TBD
                              * if it is not NULL(0xffffffff) and EL bit of before
                              * two TBDs is not set
                              */

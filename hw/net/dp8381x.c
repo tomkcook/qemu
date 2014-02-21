@@ -186,7 +186,7 @@ typedef enum {
     DP8381X_BMSR = 0x84,        /* Status Register */
     DP8381X_PHYIDR1 = 0x88,     /* PHY Identification Register 1 */
     DP8381X_PHYIDR2 = 0x8c,     /* PHY Identification Register 2 */
-    DP8381X_ANAR = 0x90,        /* Auto-Negotiation Advertisment Register */
+    DP8381X_ANAR = 0x90,        /* Auto-Negotiation Advertisement Register */
     DP8381X_ANLPAR = 0x94,      /* Auto-Negotiation Link Partner Ability Register */
     DP8381X_ANER = 0x98,        /* Auto-Negotiation Expansion Register */
     DP8381X_ANPTR = 0x9c,

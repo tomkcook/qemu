@@ -6,7 +6,7 @@
  *
  * Copyright 2010, 2013 Stefan Weil
  *
- * This code is licenced under the GNU GPL v2.
+ * This code is licensed under the GNU GPL v2.
  */
 
 #include "hw/hw.h"

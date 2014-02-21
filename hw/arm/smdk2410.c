@@ -76,7 +76,7 @@ static void smdk2410_init(QEMUMachineInitArgs *args)
     smdk2410_binfo.loader_start = SMDK2410_NOR_BASE;
 
     if (args->kernel_filename == NULL) {
-        /* No kernel given so try and aquire a bootloader */
+        /* No kernel given so try and acquire a bootloader */
         char *filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, BIOS_FILENAME);
         if (filename) {
             ret = load_image_targphys(filename, smdk2410_binfo.loader_start,

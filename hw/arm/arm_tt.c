@@ -6,7 +6,7 @@
  * Code based on hw/musicpal.c
  * Copyright (c) 2008 Jan Kiszka
  *
- * This code is licenced under the GNU GPL v2 or later.
+ * This code is licensed under the GNU GPL v2 or later.
  *
  * References:
  * http://www.opentom.org/TomTom_GO_730

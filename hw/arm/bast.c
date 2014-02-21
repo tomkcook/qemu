@@ -456,7 +456,7 @@ static void stcb_init(QEMUMachineInitArgs *args)
     stcb_register_ide(stcb);
 
     dinfo = drive_get(IF_PFLASH, 0, 0);
-    /* Aquire flash contents and register pflash device */
+    /* Acquire flash contents and register pflash device */
     if (dinfo) {
         /* load from specified flash device */
         flash_bds = dinfo->bdrv;

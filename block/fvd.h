@@ -88,7 +88,7 @@ typedef struct __attribute__ ((__packed__)) FvdHeader {
     /* Number of PrefetchProfileEntry. (to be implemented) */
     int64_t prefetch_profile_entries;
 
-    int32_t num_prefetch_slots;        /* Max number of oustanding prefetch writes. */
+    int32_t num_prefetch_slots;        /* Max number of outstanding prefetch writes. */
     int32_t bytes_per_prefetch;        /* For whole image prefetching. */
     int32_t prefetch_read_throughput_measure_time;        /* in milliseconds. */
     int32_t prefetch_write_throughput_measure_time;        /* in milliseconds. */

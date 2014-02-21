@@ -84,7 +84,7 @@ qemu_irq s3c24xx_get_eirq(S3C24xxGpioState *s, unsigned einum);
 /* Initialise I2c controller */
 struct s3c24xx_i2c_state_s *s3c24xx_iic_init(qemu_irq irq, hwaddr base_addr);
 
-/* aquire bus from controller state */
+/* acquire bus from controller state */
 I2CBus *s3c24xx_i2c_bus(struct s3c24xx_i2c_state_s *s);
 
 /* Initialise nand controller */

@@ -15,7 +15,7 @@
 
 #include "s3c24xx.h"
 
-/* The S3c24xx timer peripheral has five seperate timers. The first four (0-3)
+/* The S3c24xx timer peripheral has five separate timers. The first four (0-3)
  * have physical external connections and can be used for PWM control. The
  * fifth has no external connection but can generate interrupts because of this
  * it is almost always used to generate the Operating system clock tick

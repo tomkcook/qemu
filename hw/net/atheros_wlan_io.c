@@ -548,7 +548,7 @@ static void mm_writel(Atheros_WLANState *s, hwaddr addr,
 
     case AR5K_RXDP:
         /*
-         * unkown location, but this should
+         * unknown location, but this should
          * set the location of the receive
          * buffer's PHYSICAL address!!
          */
@@ -589,7 +589,7 @@ static void mm_writel(Atheros_WLANState *s, hwaddr addr,
     case AR5K_QUEUE_TXDP(14):
     case AR5K_QUEUE_TXDP(15):
         /*
-         * unkown location, but this should
+         * unknown location, but this should
          * set the location of queue-dependent
          * transmit buffer's PHYSICAL address!!
          */
