@@ -149,8 +149,8 @@
  * As i can see in ar5k_ar5210_tx_start Reyk uses some of the values of BCR
  * for this register, so i guess TQ1V,TQ1FV and BDMAE have the same meaning
  * here and SNP/SNAP means "snapshot" (so this register gets synced with BCR).
- * So SNAPPEDBCRVALID sould also stand for "snapped BCR -values- valid", so i
- * renamed it to SNAPSHOTSVALID to make more sense. I realy have no idea what
+ * So SNAPPEDBCRVALID could also stand for "snapped BCR -values- valid", so i
+ * renamed it to SNAPSHOTSVALID to make more sense. I really have no idea what
  * else can it be. I also renamed SNPBCMD to SNPADHOC to match BCR.
  */
 #define AR5K_BSR        0x002c          /*Register Address*/
@@ -209,7 +209,7 @@
 #define AR5K_RXCFG_SDMAMW_S 0
 #define AR5K_RXCFG_DEF_ANTENNA  0x00000008  /*default antenna*/
 #define AR5K_RXCFG_ZLFDMA   0x00000010  /*zero-length DMA*/
-#define AR5K_RXCFG_JUMBO_RXE    0x00000020  /*enable jumbo frames recieve (?) -non 5210*/
+#define AR5K_RXCFG_JUMBO_RXE    0x00000020  /*enable jumbo frames receive (?) -non 5210*/
 #define AR5K_RXCFG_JUMBO_WRAP   0x00000040  /*wrap jumbo frames (?) -non 5210*/
 
 /*
@@ -291,16 +291,16 @@
  */
 #define AR5K_ISR        0x001c          /*Register Address (5210)*/
 #define AR5K_PISR       0x0080          /*Register Address (5211/5212)*/
-#define AR5K_ISR_RXOK       0x00000001  /*Frame successfuly recieved*/
+#define AR5K_ISR_RXOK       0x00000001  /*Frame successfully received*/
 #define AR5K_ISR_RXDESC     0x00000002  /*RX descriptor request*/
 #define AR5K_ISR_RXERR      0x00000004  /*Receive error*/
 #define AR5K_ISR_RXNOFRM    0x00000008  /*No frame received (receive timeout)*/
 #define AR5K_ISR_RXEOL      0x00000010  /*Empty RX descriptor*/
 #define AR5K_ISR_RXORN      0x00000020  /*Receive FIFO overrun*/
-#define AR5K_ISR_TXOK       0x00000040  /*Frame successfuly transmited*/
+#define AR5K_ISR_TXOK       0x00000040  /*Frame successfully transmitted*/
 #define AR5K_ISR_TXDESC     0x00000080  /*TX descriptor request*/
 #define AR5K_ISR_TXERR      0x00000100  /*Transmit error*/
-#define AR5K_ISR_TXNOFRM    0x00000200  /*No frame transmited (transmit timeout)*/
+#define AR5K_ISR_TXNOFRM    0x00000200  /*No frame transmitted (transmit timeout)*/
 #define AR5K_ISR_TXEOL      0x00000400  /*Empty TX descriptor*/
 #define AR5K_ISR_TXURN      0x00000800  /*Transmit FIFO underrun*/
 #define AR5K_ISR_MIB        0x00001000  /*Update MIB counters*/
@@ -370,21 +370,21 @@
 /*
  * Interrupt Mask Registers
  *
- * As whith ISRs 5210 has one IMR (AR5K_IMR) and 5211/5212 has one primary
+ * As with ISRs 5210 has one IMR (AR5K_IMR) and 5211/5212 has one primary
  * (AR5K_PIMR) and 4 secondary IMRs (AR5K_SIMRx). Note that ISR/IMR flags match.
  */
 #define AR5K_IMR        0x0020          /*Register Address (5210)*/
 #define AR5K_PIMR       0x00a0          /*Register Address (5211/5212)*/
-#define AR5K_IMR_RXOK       0x00000001  /*Frame successfuly recieved*/
+#define AR5K_IMR_RXOK       0x00000001  /*Frame successfully received*/
 #define AR5K_IMR_RXDESC     0x00000002  /*RX descriptor request*/
 #define AR5K_IMR_RXERR      0x00000004  /*Receive error*/
 #define AR5K_IMR_RXNOFRM    0x00000008  /*No frame received (receive timeout)*/
 #define AR5K_IMR_RXEOL      0x00000010  /*Empty RX descriptor*/
 #define AR5K_IMR_RXORN      0x00000020  /*Receive FIFO overrun*/
-#define AR5K_IMR_TXOK       0x00000040  /*Frame successfuly transmited*/
+#define AR5K_IMR_TXOK       0x00000040  /*Frame successfully transmitted*/
 #define AR5K_IMR_TXDESC     0x00000080  /*TX descriptor request*/
 #define AR5K_IMR_TXERR      0x00000100  /*Transmit error*/
-#define AR5K_IMR_TXNOFRM    0x00000200  /*No frame transmited (transmit timeout)*/
+#define AR5K_IMR_TXNOFRM    0x00000200  /*No frame transmitted (transmit timeout)*/
 #define AR5K_IMR_TXEOL      0x00000400  /*Empty TX descriptor*/
 #define AR5K_IMR_TXURN      0x00000800  /*Transmit FIFO underrun*/
 #define AR5K_IMR_MIB        0x00001000  /*Update MIB counters*/
@@ -659,7 +659,7 @@
  * DCU misc registers
  *
  * For some of the registers i couldn't find in the code
- * (only backoff stuff is there realy) i tried to match the
+ * (only backoff stuff is there really) i tried to match the
  * names with 802.11e parameters etc, so i guess VIRTCOL here
  * means Virtual Collision and HCFPOLL means Hybrid Coordination
  * factor Poll (CF- Poll). ARBLOCK_CTL_GLOBAL is used for beacon
@@ -815,7 +815,7 @@
 #define AR5K_PCICFG_CBEFIX_DIS      0x00000400  /*Disable CBE fix (?)*/
 #define AR5K_PCICFG_SL_INTEN        0x00000800  /*Enable interrupts when asleep (?) (5210)*/
 #define AR5K_PCICFG_LED_BCTL        0x00001000  /*Led blink (?) -5210 only*/
-#define AR5K_PCICFG_SL_INPEN        0x00002800  /*Sleep even whith pending interrupts (?) (5210)*/
+#define AR5K_PCICFG_SL_INPEN        0x00002800  /*Sleep even with pending interrupts (?) (5210)*/
 #define AR5K_PCICFG_SPWR_DN     0x00010000  /*Mask for power status (5210)*/
 #define AR5K_PCICFG_LEDMODE     0x000e0000  /*Ledmode*/
 #define AR5K_PCICFG_LEDMODE_PROP    0x00000000  /*Blink on standard traffic*/
@@ -1019,7 +1019,7 @@
 /*
  * EEPROM command register
  */
-#define AR5K_EEPROM_CMD     0x6008          /*Register Addres*/
+#define AR5K_EEPROM_CMD     0x6008          /*Register Address*/
 #define AR5K_EEPROM_CMD_READ    0x00000001  /*EEPROM read*/
 #define AR5K_EEPROM_CMD_WRITE   0x00000002  /*EEPROM write*/
 #define AR5K_EEPROM_CMD_RESET   0x00000004  /*EEPROM reset*/
@@ -1321,7 +1321,7 @@
 #define AR5K_DIAG_SW_DIS_ENC        0x00000008  /*Disable encryption (?)*/
 #define AR5K_DIAG_SW_DIS_DEC        0x00000010  /*Disable decryption (?)*/
 #define AR5K_DIAG_SW_DIS_TX     0x00000020  /*Disable transmit -5210 only*/
-#define AR5K_DIAG_SW_DIS_RX_5210    0x00000040  /*Disable recieve*/
+#define AR5K_DIAG_SW_DIS_RX_5210    0x00000040  /*Disable receive*/
 #define AR5K_DIAG_SW_DIS_RX_5211    0x00000020
 #define AR5K_DIAG_SW_DIS_RX     (hal->ah_version == AR5K_AR5210 ? \
                     AR5K_DIAG_SW_DIS_RX_5210 : AR5K_DIAG_SW_DIS_RX_5211)
