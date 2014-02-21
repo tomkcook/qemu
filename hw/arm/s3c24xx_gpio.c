@@ -48,7 +48,7 @@ struct S3C24xxGpioState {
 };
 
 static void
-s3c24xx_gpio_propogate_eint(S3C24xxGpioState *s)
+s3c24xx_gpio_propagate_eint(S3C24xxGpioState *s)
 {
     uint32_t ints, i;
 
@@ -117,7 +117,7 @@ s3c24xx_gpio_write_f(void *opaque, hwaddr addr_, uint64_t value,
         /* A write to the EINT regs leads us to determine the interrupts to
          * propagate
          */
-        s3c24xx_gpio_propogate_eint(s);
+        s3c24xx_gpio_propagate_eint(s);
     }
 }
 
@@ -172,7 +172,7 @@ s3c24xx_gpio_irq_handler(void *opaque, int n, int level)
         GPR(S3C_GPIO_EINT_PEND) |= (1<<n);
     }
 
-    s3c24xx_gpio_propogate_eint(s);
+    s3c24xx_gpio_propagate_eint(s);
 }
 
 static int s3c24xx_gpio_init_(SysBusDevice *sbd)
