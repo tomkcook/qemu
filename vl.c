@@ -42,10 +42,6 @@
 # define CONFIG_CHROOT
 #endif
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #ifdef CONFIG_SDL
 #if defined(__APPLE__) || defined(main)
 #include <SDL.h>
