@@ -2866,6 +2866,7 @@ int main(int argc, char **argv)
 
     atexit(qemu_run_exit_notifiers);
     error_set_progname(argv[0]);
+    qemu_init_exec_dir(argv[0]);
 
     g_mem_set_vtable(&mem_trace);
     if (!g_thread_supported()) {
@@ -3913,7 +3914,7 @@ int main(int argc, char **argv)
     /* If no data_dir is specified then try to find it relative to the
        executable path.  */
     if (data_dir_idx < ARRAY_SIZE(data_dir)) {
-        data_dir[data_dir_idx] = os_find_datadir(argv[0]);
+        data_dir[data_dir_idx] = os_find_datadir();
         if (data_dir[data_dir_idx] != NULL) {
             data_dir_idx++;
         }
