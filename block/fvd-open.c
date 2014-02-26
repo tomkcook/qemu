@@ -72,7 +72,8 @@ static int fvd_open(BlockDriverState * bs, QDict *options, int flags,
     }
 
     s->fvd_metadata = bdrv_new ("");
-    ret = bdrv_open(s->fvd_metadata, filename, NULL, flags, drv, &local_err);
+    ret = bdrv_open(&s->fvd_metadata, filename, NULL, NULL,
+                    flags, drv, &local_err);
     if (ret < 0) {
         qerror_report_err(local_err);
         error_free(local_err);
@@ -359,8 +360,8 @@ static int init_data_file (BDRVFvdState * s, FvdHeader * header, int flags)
         }
 
         if (header->data_file_fmt[0] == 0) {
-            ret = bdrv_open(s->fvd_data, header->data_file, NULL, flags, NULL,
-                            &local_err);
+            ret = bdrv_open(&s->fvd_data, header->data_file, NULL, NULL,
+                            flags, NULL, &local_err);
         } else {
             BlockDriver *data_drv = bdrv_find_format (header->data_file_fmt);
             if (!data_drv) {
@@ -369,8 +370,8 @@ static int init_data_file (BDRVFvdState * s, FvdHeader * header, int flags)
                          header->data_file_fmt, header->data_file);
                 return -1;
             }
-            ret = bdrv_open(s->fvd_data, header->data_file,
-                            NULL, flags, data_drv, &local_err);
+            ret = bdrv_open(&s->fvd_data, header->data_file,
+                            NULL, NULL, flags, data_drv, &local_err);
         }
         if (ret != 0) {
             qerror_report_err(local_err);
