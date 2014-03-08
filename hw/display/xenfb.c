@@ -870,17 +870,6 @@ static int fb_initialise(struct XenDevice *xendev)
     if (rc != 0)
 	return rc;
 
-#if 0  /* handled in xen_init_display() for now */
-    if (!fb->have_console) {
-        fb->c.ds = graphic_console_init(xenfb_update,
-                                        xenfb_invalidate,
-                                        NULL,
-                                        NULL,
-                                        fb);
-        fb->have_console = 1;
-    }
-#endif
-
     if (xenstore_read_fe_int(xendev, "feature-update", &fb->feature_update) == -1)
 	fb->feature_update = 0;
     if (fb->feature_update)
@@ -992,7 +981,7 @@ wait_more:
 
     /* vfb */
     fb = container_of(xfb, struct XenFB, c.xendev);
-    fb->c.con = graphic_console_init(NULL, &xenfb_ops, fb);
+    fb->c.con = graphic_console_init(NULL, 0, &xenfb_ops, fb);
     fb->have_console = 1;
 
     /* vkbd */

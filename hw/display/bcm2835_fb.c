@@ -328,7 +328,7 @@ static int bcm2835_fb_init(SysBusDevice *sbd)
 
     sysbus_init_irq(sbd, &s->mbox_irq);
 
-    bcm2835_fb.con = graphic_console_init(dev, &vgafb_ops, s);
+    bcm2835_fb.con = graphic_console_init(dev, 0, &vgafb_ops, s);
     bcm2835_fb.lock = 0;
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_fb_ops, s,
