@@ -2438,6 +2438,10 @@ static int do_break(CPUMIPSState *env, target_siginfo_t *info,
         ret = 0;
         break;
     default:
+        info->si_signo = TARGET_SIGTRAP;
+        info->si_errno = 0;
+        queue_signal(env, info->si_signo, &*info);
+        ret = 0;
         break;
     }
 
