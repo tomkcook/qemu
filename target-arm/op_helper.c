@@ -226,6 +226,15 @@ void QEMU_NORETURN HELPER(wfi)(CPUARMState *env)
     cpu_loop_exit(env);
 }
 
+void QEMU_NORETURN HELPER(wfe)(CPUARMState *env)
+{
+    /* Don't actually halt the CPU, just yield back to top
+     * level loop
+     */
+    env->exception_index = EXCP_YIELD;
+    cpu_loop_exit(env);
+}
+
 void QEMU_NORETURN HELPER(exception)(CPUARMState *env, uint32_t excp)
 {
     env->exception_index = excp;

@@ -1424,7 +1424,7 @@ int Disassembler::SubstituteImmediateField(Instruction* instr,
     }
     case 'S': {  // IS - Test and branch bit.
       AppendToOutput("#%" PRId64, (instr->ImmTestBranchBit5() << 5) |
-                              instr->ImmTestBranchBit40());
+                                  instr->ImmTestBranchBit40());
       return 2;
     }
     case 'D': {  // IDebug - HLT and BRK instructions.
