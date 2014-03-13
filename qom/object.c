@@ -1102,39 +1102,49 @@ void object_property_add_link(Object *obj, const char *name,
     g_free(full_type);
 }
 
+gchar *object_get_canonical_path_component(Object *obj)
+{
+    ObjectProperty *prop = NULL;
+
+    g_assert(obj);
+    g_assert(obj->parent != NULL);
+
+    QTAILQ_FOREACH(prop, &obj->parent->properties, node) {
+        if (!object_property_is_child(prop)) {
+            continue;
+        }
+
+        if (prop->opaque == obj) {
+            return g_strdup(prop->name);
+        }
+    }
+
+    /* obj had a parent but was not a child, should never happen */
+    g_assert_not_reached();
+    return NULL;
+}
+
 gchar *object_get_canonical_path(Object *obj)
 {
     Object *root = object_get_root();
-    char *newpath = NULL, *path = NULL;
+    char *newpath, *path = NULL;
 
     while (obj != root) {
-        ObjectProperty *prop = NULL;
+        char *component = object_get_canonical_path_component(obj);
 
-        g_assert(obj->parent != NULL);
-
-        QTAILQ_FOREACH(prop, &obj->parent->properties, node) {
-            if (!object_property_is_child(prop)) {
-                continue;
-            }
-
-            if (prop->opaque == obj) {
-                if (path) {
-                    newpath = g_strdup_printf("%s/%s", prop->name, path);
-                    g_free(path);
-                    path = newpath;
-                } else {
-                    path = g_strdup(prop->name);
-                }
-                break;
-            }
+        if (path) {
+            newpath = g_strdup_printf("%s/%s", component, path);
+            g_free(component);
+            g_free(path);
+            path = newpath;
+        } else {
+            path = component;
         }
-
-        g_assert(prop != NULL);
 
         obj = obj->parent;
     }
 
-    newpath = g_strdup_printf("/%s", path);
+    newpath = g_strdup_printf("/%s", path ? path : "");
     g_free(path);
 
     return newpath;
@@ -1293,6 +1303,7 @@ void object_property_add_str(Object *obj, const char *name,
                            void (*set)(Object *, const char *, Error **),
                            Error **errp)
 {
+    Error *local_err = NULL;
     StringProperty *prop = g_malloc0(sizeof(*prop));
 
     prop->get = get;
@@ -1302,7 +1313,11 @@ void object_property_add_str(Object *obj, const char *name,
                         get ? property_get_str : NULL,
                         set ? property_set_str : NULL,
                         property_release_str,
-                        prop, errp);
+                        prop, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        g_free(prop);
+    }
 }
 
 typedef struct BoolProperty
@@ -1349,6 +1364,7 @@ void object_property_add_bool(Object *obj, const char *name,
                               void (*set)(Object *, bool, Error **),
                               Error **errp)
 {
+    Error *local_err = NULL;
     BoolProperty *prop = g_malloc0(sizeof(*prop));
 
     prop->get = get;
@@ -1358,7 +1374,11 @@ void object_property_add_bool(Object *obj, const char *name,
                         get ? property_get_bool : NULL,
                         set ? property_set_bool : NULL,
                         property_release_bool,
-                        prop, errp);
+                        prop, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        g_free(prop);
+    }
 }
 
 static char *qdev_get_type(Object *obj, Error **errp)

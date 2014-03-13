@@ -1574,54 +1574,82 @@ void pcmcia_info(Monitor *mon, const QDict *qdict)
 /***********************************************************/
 /* machine registration */
 
-static QEMUMachine *first_machine = NULL;
-QEMUMachine *current_machine = NULL;
+MachineState *current_machine;
+
+static void machine_class_init(ObjectClass *oc, void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    mc->qemu_machine = data;
+}
 
 int qemu_register_machine(QEMUMachine *m)
 {
-    QEMUMachine **pm;
-    pm = &first_machine;
-    while (*pm != NULL)
-        pm = &(*pm)->next;
-    m->next = NULL;
-    *pm = m;
+    TypeInfo ti = {
+        .name       = g_strconcat(m->name, TYPE_MACHINE_SUFFIX, NULL),
+        .parent     = TYPE_MACHINE,
+        .class_init = machine_class_init,
+        .class_data = (void *)m,
+    };
+
+    type_register(&ti);
+
     return 0;
 }
 
-static QEMUMachine *find_machine(const char *name)
+static MachineClass *find_machine(const char *name)
 {
-    QEMUMachine *m;
+    GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
+    MachineClass *mc = NULL;
 
-    for(m = first_machine; m != NULL; m = m->next) {
-        if (!strcmp(m->name, name))
-            return m;
-        if (m->alias && !strcmp(m->alias, name))
-            return m;
-    }
-    return NULL;
-}
+    for (el = machines; el; el = el->next) {
+        MachineClass *temp = el->data;
 
-QEMUMachine *find_default_machine(void)
-{
-    QEMUMachine *m;
-
-    for(m = first_machine; m != NULL; m = m->next) {
-        if (m->is_default) {
-            return m;
+        if (!strcmp(temp->qemu_machine->name, name)) {
+            mc = temp;
+            break;
+        }
+        if (temp->qemu_machine->alias &&
+            !strcmp(temp->qemu_machine->alias, name)) {
+            mc = temp;
+            break;
         }
     }
-    return NULL;
+
+    g_slist_free(machines);
+    return mc;
+}
+
+MachineClass *find_default_machine(void)
+{
+    GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
+    MachineClass *mc = NULL;
+
+    for (el = machines; el; el = el->next) {
+        MachineClass *temp = el->data;
+
+        if (temp->qemu_machine->is_default) {
+            mc = temp;
+            break;
+        }
+    }
+
+    g_slist_free(machines);
+    return mc;
 }
 
 MachineInfoList *qmp_query_machines(Error **errp)
 {
+    GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
     MachineInfoList *mach_list = NULL;
     QEMUMachine *m;
 
-    for (m = first_machine; m; m = m->next) {
+    for (el = machines; el; el = el->next) {
+        MachineClass *mc = el->data;
         MachineInfoList *entry;
         MachineInfo *info;
 
+        m = mc->qemu_machine;
         info = g_malloc0(sizeof(*info));
         if (m->is_default) {
             info->has_is_default = true;
@@ -1642,6 +1670,7 @@ MachineInfoList *qmp_query_machines(Error **errp)
         mach_list = entry;
     }
 
+    g_slist_free(machines);
     return mach_list;
 }
 
@@ -1835,8 +1864,12 @@ void qemu_devices_reset(void)
 
 void qemu_system_reset(bool report)
 {
-    if (current_machine && current_machine->reset) {
-        current_machine->reset();
+    MachineClass *mc;
+
+    mc = current_machine ? MACHINE_GET_CLASS(current_machine) : NULL;
+
+    if (mc && mc->qemu_machine->reset) {
+        mc->qemu_machine->reset();
     } else {
         qemu_devices_reset();
     }
@@ -2644,24 +2677,29 @@ static int debugcon_parse(const char *devname)
     return 0;
 }
 
-static QEMUMachine *machine_parse(const char *name)
+static MachineClass *machine_parse(const char *name)
 {
-    QEMUMachine *m, *machine = NULL;
+    MachineClass *mc = NULL;
+    GSList *el, *machines = object_class_get_list(TYPE_MACHINE, false);
 
     if (name) {
-        machine = find_machine(name);
+        mc = find_machine(name);
     }
-    if (machine) {
-        return machine;
+    if (mc) {
+        return mc;
     }
     printf("Supported machines are:\n");
-    for (m = first_machine; m != NULL; m = m->next) {
+    for (el = machines; el; el = el->next) {
+        MachineClass *mc = el->data;
+        QEMUMachine *m = mc->qemu_machine;
         if (m->alias) {
             printf("%-20s %s (alias of %s)\n", m->alias, m->desc, m->name);
         }
         printf("%-20s %s%s\n", m->name, m->desc,
                m->is_default ? " (default)" : "");
     }
+
+    g_slist_free(machines);
     exit(!name || !is_help_option(name));
 }
 
@@ -2910,6 +2948,7 @@ int main(int argc, char **argv)
     int optind;
     const char *optarg;
     const char *loadvm = NULL;
+    MachineClass *machine_class;
     QEMUMachine *machine;
     const char *cpu_model;
     const char *vga_model = "none";
@@ -2986,10 +3025,10 @@ int main(int argc, char **argv)
     machine = 0;
     optarg = strrchr(argv[0], '/');
     if (optarg != 0) {
-        machine = find_machine(optarg + 1);
+        machine_class = find_machine(optarg + 1);
     }
     if (!machine) {
-        machine = find_default_machine();
+        machine_class = find_default_machine();
     }
     cpu_model = NULL;
     ram_size = 0;
@@ -3056,7 +3095,7 @@ int main(int argc, char **argv)
             }
             switch(popt->index) {
             case QEMU_OPTION_M:
-                machine = machine_parse(optarg);
+                machine_class = machine_parse(optarg);
                 break;
             case QEMU_OPTION_no_kvm_irqchip: {
                 olist = qemu_find_opts("machine");
@@ -3612,7 +3651,7 @@ int main(int argc, char **argv)
                 }
                 optarg = qemu_opt_get(opts, "type");
                 if (optarg) {
-                    machine = machine_parse(optarg);
+                    machine_class = machine_parse(optarg);
                 }
                 break;
              case QEMU_OPTION_no_kvm:
@@ -3921,11 +3960,17 @@ int main(int argc, char **argv)
     }
 #endif
 
-    if (machine == NULL) {
+    if (machine_class == NULL) {
         fprintf(stderr, "No machine found.\n");
         exit(1);
     }
 
+    current_machine = MACHINE(object_new(object_class_get_name(
+                          OBJECT_CLASS(machine_class))));
+    object_property_add_child(object_get_root(), "machine",
+                              OBJECT(current_machine), &error_abort);
+
+    machine = machine_class->qemu_machine;
     if (machine->hw_version) {
         qemu_set_version(machine->hw_version);
     }
@@ -4354,15 +4399,15 @@ int main(int argc, char **argv)
                                  .kernel_cmdline = kernel_cmdline,
                                  .initrd_filename = initrd_filename,
                                  .cpu_model = cpu_model };
-    machine->init(&args);
+
+    current_machine->init_args = args;
+    machine->init(&current_machine->init_args);
 
     audio_init();
 
     cpu_synchronize_all_post_init();
 
     set_numa_modes();
-
-    current_machine = machine;
 
     /* init USB devices */
     if (usb_enabled(false)) {
