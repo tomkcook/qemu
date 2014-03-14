@@ -38,8 +38,6 @@
 
 #define S3C24XX_DBF(format, ...) (void)0
 
-static int bigendian = 0;
-
 typedef struct {
     MemoryRegion cpld1;
     MemoryRegion cpld5;
@@ -474,7 +472,7 @@ static void stcb_init(QEMUMachineInitArgs *args)
     pflash_cfi02_register(BAST_NOR_RW_BASE, NULL, "bast.flash",
                           BAST_NOR_SIZE, flash_bds, 65536, 32, 1, 2,
                           0x00BF, 0x234B, 0x0000, 0x0000, 0x5555, 0x2AAA,
-                          bigendian);
+                          false);
     /* TODO: Read only ROM type mapping to address BAST_NOR_RO_BASE. */
 
     /* if kernel is given, boot that directly */

@@ -35,8 +35,6 @@
 
 #define S3C24XX_DBF(format, ...) (void)0
 
-static int bigendian = 0;
-
 typedef struct {
     MemoryRegion cpld1;
     MemoryRegion cpld5;
@@ -321,7 +319,7 @@ static void stcb_init(QEMUMachineInitArgs *args)
     pflash_cfi02_register(A9M2410_NOR_RW_BASE, NULL, "a9m2410.flash",
                           A9M2410_NOR_SIZE, flash_bds, 65536, 32, 1, 2,
                           0x00BF, 0x234B, 0x0000, 0x0000, 0x5555, 0x2AAA,
-                          bigendian);
+                          false);
     // TODO: map flash readonly to address A9M2410_NOR_RO_BASE.
 
     /* if kernel is given, boot that directly */

@@ -624,6 +624,7 @@ static void write_bootloader (CPUMIPSState *env, uint8_t *base,
                               int64_t kernel_entry)
 {
     uint32_t *p;
+    bool bigendian = current_cpu->bigendian;
 
     if (cpu_mips_phys_to_kseg0(NULL, kernel_entry) == cpu_mips_phys_to_kseg0(NULL, 0x1fc00000LL)) {
         return;
@@ -665,7 +666,7 @@ static void write_bootloader (CPUMIPSState *env, uint8_t *base,
     /* Load BAR registers as done by YAMON */
     stl_raw(p++, 0x3c09b400);                                      /* lui t1, 0xb400 */
 
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c08df00);                                  /* lui t0, 0xdf00 */
     } else {
         stl_raw(p++, 0x340800df);                                  /* ori t0, r0, 0x00df */
@@ -674,39 +675,39 @@ static void write_bootloader (CPUMIPSState *env, uint8_t *base,
 
     stl_raw(p++, 0x3c09bbe0);                                      /* lui t1, 0xbbe0 */
 
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c08c000);                                  /* lui t0, 0xc000 */
     } else {
         stl_raw(p++, 0x340800c0);                                  /* ori t0, r0, 0x00c0 */
     }
     stl_raw(p++, 0xad280048);                                      /* sw t0, 0x0048(t1) */
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c084000);                                  /* lui t0, 0x4000 */
     } else {
         stl_raw(p++, 0x34080040);                                  /* ori t0, r0, 0x0040 */
     }
     stl_raw(p++, 0xad280050);                                      /* sw t0, 0x0050(t1) */
 
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c088000);                                  /* lui t0, 0x8000 */
     } else {
         stl_raw(p++, 0x34080080);                                  /* ori t0, r0, 0x0080 */
     }
     stl_raw(p++, 0xad280058);                                      /* sw t0, 0x0058(t1) */
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c083f00);                                  /* lui t0, 0x3f00 */
     } else {
         stl_raw(p++, 0x3408003f);                                  /* ori t0, r0, 0x003f */
     }
     stl_raw(p++, 0xad280060);                                      /* sw t0, 0x0060(t1) */
 
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c08c100);                                  /* lui t0, 0xc100 */
     } else {
         stl_raw(p++, 0x340800c1);                                  /* ori t0, r0, 0x00c1 */
     }
     stl_raw(p++, 0xad280080);                                      /* sw t0, 0x0080(t1) */
-    if (env->bigendian) {
+    if (bigendian) {
         stl_raw(p++, 0x3c085e00);                                  /* lui t0, 0x5e00 */
     } else {
         stl_raw(p++, 0x3408005e);                                  /* ori t0, r0, 0x005e */
@@ -1001,7 +1002,7 @@ void mips_malta_init(QEMUMachineInitArgs *args)
     /* FPGA */
     /* The CBUS UART is attached to the MIPS CPU INT2 pin, ie interrupt 4 */
     malta_fpga_init(system_memory, FPGA_ADDRESS, env->irq[4], serial_hds[2],
-                    env->bigendian);
+                    current_cpu->bigendian);
 
     /* Load firmware in flash / BIOS. */
     dinfo = drive_get(IF_PFLASH, 0, fl_idx);
@@ -1016,7 +1017,8 @@ void mips_malta_init(QEMUMachineInitArgs *args)
     fl = pflash_cfi01_register(FLASH_ADDRESS, NULL, "mips_malta.bios",
                                BIOS_SIZE, dinfo ? dinfo->bdrv : NULL,
                                65536, fl_sectors,
-                               4, 0x0000, 0x0000, 0x0000, 0x0000, env->bigendian);
+                               4, 0x0000, 0x0000, 0x0000, 0x0000, 
+                               current_cpu->bigendian);
     bios = pflash_cfi01_get_memory(fl);
     fl_idx++;
     if (kernel_filename) {
@@ -1025,13 +1027,13 @@ void mips_malta_init(QEMUMachineInitArgs *args)
         loaderparams.kernel_filename = kernel_filename;
         loaderparams.kernel_cmdline = kernel_cmdline;
         loaderparams.initrd_filename = initrd_filename;
-        kernel_entry = load_kernel(env->bigendian);
+        kernel_entry = load_kernel(current_cpu->bigendian);
         write_bootloader(env, memory_region_get_ram_ptr(bios), kernel_entry);
         // TODO: Always register flash.
         //~ pflash_cfi01_register(FLASH_ADDRESS, NULL, "mips_malta.bios",
                               //~ FLASH_SIZE, flashdriver, 65536, fl_sectors,
                               //~ 4, 0x0000, 0x0000, 0x0000, 0x0000,
-                              //~ env->bigendian);
+                              //~ current_cpu->bigendian);
     } else {
         /* Load firmware from flash. */
         if (!dinfo) {

@@ -1656,7 +1656,7 @@ static void musicpal_init(QEMUMachineInitArgs *args)
                               (flash_size + 0xffff) >> 16,
                               MP_FLASH_SIZE_MAX / flash_size,
                               2, 0x00BF, 0x236D, 0x0000, 0x0000,
-                              0x5555, 0x2AAA, cpu->env.bigendian);
+                              0x5555, 0x2AAA, false);
     }
     sysbus_create_simple(TYPE_MV88W8618_FLASHCFG, MP_FLASHCFG_BASE, NULL);
 

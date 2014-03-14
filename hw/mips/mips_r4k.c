@@ -36,7 +36,7 @@ static const int ide_irq[2] = { 14, 15 };
 
 static ISADevice *pit; /* PIT i8254 */
 
-static int bigendian;
+static bool bigendian;
 
 /* i8254 PIT is attached to the IRQ0 at PIC i8259 */
 
@@ -195,9 +195,6 @@ static void mips_init(QEMUMachineInitArgs *args)
         exit(1);
     }
     env = &cpu->env;
-    env->bigendian = bigendian;
-    fprintf(stderr, "%s: setting %s endian mode\n",
-            __func__, bigendian ? "big" : "little");
 
     reset_info = g_malloc0(sizeof(ResetData));
     reset_info->cpu = cpu;
@@ -231,6 +228,7 @@ static void mips_init(QEMUMachineInitArgs *args)
     } else {
         bios_size = -1;
     }
+    g_assert(current_cpu->bigendian == bigendian);
     if ((bios_size > 0) && (bios_size <= BIOS_SIZE)) {
         bios = g_new(MemoryRegion, 1);
         memory_region_init_ram(bios, NULL, "mips_r4k.bios", BIOS_SIZE);
@@ -244,7 +242,7 @@ static void mips_init(QEMUMachineInitArgs *args)
         if (!pflash_cfi01_register(0x1fc00000, NULL, "mips_r4k.bios", mips_rom,
                                    dinfo->bdrv, sector_len,
                                    mips_rom / sector_len,
-                                   4, 0, 0, 0, 0, env->bigendian)) {
+                                   4, 0, 0, 0, 0, bigendian)) {
             fprintf(stderr, "qemu: Error registering flash memory.\n");
 	}
     } else if (!qtest_enabled()) {
@@ -308,7 +306,7 @@ static
 void mips_r4k_init(QEMUMachineInitArgs *args)
 {
     /* Run MIPS system in big endian mode. */
-    bigendian = 1;
+    bigendian = true;
     mips_init(args);
 }
 
@@ -316,7 +314,7 @@ static
 void mipsel_r4k_init(QEMUMachineInitArgs *args)
 {
     /* Run MIPS system in little endian mode. */
-    bigendian = 0;
+    bigendian = false;
     mips_init(args);
 }
 

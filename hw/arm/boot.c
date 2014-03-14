@@ -449,7 +449,7 @@ static void do_cpu_reset(void *opaque)
 
 void arm_load_kernel(ARMCPU *cpu, struct arm_boot_info *info)
 {
-    CPUState *cs;
+    CPUState *cs = CPU(cpu);
     int kernel_size;
     int initrd_size;
     CPUARMState *env = &cpu->env;
@@ -503,7 +503,7 @@ void arm_load_kernel(ARMCPU *cpu, struct arm_boot_info *info)
     /* If the filename contains 'vmlinux', assume ELF images are linux, too. */
     is_linux = (strstr(info->kernel_filename, "vmlinux") != NULL);
     kernel_size = load_elf(info->kernel_filename, NULL, NULL, &elf_entry,
-                           NULL, NULL, env->bigendian, ELF_MACHINE, 1);
+                           NULL, NULL, cs->bigendian, ELF_MACHINE, 1);
     entry = elf_entry;
     if (kernel_size < 0) {
         kernel_size = load_uimage(info->kernel_filename, &entry, NULL,
