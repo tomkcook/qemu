@@ -143,6 +143,9 @@ int vga_interface_type = VGA_NONE;
 static int full_screen = 0;
 static int no_frame = 0;
 int no_quit = 0;
+#ifdef CONFIG_GTK
+static bool grab_on_hover;
+#endif
 CharDriverState *serial_hds[MAX_SERIAL_PORTS];
 CharDriverState *parallel_hds[MAX_PARALLEL_PORTS];
 CharDriverState *virtcon_hds[MAX_VIRTIO_CONSOLES];
@@ -2279,6 +2282,25 @@ static DisplayType select_display(const char *p)
     } else if (strstart(p, "gtk", &opts)) {
 #ifdef CONFIG_GTK
         display = DT_GTK;
+        while (*opts) {
+            const char *nextopt;
+
+            if (strstart(opts, ",grab_on_hover=", &nextopt)) {
+                opts = nextopt;
+                if (strstart(opts, "on", &nextopt)) {
+                    grab_on_hover = true;
+                } else if (strstart(opts, "off", &nextopt)) {
+                    grab_on_hover = false;
+                } else {
+                    goto invalid_gtk_args;
+                }
+            } else {
+            invalid_gtk_args:
+                fprintf(stderr, "Invalid GTK option string: %s\n", p);
+                exit(1);
+            }
+            opts = nextopt;
+        }
 #else
         fprintf(stderr, "GTK support is disabled\n");
         exit(1);
@@ -2690,15 +2712,20 @@ static MachineClass *machine_parse(const char *name)
     if (mc) {
         return mc;
     }
-    printf("Supported machines are:\n");
-    for (el = machines; el; el = el->next) {
-        MachineClass *mc = el->data;
-        QEMUMachine *m = mc->qemu_machine;
-        if (m->alias) {
-            printf("%-20s %s (alias of %s)\n", m->alias, m->desc, m->name);
+    if (name && !is_help_option(name)) {
+        error_report("Unsupported machine type");
+        error_printf("Use -machine help to list supported machines!\n");
+    } else {
+        printf("Supported machines are:\n");
+        for (el = machines; el; el = el->next) {
+            MachineClass *mc = el->data;
+            QEMUMachine *m = mc->qemu_machine;
+            if (m->alias) {
+                printf("%-20s %s (alias of %s)\n", m->alias, m->desc, m->name);
+            }
+            printf("%-20s %s%s\n", m->name, m->desc,
+                   m->is_default ? " (default)" : "");
         }
-        printf("%-20s %s%s\n", m->name, m->desc,
-               m->is_default ? " (default)" : "");
     }
 
     g_slist_free(machines);
@@ -4447,7 +4474,7 @@ int main(int argc, char **argv)
 #endif
 #if defined(CONFIG_GTK)
     case DT_GTK:
-        gtk_display_init(ds, full_screen);
+        gtk_display_init(ds, full_screen, grab_on_hover);
         break;
 #endif
     default:
