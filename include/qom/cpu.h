@@ -229,7 +229,6 @@ struct CPUState {
     /* Endianness, false = little endian, true = big endian. */
     bool bigendian;
     volatile sig_atomic_t exit_request;
-    volatile sig_atomic_t tcg_exit_req;
     uint32_t interrupt_request;
     int singlestep_enabled;
     int64_t icount_extra;
@@ -274,6 +273,12 @@ struct CPUState {
     } icount_decr;
     uint32_t can_do_io;
     int32_t exception_index; /* used by m68k TCG */
+
+    /* Note that this is accessed at the start of every TB via a negative
+       offset from AREG0.  Leave this field at the end so as to make the
+       (absolute value) offset as small as possible.  This reduces code
+       size, especially for hosts without large memory offsets.  */
+    volatile sig_atomic_t tcg_exit_req;
 };
 
 QTAILQ_HEAD(CPUTailQ, CPUState);
