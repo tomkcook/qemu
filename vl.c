@@ -1212,7 +1212,7 @@ DeviceState *get_boot_device(uint32_t position)
  * memory pointed by "size" is assigned total length of the array in bytes
  *
  */
-char *get_boot_devices_list(size_t *size)
+char *get_boot_devices_list(size_t *size, bool ignore_suffixes)
 {
     FWBootEntry *i;
     size_t total = 0;
@@ -1227,7 +1227,7 @@ char *get_boot_devices_list(size_t *size)
             assert(devpath);
         }
 
-        if (i->suffix && devpath) {
+        if (i->suffix && !ignore_suffixes && devpath) {
             size_t bootpathlen = strlen(devpath) + strlen(i->suffix) + 1;
 
             bootpath = g_malloc(bootpathlen);
@@ -1235,9 +1235,11 @@ char *get_boot_devices_list(size_t *size)
             g_free(devpath);
         } else if (devpath) {
             bootpath = devpath;
-        } else {
+        } else if (!ignore_suffixes) {
             assert(i->suffix);
             bootpath = g_strdup(i->suffix);
+        } else {
+            bootpath = g_strdup("");
         }
 
         if (total) {
