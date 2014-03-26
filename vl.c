@@ -1423,7 +1423,7 @@ static void smp_parse(QemuOpts *opts)
         max_cpus = smp_cpus;
     }
 
-    if (max_cpus > 255) {
+    if (max_cpus > MAX_CPUMASK_BITS) {
         fprintf(stderr, "Unsupported number of maxcpus\n");
         exit(1);
     }
@@ -3009,14 +3009,6 @@ int main(int argc, char **argv)
     qemu_init_exec_dir(argv[0]);
 
     g_mem_set_vtable(&mem_trace);
-    if (!g_thread_supported()) {
-#if !GLIB_CHECK_VERSION(2, 31, 0)
-        g_thread_init(NULL);
-#else
-        fprintf(stderr, "glib threading failed to initialize.\n");
-        exit(1);
-#endif
-    }
 
     module_call_init(MODULE_INIT_QOM);
 

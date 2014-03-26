@@ -1990,7 +1990,7 @@ if test "$gtk" != "no"; then
         gtk_libs=`$pkg_config --libs $gtkpackage`
         libs_softmmu="$gtk_libs $libs_softmmu"
         gtk="yes"
-    elif test "$gtk" = "yes" ; then
+    elif test "$gtk" = "yes"; then
         feature_not_found "gtk" "Install gtk2 or gtk3 (requires --with-gtkabi=3.0 option to configure) devel"
     else
         gtk="no"
