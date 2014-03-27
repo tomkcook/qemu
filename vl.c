@@ -3977,7 +3977,8 @@ int main(int argc, char **argv)
 #endif
 
     if (machine_class == NULL) {
-        fprintf(stderr, "No machine found.\n");
+        fprintf(stderr, "No machine specified, and there is no default.\n"
+                "Use -machine help to list supported machines!\n");
         exit(1);
     }
 

@@ -123,7 +123,7 @@ static struct kvm_cpuid2 *get_supported_cpuid(KVMState *s)
     return cpuid;
 }
 
-struct kvm_para_features {
+static const struct kvm_para_features {
     int cap;
     int feature;
 } para_features[] = {
