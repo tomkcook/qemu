@@ -130,6 +130,7 @@ dummy := $(call unnest-vars,, \
                 stub-obj-y \
                 util-obj-y \
                 qga-obj-y \
+                qga-vss-dll-obj-y \
                 block-obj-y \
                 block-obj-m \
                 common-obj-y \
