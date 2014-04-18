@@ -2,7 +2,7 @@
 # process and also within the source tree to update the translation files.
 
 # Set SRC_PATH for in-tree builds without configuration.
-SRC_PATH=..
+SRC_PATH=$(shell cd .. && pwd)
 
 -include ../config-host.mak
 include $(SRC_PATH)/rules.mak
