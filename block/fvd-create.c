@@ -121,7 +121,7 @@ static int fvd_create(const char *filename, QEMUOptionParameter *options,
         Error *local_err = NULL;
         int ret;
 
-        bs = bdrv_new ("");
+        bs = bdrv_new("", &error_abort);
         if (!bs) {
             fprintf (stderr, "Failed to create a new block driver\n");
             return -1;

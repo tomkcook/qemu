@@ -71,7 +71,7 @@ static int fvd_open(BlockDriverState * bs, QDict *options, int flags,
         }
     }
 
-    s->fvd_metadata = bdrv_new ("");
+    s->fvd_metadata = bdrv_new("", &error_abort);
     ret = bdrv_open(&s->fvd_metadata, filename, NULL, NULL,
                     flags, drv, &local_err);
     if (ret < 0) {
@@ -353,7 +353,7 @@ static int init_data_file (BDRVFvdState * s, FvdHeader * header, int flags)
     if (header->data_file[0]) {
         /* Open a separate data file. */
         s->data_offset = 0;
-        s->fvd_data = bdrv_new ("");
+        s->fvd_data = bdrv_new("", &error_abort);
         if (!s->fvd_data) {
             fprintf (stderr, "Failed to create a new block device driver.\n");
             return -1;
