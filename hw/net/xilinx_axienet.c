@@ -98,7 +98,7 @@ static unsigned int tdk_read(struct PHY *phy, unsigned int req)
             r |= 1;
             break;
         case 17:
-            /* Marvel PHY on many xilinx boards.  */
+            /* Marvell PHY on many xilinx boards.  */
             r = 0x8000; /* 1000Mb  */
             break;
         case 18:
@@ -142,6 +142,9 @@ tdk_write(struct PHY *phy, unsigned int req, unsigned int data)
             phy->regs[regnum] = data;
             break;
     }
+
+    /* Unconditionally clear regs[BMCR][BMCR_RESET] */
+    phy->regs[0] &= ~0x8000;
 }
 
 static void
