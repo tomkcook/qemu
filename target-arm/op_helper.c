@@ -420,7 +420,7 @@ void HELPER(exception_return)(CPUARMState *env)
             goto illegal_return;
         }
         if (new_el == 0 && (spsr & PSTATE_SP)) {
-            /* Return to EL1 with M[0] bit set */
+            /* Return to EL0 with M[0] bit set */
             goto illegal_return;
         }
         env->aarch64 = 1;
