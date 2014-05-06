@@ -287,7 +287,6 @@ softmmu="yes"
 linux_user="no"
 bsd_user="no"
 guest_base="yes"
-uname_release=""
 aix="no"
 blobs="yes"
 pkgversion=""
@@ -973,8 +972,6 @@ for opt do
   ;;
   --disable-pie) pie="no"
   ;;
-  --enable-uname-release=*) uname_release="$optarg"
-  ;;
   --enable-werror) werror="yes"
   ;;
   --disable-werror) werror="no"
@@ -1327,7 +1324,6 @@ Advanced options (experts only):
   --fmod-lib               path to FMOD library
   --fmod-inc               path to FMOD includes
   --oss-lib                path to OSS library
-  --enable-uname-release=R Return R for uname -r in usermode emulation
   --cpu=CPU                Build for host CPU [$cpu]
   --disable-uuid           disable uuid support
   --enable-uuid            enable uuid support
@@ -4183,8 +4179,6 @@ echo "brlapi support    $brlapi"
 echo "bluez  support    $bluez"
 echo "Documentation     $docs"
 echo "Tools             $tools"
-[ ! -z "$uname_release" ] && \
-echo "uname -r          $uname_release"
 echo "GUEST_BASE        $guest_base"
 echo "PIE               $pie"
 echo "vde support       $vde"
@@ -4602,8 +4596,6 @@ fi
 if [ "$bsd" = "yes" ] ; then
   echo "CONFIG_BSD=y" >> $config_host_mak
 fi
-
-echo "CONFIG_UNAME_RELEASE=\"$uname_release\"" >> $config_host_mak
 
 if test "$zero_malloc" = "yes" ; then
   echo "CONFIG_ZERO_MALLOC=y" >> $config_host_mak
