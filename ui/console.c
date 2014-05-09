@@ -1408,7 +1408,7 @@ void dpy_gfx_replace_surface(QemuConsole *con,
     qemu_free_displaysurface(old_surface);
 }
 
-void dpy_refresh(DisplayState *s)
+static void dpy_refresh(DisplayState *s)
 {
     DisplayChangeListener *dcl;
 

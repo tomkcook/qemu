@@ -416,6 +416,14 @@ source_path=`cd "$source_path"; pwd`
 
 cc_macros=`$cc $QEMU_CFLAGS -E -dD - </dev/null`
 
+# running configure in the source tree?
+# we know that's the case if configure is there.
+if test -f "./configure"; then
+    pwd_is_source_path="y"
+else
+    pwd_is_source_path="n"
+fi
+
 check_define() {
 cat > $TMPC <<EOF
 #if !defined($1)
@@ -2671,7 +2679,7 @@ done
 if test "$modules" = yes; then
     shacmd_probe="sha1sum sha1 shasum"
     for c in $shacmd_probe; do
-        if which $c &>/dev/null; then
+        if which $c >/dev/null 2>&1; then
             shacmd="$c"
             break
         fi
@@ -2987,7 +2995,7 @@ EOF
     fdt=yes
     dtc_internal="yes"
     mkdir -p dtc
-    if [ "$source_path" != `pwd` ] ; then
+    if [ "$pwd_is_source_path" != "y" ] ; then
        symlink "$source_path/dtc/Makefile" "dtc/Makefile"
        symlink "$source_path/dtc/scripts" "dtc/scripts"
     fi
@@ -4200,7 +4208,9 @@ echo "libcap-ng support $cap_ng"
 echo "vhost-net support $vhost_net"
 echo "vhost-scsi support $vhost_scsi"
 echo "Trace backend     $trace_backend"
+if test "$trace_backend" = "simple"; then
 echo "Trace output file $trace_file-<pid>"
+fi
 if test "$spice" = "yes"; then
 echo "spice support     $spice ($spice_protocol_version/$spice_server_version)"
 else
@@ -5235,7 +5245,7 @@ do
 done
 mkdir -p $DIRS
 for f in $FILES ; do
-    if [ -e "$source_path/$f" ] && [ "$source_path" != `pwd` ]; then
+    if [ -e "$source_path/$f" ] && [ "$pwd_is_source_path" != "y" ]; then
         symlink "$source_path/$f" "$f"
     fi
 done
