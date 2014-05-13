@@ -38,11 +38,11 @@ msgstr "_Herunterfahren"
 
 #: ui/gtk.c:1334
 msgid "_Quit"
-msgstr ""
+msgstr "Beenden"
 
 #: ui/gtk.c:1354
 msgid "_Fullscreen"
-msgstr ""
+msgstr "Vollbild"
 
 #: ui/gtk.c:1364
 #, fuzzy
@@ -56,7 +56,7 @@ msgstr "Auf _Fenstergröße skalieren"
 
 #: ui/gtk.c:1378
 msgid "Best _Fit"
-msgstr ""
+msgstr "Bildgröße anpassen"
 
 #: ui/gtk.c:1385
 msgid "Zoom To _Fit"
