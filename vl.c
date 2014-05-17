@@ -3063,7 +3063,6 @@ int main(int argc, char **argv)
 
     runstate_init();
 
-    init_clocks();
     rtc_clock = QEMU_CLOCK_HOST;
 
     qemu_cache_utils_init();

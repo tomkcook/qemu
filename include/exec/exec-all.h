@@ -134,6 +134,7 @@ static inline void tlb_flush(CPUState *cpu, int flush_global)
 #if defined(__arm__) || defined(_ARCH_PPC) \
     || defined(__x86_64__) || defined(__i386__) \
     || defined(__sparc__) || defined(__aarch64__) \
+    || defined(__s390x__) \
     || defined(CONFIG_TCG_INTERPRETER)
 #define USE_DIRECT_JUMP
 #endif
@@ -148,7 +149,7 @@ struct TranslationBlock {
 #define CF_COUNT_MASK  0x7fff
 #define CF_LAST_IO     0x8000 /* Last insn may be an IO access.  */
 
-    uint8_t *tc_ptr;    /* pointer to the translated code */
+    void *tc_ptr;    /* pointer to the translated code */
     /* next matching tb for physical address. */
     struct TranslationBlock *phys_hash_next;
     /* first and second physical page containing code. The lower bit
@@ -232,7 +233,15 @@ void ppc_tb_set_jmp_target(uintptr_t jmp_addr, uintptr_t addr);
 static inline void tb_set_jmp_target1(uintptr_t jmp_addr, uintptr_t addr)
 {
     /* patch the branch destination */
-    *(uint32_t *)jmp_addr = addr - (jmp_addr + 4);
+    stl_le_p((void*)jmp_addr, addr - (jmp_addr + 4));
+    /* no need to flush icache explicitly */
+}
+#elif defined(__s390x__)
+static inline void tb_set_jmp_target1(uintptr_t jmp_addr, uintptr_t addr)
+{
+    /* patch the branch destination */
+    intptr_t disp = addr - (jmp_addr - 2);
+    stl_be_p((void*)jmp_addr, disp / 2);
     /* no need to flush icache explicitly */
 }
 #elif defined(__aarch64__)
