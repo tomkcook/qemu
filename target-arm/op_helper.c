@@ -18,7 +18,7 @@
  */
 
 #include "cpu.h"
-#include "helper.h"
+#include "exec/helper-proto.h"
 #include "internals.h"
 
 #define SIGNBIT (uint32_t)0x80000000

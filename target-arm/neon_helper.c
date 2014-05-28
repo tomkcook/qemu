@@ -10,7 +10,7 @@
 #include "qemu-common.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
-#include "helper.h"
+#include "exec/helper-proto.h"
 
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
