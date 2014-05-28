@@ -999,6 +999,8 @@ void mips_malta_init(MachineState *machine)
     generate_eeprom_spd(&smbus_eeprom_buf[0 * 256], ram_size);
     generate_eeprom_serial(&smbus_eeprom_buf[6 * 256]);
 
+    current_cpu = ENV_GET_CPU(env);
+
     /* FPGA */
     /* The CBUS UART is attached to the MIPS CPU INT2 pin, ie interrupt 4 */
     malta_fpga_init(system_memory, FPGA_ADDRESS, env->irq[4], serial_hds[2],
