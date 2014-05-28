@@ -3829,7 +3829,7 @@ static void main_cpu_reset(void *opaque)
     }
 }
 
-static void ar7_common_init(QEMUMachineInitArgs *args,
+static void ar7_common_init(MachineState *machine,
                             uint16_t flash_manufacturer, uint16_t flash_type,
                             int flash_size)
 {
@@ -3850,28 +3850,29 @@ static void ar7_common_init(QEMUMachineInitArgs *args,
     set_traceflags();
 #endif
 
-    if (args->ram_size > 192 * MiB) {
+    if (machine->ram_size > 192 * MiB) {
         /* The external RAM start at 0x14000000 and ends before 0x20000000. */
-        args->ram_size = 192 * MiB;
+        machine->ram_size = 192 * MiB;
     }
 
     /* Initialize CPU. */
-    if (args->cpu_model == NULL) {
+    if (machine->cpu_model == NULL) {
 #ifdef MIPS_HAS_MIPS64
 # error AR7 has a 32 bit CPU
 #endif
-        args->cpu_model = "4KEcR1";
+        machine->cpu_model = "4KEcR1";
     }
-    env = cpu_init(args->cpu_model);
+    env = cpu_init(machine->cpu_model);
     if (!env) {
-        fprintf(stderr, "Unable to find CPU definition %s\n", args->cpu_model);
+        fprintf(stderr,
+                "Unable to find CPU definition %s\n", machine->cpu_model);
         exit(1);
     }
 
     qemu_register_reset(main_cpu_reset, env);
 
     dev = qdev_create(NULL, TYPE_AR7_STATE);
-    //~ qdev_prop_set_uint32(dev, "memsz", args->ram_size / MiB);
+    //~ qdev_prop_set_uint32(dev, "memsz", machine->ram_size / MiB);
     qdev_prop_set_uint8(dev, "phy addr", 31);
     qdev_prop_set_uint8(dev, "vlynq tnetw1130", 0);
     qdev_init_nofail(dev);
@@ -3884,15 +3885,15 @@ static void ar7_common_init(QEMUMachineInitArgs *args,
     (void)vlynq_bus1;
 #endif
 
-    loaderparams.ram_size = args->ram_size;
-    loaderparams.kernel_filename = args->kernel_filename;
-    loaderparams.kernel_cmdline = args->kernel_cmdline;
-    loaderparams.initrd_filename = args->initrd_filename;
+    loaderparams.ram_size = machine->ram_size;
+    loaderparams.kernel_filename = machine->kernel_filename;
+    loaderparams.kernel_cmdline = machine->kernel_cmdline;
+    loaderparams.initrd_filename = machine->initrd_filename;
 
-    memory_region_init_ram(&s->ram, OBJECT(s), "ar7.ram", args->ram_size);
+    memory_region_init_ram(&s->ram, OBJECT(s), "ar7.ram", machine->ram_size);
     memory_region_add_subregion(system_memory, KERNEL_LOAD_ADDR, &s->ram);
     fprintf(stderr, "%s: ram_size = 0x" RAM_ADDR_FMT "\n",
-            __func__, args->ram_size);
+            __func__, machine->ram_size);
 
     /* The AR7 processor has 4 KiB internal RAM at physical address 0x00000000. */
     memory_region_init_ram(&s->internal_ram, OBJECT(s), "ar7.internal", 4 * KiB);
@@ -3945,7 +3946,7 @@ static void ar7_common_init(QEMUMachineInitArgs *args,
         rom_size = 4 * KiB;
     }
 
-    if (args->kernel_filename) {
+    if (machine->kernel_filename) {
         kernel_load(env);
         kernel_init(env);
     }
@@ -3990,108 +3991,108 @@ static int ar7_sysbus_device_init(SysBusDevice *sysbusdev)
     return 0;
 }
 
-static void mips_ar7_init(QEMUMachineInitArgs *args)
+static void mips_ar7_init(MachineState *machine)
 {
-    ar7_common_init(args, MANUFACTURER_ST, 0x2249, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_ST, 0x2249, 2 * MiB);
 }
 
-static void ar7_amd_init(QEMUMachineInitArgs *args)
+static void ar7_amd_init(MachineState *machine)
 {
-    ar7_common_init(args, MANUFACTURER_AMD, AM29LV160DB, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_AMD, AM29LV160DB, 2 * MiB);
 }
 
-static void mips_tnetd7200_init(QEMUMachineInitArgs *args)
+static void mips_tnetd7200_init(MachineState *machine)
 {
-    ar7_common_init(args, MANUFACTURER_ST, 0x2249, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_ST, 0x2249, 2 * MiB);
     reg_write(av.gpio, GPIO_CVR, 0x0002002b);
 }
 
-static void mips_tnetd7300_init(QEMUMachineInitArgs *args)
+static void mips_tnetd7300_init(MachineState *machine)
 {
-    ar7_common_init(args, MANUFACTURER_ST, 0x2249, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_ST, 0x2249, 2 * MiB);
 }
 
 #if defined(TARGET_WORDS_BIGENDIAN)
 
-static void zyxel_init(QEMUMachineInitArgs *args)
+static void zyxel_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 8 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 8 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 8 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
 }
 
 #else
 
-static void fbox4_init(QEMUMachineInitArgs *args)
+static void fbox4_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 32 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 32 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 32 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_MACRONIX, MX29LV320CT, 4 * MiB);
+    ar7_common_init(machine, MANUFACTURER_MACRONIX, MX29LV320CT, 4 * MiB);
 }
 
-static void fbox8_init(QEMUMachineInitArgs *args)
+static void fbox8_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 32 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 32 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 32 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_MACRONIX, MX29LV640BT, 8 * MiB);
+    ar7_common_init(machine, MANUFACTURER_MACRONIX, MX29LV640BT, 8 * MiB);
 }
 
-static void sinus_basic_3_init(QEMUMachineInitArgs *args)
+static void sinus_basic_3_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 16 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 16 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 16 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_004A, ES29LV160DB, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_004A, ES29LV160DB, 2 * MiB);
 }
 
-static void sinus_basic_se_init(QEMUMachineInitArgs *args)
+static void sinus_basic_se_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 16 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 16 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 16 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
 }
 
-static void sinus_se_init(QEMUMachineInitArgs *args)
+static void sinus_se_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 16 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 16 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 16 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
+    ar7_common_init(machine, MANUFACTURER_INTEL, I28F160C3B, 2 * MiB);
     /* Emulate external phy 0. */
     ar7->phyaddr = 0;
 }
 
-static void speedport_init(QEMUMachineInitArgs *args)
+static void speedport_init(MachineState *machine)
 {
     /* Change the default RAM size from 128 MiB to 32 MiB.
        This is the external RAM at physical address KERNEL_LOAD_ADDR.
        Any other size can be selected with command line option -m. */
-    if (args->ram_size == 128 * MiB) {
-        args->ram_size = 32 * MiB;
+    if (machine->ram_size == 128 * MiB) {
+        machine->ram_size = 32 * MiB;
     }
-    ar7_common_init(args, MANUFACTURER_MACRONIX, MX29LV320CT, 4 * MiB);
+    ar7_common_init(machine, MANUFACTURER_MACRONIX, MX29LV320CT, 4 * MiB);
     reg_write(av.gpio, GPIO_CVR, 0x0002002b);
 }
 

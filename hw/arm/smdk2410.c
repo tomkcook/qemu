@@ -42,17 +42,17 @@ static struct arm_boot_info smdk2410_binfo = {
     .ram_size = 0x10000000, /* 256MB */
 };
 
-static void smdk2410_init(QEMUMachineInitArgs *args)
+static void smdk2410_init(MachineState *machine)
 {
     DriveInfo *dinfo;
     SMDK2410State *stcb;
     int ret;
 
     /* ensure memory is limited to 256MB */
-    if (args->ram_size > (256 * MiB)) {
-        args->ram_size = 256 * MiB;
+    if (machine->ram_size > (256 * MiB)) {
+        machine->ram_size = 256 * MiB;
     }
-    ram_size = args->ram_size;
+    ram_size = machine->ram_size;
 
     /* allocate storage for board state */
     stcb = g_new0(SMDK2410State, 1);
@@ -69,13 +69,13 @@ static void smdk2410_init(QEMUMachineInitArgs *args)
 
     /* initialise board informations */
     smdk2410_binfo.ram_size = ram_size;
-    smdk2410_binfo.kernel_filename = args->kernel_filename;
-    smdk2410_binfo.kernel_cmdline = args->kernel_cmdline;
-    smdk2410_binfo.initrd_filename = args->initrd_filename;
+    smdk2410_binfo.kernel_filename = machine->kernel_filename;
+    smdk2410_binfo.kernel_cmdline = machine->kernel_cmdline;
+    smdk2410_binfo.initrd_filename = machine->initrd_filename;
     smdk2410_binfo.nb_cpus = 1;
     smdk2410_binfo.loader_start = SMDK2410_NOR_BASE;
 
-    if (args->kernel_filename == NULL) {
+    if (machine->kernel_filename == NULL) {
         /* No kernel given so try and acquire a bootloader */
         char *filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, BIOS_FILENAME);
         if (filename) {

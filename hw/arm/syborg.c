@@ -30,7 +30,7 @@
 
 static struct arm_boot_info syborg_binfo;
 
-static void syborg_init(QEMUMachineInitArgs *args)
+static void syborg_init(MachineState *machine)
 {
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
@@ -39,17 +39,17 @@ static void syborg_init(QEMUMachineInitArgs *args)
     DeviceState *dev;
     int i;
 
-    if (!args->cpu_model) {
-        args->cpu_model = "cortex-a8";
+    if (!machine->cpu_model) {
+        machine->cpu_model = "cortex-a8";
     }
-    cpu = cpu_arm_init(args->cpu_model);
+    cpu = cpu_arm_init(machine->cpu_model);
     if (!cpu) {
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
 
     /* RAM at address zero. */
-    memory_region_init_ram(ram, NULL, "syborg.ram", args->ram_size);
+    memory_region_init_ram(ram, NULL, "syborg.ram", machine->ram_size);
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(sysmem, 0, ram);
 
@@ -88,10 +88,10 @@ static void syborg_init(QEMUMachineInitArgs *args)
         sysbus_connect_irq(s, 0, pic[9]);
     }
 
-    syborg_binfo.ram_size = args->ram_size;
-    syborg_binfo.kernel_filename = args->kernel_filename;
-    syborg_binfo.kernel_cmdline = args->kernel_cmdline;
-    syborg_binfo.initrd_filename = args->initrd_filename;
+    syborg_binfo.ram_size = machine->ram_size;
+    syborg_binfo.kernel_filename = machine->kernel_filename;
+    syborg_binfo.kernel_cmdline = machine->kernel_cmdline;
+    syborg_binfo.initrd_filename = machine->initrd_filename;
     syborg_binfo.board_id = 0;
     arm_load_kernel(cpu, &syborg_binfo);
 }

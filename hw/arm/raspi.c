@@ -66,7 +66,7 @@ static uint32_t bootloader_100[] = {
 
 static struct arm_boot_info raspi_binfo;
 
-static void raspi_init(QEMUMachineInitArgs *args)
+static void raspi_init(MachineState *machine)
 {
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
@@ -109,7 +109,7 @@ static void raspi_init(QEMUMachineInitArgs *args)
         exit(1);
     }
 
-    bcm2835_vcram_base = args->ram_size - VCRAM_SIZE;
+    bcm2835_vcram_base = machine->ram_size - VCRAM_SIZE;
 
     /* Write real RAM size in ATAG structure */
     bootloader_100[7] = bcm2835_vcram_base;
@@ -319,14 +319,14 @@ static void raspi_init(QEMUMachineInitArgs *args)
 
     /* Finally, the board itself */
     raspi_binfo.ram_size = bcm2835_vcram_base;
-    raspi_binfo.kernel_filename = args->kernel_filename;
-    raspi_binfo.kernel_cmdline = args->kernel_cmdline;
-    raspi_binfo.initrd_filename = args->initrd_filename;
+    raspi_binfo.kernel_filename = machine->kernel_filename;
+    raspi_binfo.kernel_cmdline = machine->kernel_cmdline;
+    raspi_binfo.initrd_filename = machine->initrd_filename;
     raspi_binfo.board_id = 0xc42;
 
     /* Quick and dirty "selector" */
-    if (args->initrd_filename
-        && !strcmp(args->kernel_filename, args->initrd_filename)) {
+    if (machine->initrd_filename
+        && !strcmp(machine->kernel_filename, machine->initrd_filename)) {
 
         for (n = 0; n < ARRAY_SIZE(bootloader_0); n++) {
             stl_phys(&address_space_memory, (n << 2), bootloader_0[n]);
@@ -334,7 +334,7 @@ static void raspi_init(QEMUMachineInitArgs *args)
         for (n = 0; n < ARRAY_SIZE(bootloader_100); n++) {
             stl_phys(&address_space_memory, 0x100 + (n << 2), bootloader_100[n]);
         }
-        load_image_targphys(args->initrd_filename,
+        load_image_targphys(machine->initrd_filename,
                             0x8000,
                             bcm2835_vcram_base - 0x8000);
         cpu_reset(CPU(cpu));

@@ -926,7 +926,7 @@ static struct arm_boot_info tt_binfo = {
     .atag_revision = 0x0004000a,
 };
 
-static void tt_init(QEMUMachineInitArgs *args)
+static void tt_init(MachineState *machine)
 {
     ARMCPU *cpu;
     TTState *s;
@@ -946,7 +946,7 @@ static void tt_init(QEMUMachineInitArgs *args)
 #endif
     unsigned i;
 
-    if (args->cpu_model && strcmp(args->cpu_model, "arm920t")) {
+    if (machine->cpu_model && strcmp(machine->cpu_model, "arm920t")) {
         fprintf(stderr, "only working with cpu arm920t\n");
         exit(1);
     }
@@ -1012,10 +1012,10 @@ static void tt_init(QEMUMachineInitArgs *args)
 #endif
 
     tt_binfo.ram_size = ram_size;
-    tt_binfo.kernel_filename = args->kernel_filename;
-    tt_binfo.kernel_cmdline = args->kernel_cmdline;
-    tt_binfo.initrd_filename = args->initrd_filename;
-    if (args->kernel_filename != NULL) {
+    tt_binfo.kernel_filename = machine->kernel_filename;
+    tt_binfo.kernel_cmdline = machine->kernel_cmdline;
+    tt_binfo.initrd_filename = machine->initrd_filename;
+    if (machine->kernel_filename != NULL) {
         /* TODO: load ttsystem. */
         //~ sect_size = 0x11b778, sect_addr = 0x31700000
         //~ sect_size = 0x6a3f45, sect_addr = 0x31000000
@@ -1023,23 +1023,23 @@ static void tt_init(QEMUMachineInitArgs *args)
     }
 }
 
-static void tt_init_go(QEMUMachineInitArgs *args)
+static void tt_init_go(MachineState *machine)
 {
     tt_binfo.board_id = 0x25d;
     ram_size = 64 * MiB;
-    tt_init(args);
+    tt_init(machine);
 }
 
-static void tt_init_666(QEMUMachineInitArgs *args)
+static void tt_init_666(MachineState *machine)
 {
     tt_binfo.board_id = 0x666;
-    tt_init(args);
+    tt_init(machine);
 }
 
-static void tt_init_smdk2443(QEMUMachineInitArgs *args)
+static void tt_init_smdk2443(MachineState *machine)
 {
     tt_binfo.board_id = 0x43c;
-    tt_init(args);
+    tt_init(machine);
 }
 
 static QEMUMachine tt_machine = {

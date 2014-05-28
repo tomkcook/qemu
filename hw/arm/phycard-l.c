@@ -15,7 +15,7 @@
 
 static struct arm_boot_info phycard_binfo;
 
-static void phycard_init(QEMUMachineInitArgs *args)
+static void phycard_init(MachineState *machine)
 {
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
@@ -24,10 +24,10 @@ static void phycard_init(QEMUMachineInitArgs *args)
     DeviceState *dev;
     int i;
 
-    if (!args->cpu_model) {
-        args->cpu_model = "cortex-a8";
+    if (!machine->cpu_model) {
+        machine->cpu_model = "cortex-a8";
     }
-    cpu = cpu_arm_init(args->cpu_model);
+    cpu = cpu_arm_init(machine->cpu_model);
     if (!cpu) {
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
@@ -73,10 +73,10 @@ static void phycard_init(QEMUMachineInitArgs *args)
         sysbus_connect_irq(s, 0, pic[9]);
     }
 
-    phycard_binfo.ram_size = args->ram_size;
-    phycard_binfo.kernel_filename = args->kernel_filename;
-    phycard_binfo.kernel_cmdline = args->kernel_cmdline;
-    phycard_binfo.initrd_filename = args->initrd_filename;
+    phycard_binfo.ram_size = machine->ram_size;
+    phycard_binfo.kernel_filename = machine->kernel_filename;
+    phycard_binfo.kernel_cmdline = machine->kernel_cmdline;
+    phycard_binfo.initrd_filename = machine->initrd_filename;
     phycard_binfo.board_id = 0;
     arm_load_kernel(cpu, &phycard_binfo);
 }

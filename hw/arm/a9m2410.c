@@ -255,7 +255,7 @@ static struct arm_boot_info a9m2410_binfo = {
     .ram_size = 0x10000000, /* 256MB */
 };
 
-static void stcb_init(QEMUMachineInitArgs *args)
+static void stcb_init(MachineState *machine)
 {
     MemoryRegion *sysmem = get_system_memory();
     STCBState *stcb;
@@ -270,16 +270,16 @@ static void stcb_init(QEMUMachineInitArgs *args)
     //~ qemu_irq *i8259;
 
     /* ensure memory is limited to 256MB */
-    if (args->ram_size > (256 * MiB)) {
-        args->ram_size = 256 * MiB;
+    if (machine->ram_size > (256 * MiB)) {
+        machine->ram_size = 256 * MiB;
     }
-    ram_size = args->ram_size;
+    ram_size = machine->ram_size;
 
     /* initialise board informations */
     a9m2410_binfo.ram_size = ram_size;
-    a9m2410_binfo.kernel_filename = args->kernel_filename;
-    a9m2410_binfo.kernel_cmdline = args->kernel_cmdline;
-    a9m2410_binfo.initrd_filename = args->initrd_filename;
+    a9m2410_binfo.kernel_filename = machine->kernel_filename;
+    a9m2410_binfo.kernel_cmdline = machine->kernel_cmdline;
+    a9m2410_binfo.initrd_filename = machine->initrd_filename;
     a9m2410_binfo.nb_cpus = 1;
     a9m2410_binfo.loader_start = A9M2410_NOR_RO_BASE;
 
@@ -323,7 +323,7 @@ static void stcb_init(QEMUMachineInitArgs *args)
     // TODO: map flash readonly to address A9M2410_NOR_RO_BASE.
 
     /* if kernel is given, boot that directly */
-    if (args->kernel_filename != NULL) {
+    if (machine->kernel_filename != NULL) {
         a9m2410_binfo.loader_start = CPU_S3C2410X_DRAM;
         //~ a9m2410_binfo.loader_start = 0xc0108000 - 0x00010000;
         arm_load_kernel(stcb->soc->cpu, &a9m2410_binfo);
