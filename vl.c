@@ -4087,7 +4087,7 @@ int main(int argc, char **argv)
     }
 
     if (!is_daemonized()) {
-        if (!trace_backend_init(trace_events, trace_file)) {
+        if (!trace_init_backends(trace_events, trace_file)) {
             exit(1);
         }
     }
@@ -4607,7 +4607,7 @@ int main(int argc, char **argv)
     os_setup_post();
 
     if (is_daemonized()) {
-        if (!trace_backend_init(trace_events, trace_file)) {
+        if (!trace_init_backends(trace_events, trace_file)) {
             exit(1);
         }
     }
