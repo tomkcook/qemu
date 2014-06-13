@@ -905,6 +905,7 @@ static int gd_map_keycode(GtkDisplayState *s, GdkDisplay *dpy, int gdk_keycode)
         return qemu_keycode;
     }
 #endif
+
     if (gdk_keycode < 9) {
         qemu_keycode = 0;
     } else if (gdk_keycode < 97) {
