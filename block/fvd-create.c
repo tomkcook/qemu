@@ -17,70 +17,62 @@ static inline int search_holes(const char *filename, size_t bitmap_size,
                     int32_t bitmap_start_offset, BlockDriverState * bs,
                     int64_t nb_sectors, int32_t hole_size, int32_t block_size);
 
-static int fvd_create(const char *filename, QEMUOptionParameter *options,
-                      Error **errp)
+static int fvd_create(const char *filename, QemuOpts *opts, Error **errp)
 {
     int fd, ret;
     FvdHeader *header;
-    int64_t virtual_disk_size = DEF_PAGE_SIZE;
+    int64_t virtual_disk_size;
     int32_t header_size;
-    const char *base_img = NULL;
-    const char *base_img_fmt = NULL;
-    const char *data_file = NULL;
-    const char *data_file_fmt = NULL;
-    int32_t hole_size = 0;
-    int copy_on_read = FALSE;
-    int prefetch_start_delay = -1;
+    const char *add_storage_cmd;
+    const char *base_img;
+    const char *base_img_fmt;
+    const char *data_file;
+    const char *data_file_fmt;
+    int32_t hole_size;
+    bool copy_on_read;
+    int prefetch_start_delay;
     int64_t prefetch_profile_size = 0;
     BlockDriverState *bs = NULL;
     int bitmap_size = 0;
     int64_t base_img_size = 0;
     int64_t table_size = 0;
-    int64_t journal_size = 0;
-    int32_t block_size = 0;
+    int64_t journal_size;
+    int32_t block_size;
 
     header_size = sizeof (FvdHeader);
     header_size = ROUND_UP (header_size, DEF_PAGE_SIZE);
     header = my_qemu_mallocz (header_size);
 
     /* Read out options */
-    while (options && options->name) {
-        if (!strcmp (options->name, BLOCK_OPT_SIZE)) {
-            virtual_disk_size = options->value.n;
-        } else if (!strcmp (options->name,"prefetch_start_delay")) {
-            if (options->value.n <= 0) {
-                prefetch_start_delay = -1;
-            } else {
-                prefetch_start_delay = options->value.n;
-            }
-        } else if (!strcmp (options->name, BLOCK_OPT_BACKING_FILE)) {
-            base_img = options->value.s;
-        } else if (!strcmp (options->name, BLOCK_OPT_BACKING_FMT)) {
-            base_img_fmt = options->value.s;
-        } else if (!strcmp (options->name, "copy_on_read")) {
-            copy_on_read = options->value.n;
-        } else if (!strcmp (options->name, "data_file")) {
-            data_file = options->value.s;
-        } else if (!strcmp (options->name, "data_file_fmt")) {
-            data_file_fmt = options->value.s;
-        } else if (!strcmp (options->name, "detect_sparse_hole")) {
-            hole_size = options->value.n;
-        } else if (!strcmp (options->name, "compact_image")) {
-            header->compact_image = options->value.n;
-        } else if (!strcmp (options->name, "block_size")) {
-            block_size = options->value.n;
-        } else if (!strcmp (options->name, "chunk_size")) {
-            header->chunk_size = options->value.n;
-        } else if (!strcmp (options->name, "journal_size")) {
-            journal_size = options->value.n;
-        } else if (!strcmp (options->name, "storage_grow_unit")) {
-            header->storage_grow_unit = options->value.n;
-        } else if (!strcmp (options->name, "add_storage_cmd")
-                   && options->value.s) {
-            pstrcpy (header->add_storage_cmd, sizeof (header->add_storage_cmd),
-                     options->value.s);
-        }
-        options++;
+    virtual_disk_size = qemu_opt_get_size_del(opts, BLOCK_OPT_SIZE,
+                                              DEF_PAGE_SIZE);
+    prefetch_start_delay = qemu_opt_get_size_del(opts, "prefetch_start_delay",
+                                                 -1);
+    if (prefetch_start_delay <= 0) {
+        prefetch_start_delay = -1;
+    }
+    base_img = qemu_opt_get_del(opts, BLOCK_OPT_BACKING_FILE);
+    base_img_fmt = qemu_opt_get_del(opts, BLOCK_OPT_BACKING_FMT);
+    copy_on_read = qemu_opt_get_bool_del(opts, "copy_on_read",
+                                         false);
+    data_file = qemu_opt_get_del(opts, "data_file");
+    data_file_fmt = qemu_opt_get_del(opts, "data_file_fmt");
+    hole_size = qemu_opt_get_size_del(opts, "detect_sparse_hole",
+                                      0);
+    header->compact_image = qemu_opt_get_bool_del(opts, "compact_image",
+                                                  false);
+    block_size = qemu_opt_get_size_del(opts, "block_size",
+                                       0);
+    header->chunk_size = qemu_opt_get_size_del(opts, "chunk_size",
+                                               0);
+    journal_size = qemu_opt_get_size_del(opts, "journal_size",
+                                         0);
+    header->storage_grow_unit = qemu_opt_get_size_del(opts, "storage_grow_unit",
+                                                      0);
+    add_storage_cmd = qemu_opt_get_del(opts, "add_storage_cmd");
+    if (add_storage_cmd) {
+        pstrcpy(header->add_storage_cmd, sizeof (header->add_storage_cmd),
+                add_storage_cmd);
     }
 
     virtual_disk_size = ROUND_UP (virtual_disk_size, 512);
@@ -414,65 +406,69 @@ static inline int search_holes (const char *filename, size_t bitmap_size,
     return ret;
 }
 
-static QEMUOptionParameter fvd_create_options[] = {
+static QemuOptsList fvd_create_opts = {
+    .name = "fvd-create-options",
+    .head = QTAILQ_HEAD_INITIALIZER(fvd_create_opts.head),
+    .desc = {
     {
      .name = BLOCK_OPT_SIZE,
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Virtual disk size"},
     {
      .name = "compact_image",
-     .type = OPT_FLAG,
+     .type = QEMU_OPT_BOOL,
      .help = "compact_image=on|off"},
     {
      .name = "block_size",
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Block size"},
     {
      .name = "chunk_size",
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Chunk size"},
     {
      .name = "storage_grow_unit",
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Storage grow unit"},
     {
      .name = "add_storage_cmd",
-     .type = OPT_STRING,
+     .type = QEMU_OPT_STRING,
      .help = "Command to add storage when FSI runs out of space"},
     {
      .name = BLOCK_OPT_BACKING_FILE,
-     .type = OPT_STRING,
+     .type = QEMU_OPT_STRING,
      .help = "File name of a backing image"},
     {
      .name = BLOCK_OPT_BACKING_FMT,
-     .type = OPT_STRING,
+     .type = QEMU_OPT_STRING,
      .help = "Image format of the backing image"},
     {
      .name = "data_file",
-     .type = OPT_STRING,
+     .type = QEMU_OPT_STRING,
      .help = "File name of a separate data file"},
     {
      .name = "data_file_fmt",
-     .type = OPT_STRING,
+     .type = QEMU_OPT_STRING,
      .help = "Image format of the separate data file"},
     {
      .name = "copy_on_read",
-     .type = OPT_FLAG,
+     .type = QEMU_OPT_BOOL,
      .help = "copy_on_read=on|off"},
     {
      .name = "prefetch_start_delay",
-     .type = OPT_NUMBER,
+     .type = QEMU_OPT_NUMBER,
      .help = "Delay in seconds before starting whole image prefetching. "
          "Prefetching is disabled if the delay is not a positive number."},
     {
      .name = "detect_sparse_hole",
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Minimum size (in bytes) of a continuous zero-filled region to be "
          "considered as a sparse file hole in the backing image (setting it "
          "to 0 turns off sparse file detection)"},
     {
      .name = "journal_size",
-     .type = OPT_SIZE,
+     .type = QEMU_OPT_SIZE,
      .help = "Journal size"},
     {NULL}
+    }
 };

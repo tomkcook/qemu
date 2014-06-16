@@ -1077,7 +1077,7 @@ static int drive_init_func(QemuOpts *opts, void *opaque)
 {
     BlockInterfaceType *block_default_type = opaque;
 
-    return drive_init(opts, *block_default_type) == NULL;
+    return drive_new(opts, *block_default_type) == NULL;
 }
 
 static int drive_enable_snapshot(QemuOpts *opts, void *opaque)
@@ -1101,7 +1101,7 @@ static void default_drive(int enable, int snapshot, BlockInterfaceType type,
     if (snapshot) {
         drive_enable_snapshot(opts, NULL);
     }
-    if (!drive_init(opts, type)) {
+    if (!drive_new(opts, type)) {
         exit(1);
     }
 }
