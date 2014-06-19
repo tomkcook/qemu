@@ -24,6 +24,10 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
+ *
+ * The implementation of g_poll (functions poll_rest, g_poll) at the end of
+ * this file are based on code from GNOME glib-2 and use a different license,
+ * see the license comment there.
  */
 #include <windows.h>
 #include <glib.h>
@@ -266,6 +270,25 @@ char *qemu_get_exec_dir(void)
  * (glib commit 20f4d1820b8d4d0fc4447188e33efffd6d4a88d8 from 2014-02-19).
  * Some debug code was removed and the code was reformatted.
  * All other code modifications are marked with 'QEMU'.
+ */
+
+/*
+ * gpoll.c: poll(2) abstraction
+ * Copyright 1998 Owen Taylor
+ * Copyright 2008 Red Hat, Inc.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 static int poll_rest(gboolean poll_msgs, HANDLE *handles, gint nhandles,
