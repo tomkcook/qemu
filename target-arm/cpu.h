@@ -1413,6 +1413,8 @@ static inline bool arm_singlestep_active(CPUARMState *env)
 #define ARM_TBFLAG_SCTLR_B_MASK     (1 << ARM_TBFLAG_SCTLR_B_SHIFT)
 #define ARM_TBFLAG_CPACR_FPEN_SHIFT 17
 #define ARM_TBFLAG_CPACR_FPEN_MASK  (1 << ARM_TBFLAG_CPACR_FPEN_SHIFT)
+#define ARM_TBFLAG_CPSR_E_SHIFT     18
+#define ARM_TBFLAG_CPSR_E_MASK      (1 << ARM_TBFLAG_CPSR_E_SHIFT)
 #define ARM_TBFLAG_SS_ACTIVE_SHIFT 18
 #define ARM_TBFLAG_SS_ACTIVE_MASK (1 << ARM_TBFLAG_SS_ACTIVE_SHIFT)
 #define ARM_TBFLAG_PSTATE_SS_SHIFT 19
@@ -1452,6 +1454,8 @@ static inline bool arm_singlestep_active(CPUARMState *env)
     (((F) & ARM_TBFLAG_SCTLR_B_MASK) >> ARM_TBFLAG_SCTLR_B_SHIFT)
 #define ARM_TBFLAG_CPACR_FPEN(F) \
     (((F) & ARM_TBFLAG_CPACR_FPEN_MASK) >> ARM_TBFLAG_CPACR_FPEN_SHIFT)
+#define ARM_TBFLAG_CPSR_E(F) \
+    (((F) & ARM_TBFLAG_CPSR_E_MASK) >> ARM_TBFLAG_CPSR_E_SHIFT)
 #define ARM_TBFLAG_SS_ACTIVE(F) \
     (((F) & ARM_TBFLAG_SS_ACTIVE_MASK) >> ARM_TBFLAG_SS_ACTIVE_SHIFT)
 #define ARM_TBFLAG_PSTATE_SS(F) \
@@ -1492,6 +1496,7 @@ static inline bool bswap_code(bool sctlr_b)
 #endif
 }
 
+
 #ifdef CONFIG_USER_ONLY
 /* get_user and put_user respectivaly return and expect data according
  * to TARGET_WORDS_BIGENDIAN, but ldrex/strex emulation needs to take
@@ -1519,6 +1524,15 @@ static inline bool arm_cpu_bswap_data(CPUARMState *env)
        !!(env->uncached_cpsr & CPSR_E);
 }
 #endif
+
+static inline bool arm_tbflag_is_data_be(unsigned tbflags)
+{
+    return
+#ifdef CONFIG_USER_ONLY
+        ARM_TBFLAG_SCTLR_B(tbflags) ^
+#endif
+        ARM_TBFLAG_CPSR_E(tbflags);
+}
 
 static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
                                         target_ulong *cs_base, int *flags)
@@ -1574,6 +1588,9 @@ static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
         }
         if (fpen == 3 || (fpen == 1 && arm_current_el(env) != 0)) {
             *flags |= ARM_TBFLAG_CPACR_FPEN_MASK;
+        }
+        if (env->uncached_cpsr & CPSR_E) {
+            *flags |= ARM_TBFLAG_CPSR_E_MASK;
         }
         /* The SS_ACTIVE and PSTATE_SS bits correspond to the state machine
          * states defined in the ARM ARM for software singlestep:
