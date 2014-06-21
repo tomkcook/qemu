@@ -25,6 +25,8 @@ static inline void cpu_clone_regs(CPUARMState *env, target_ulong newsp)
         env->regs[13] = newsp;
     }
     env->regs[0] = 0;
+    env->uncached_cpsr &= ~CPSR_E;
+    env->uncached_cpsr |= env->signal_cpsr_e;
 }
 
 static inline void cpu_set_tls(CPUARMState *env, target_ulong newtls)

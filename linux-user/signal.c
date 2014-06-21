@@ -1613,6 +1613,8 @@ setup_return(CPUARMState *env, struct target_sigaction *ka,
         cpsr &= ~CPSR_T;
     }
 
+    cpsr |= env->signal_cpsr_e;
+
     if (ka->sa_flags & TARGET_SA_RESTORER) {
         retcode = ka->sa_restorer;
     } else {

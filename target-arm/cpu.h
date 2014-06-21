@@ -329,6 +329,9 @@ typedef struct CPUARMState {
 #if defined(CONFIG_USER_ONLY)
     /* For usermode syscall translation.  */
     int eabi;
+
+    /* CPSR.E value for new threads and signal handlers.  */
+    uint32_t signal_cpsr_e;
 #endif
 
     struct CPUBreakpoint *cpu_breakpoint[16];
