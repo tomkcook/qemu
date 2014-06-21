@@ -3810,6 +3810,30 @@ unsigned int arm_excp_target_el(CPUState *cs, unsigned int excp_idx)
     return target_el;
 }
 
+static uint32_t ldl_ptw_phys(CPUState *cs, target_ulong physaddr)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+
+    if (unlikely(env->cp15.c1_sys & SCTLR_EE)) {
+        return ldl_be_phys(cs->as, physaddr);
+    } else {
+        return ldl_le_phys(cs->as, physaddr);
+    }
+}
+
+static uint64_t ldq_ptw_phys(CPUState *cs, target_ulong physaddr)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+
+    if (unlikely(env->cp15.c1_sys & SCTLR_EE)) {
+        return ldq_be_phys(cs->as, physaddr);
+    } else {
+        return ldq_le_phys(cs->as, physaddr);
+    }
+}
+
 static void v7m_push(CPUARMState *env, uint32_t val)
 {
     CPUState *cs = CPU(arm_env_get_cpu(env));
@@ -4130,7 +4154,9 @@ void arm_cpu_do_interrupt(CPUState *cs)
     /* Clear IT bits.  */
     env->condexec_bits = 0;
     /* Switch to the new mode, and to the correct instruction set.  */
-    env->uncached_cpsr = (env->uncached_cpsr & ~CPSR_M) | new_mode;
+    env->uncached_cpsr = (env->uncached_cpsr & ~(CPSR_M | CPSR_E))
+        | new_mode
+        | (env->cp15.c1_sys & SCTLR_EE ? CPSR_E : 0);
     env->daif |= mask;
     /* this is a lie, as the was no c1_sys on V4T/V5, but who cares
      * and we should just guard the thumb mode on V4 */
@@ -4239,7 +4265,7 @@ static int get_phys_addr_v5(CPUARMState *env, uint32_t address, int access_type,
         code = 5;
         goto do_fault;
     }
-    desc = ldl_phys(cs->as, table);
+    desc = ldl_ptw_phys(cs, table);
     type = (desc & 3);
     domain = (desc >> 5) & 0x0f;
     domain_prot = (env->cp15.c3 >> (domain * 2)) & 3;
@@ -4270,7 +4296,7 @@ static int get_phys_addr_v5(CPUARMState *env, uint32_t address, int access_type,
 	    /* Fine pagetable.  */
 	    table = (desc & 0xfffff000) | ((address >> 8) & 0xffc);
 	}
-        desc = ldl_phys(cs->as, table);
+        desc = ldl_ptw_phys(cs, table);
         switch (desc & 3) {
         case 0: /* Page translation fault.  */
             code = 7;
@@ -4341,7 +4367,7 @@ static int get_phys_addr_v6(CPUARMState *env, uint32_t address, int access_type,
         code = 5;
         goto do_fault;
     }
-    desc = ldl_phys(cs->as, table);
+    desc = ldl_ptw_phys(cs, table);
     type = (desc & 3);
     if (type == 0 || (type == 3 && !arm_feature(env, ARM_FEATURE_PXN))) {
         /* Section translation fault, or attempt to use the encoding
@@ -4383,7 +4409,7 @@ static int get_phys_addr_v6(CPUARMState *env, uint32_t address, int access_type,
         }
         /* Lookup l2 entry.  */
         table = (desc & 0xfffffc00) | ((address >> 10) & 0x3fc);
-        desc = ldl_phys(cs->as, table);
+        desc = ldl_ptw_phys(cs, table);
         ap = ((desc >> 4) & 3) | ((desc >> 7) & 4);
         switch (desc & 3) {
         case 0: /* Page translation fault.  */
@@ -4577,7 +4603,7 @@ static int get_phys_addr_lpae(CPUARMState *env, target_ulong address,
 
         descaddr |= (address >> (granule_sz * (4 - level))) & descmask;
         descaddr &= ~7ULL;
-        descriptor = ldq_phys(cs->as, descaddr);
+        descriptor = ldq_ptw_phys(cs, descaddr);
         if (!(descriptor & 1) ||
             (!(descriptor & 2) && (level == 3))) {
             /* Invalid, or the Reserved level 3 encoding */
