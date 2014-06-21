@@ -23,6 +23,7 @@
 
 #include "exec/memory-internal.h"
 #include "exec/ram_addr.h"
+#include "sysemu/sysemu.h"
 
 static unsigned memory_region_transaction_depth;
 static bool memory_region_update_pending;
@@ -491,7 +492,7 @@ static AddressSpace *memory_region_to_address_space(MemoryRegion *mr)
             return as;
         }
     }
-    abort();
+    return NULL;
 }
 
 /* Render a memory region into the global view.  Ranges in @view obscure
@@ -1078,6 +1079,23 @@ void memory_region_init_ram(MemoryRegion *mr,
     mr->ram_addr = qemu_ram_alloc(size, mr);
 }
 
+#ifdef __linux__
+void memory_region_init_ram_from_file(MemoryRegion *mr,
+                                      struct Object *owner,
+                                      const char *name,
+                                      uint64_t size,
+                                      bool share,
+                                      const char *path,
+                                      Error **errp)
+{
+    memory_region_init(mr, owner, name, size);
+    mr->ram = true;
+    mr->terminates = true;
+    mr->destructor = memory_region_destructor_ram;
+    mr->ram_addr = qemu_ram_alloc_from_file(size, mr, share, path, errp);
+}
+#endif
+
 void memory_region_init_ram_ptr(MemoryRegion *mr,
                                 Object *owner,
                                 const char *name,
@@ -1298,6 +1316,17 @@ void memory_region_reset_dirty(MemoryRegion *mr, hwaddr addr,
 {
     assert(mr->terminates);
     cpu_physical_memory_reset_dirty(mr->ram_addr + addr, size, client);
+}
+
+int memory_region_get_fd(MemoryRegion *mr)
+{
+    if (mr->alias) {
+        return memory_region_get_fd(mr->alias);
+    }
+
+    assert(mr->terminates);
+
+    return qemu_get_ram_fd(mr->ram_addr & TARGET_PAGE_MASK);
 }
 
 void *memory_region_get_ram_ptr(MemoryRegion *mr)
@@ -1639,6 +1668,11 @@ bool memory_region_present(MemoryRegion *container, hwaddr addr)
     return true;
 }
 
+bool memory_region_is_mapped(MemoryRegion *mr)
+{
+    return mr->container ? true : false;
+}
+
 MemoryRegionSection memory_region_find(MemoryRegion *mr,
                                        hwaddr addr, uint64_t size)
 {
@@ -1656,6 +1690,9 @@ MemoryRegionSection memory_region_find(MemoryRegion *mr,
     }
 
     as = memory_region_to_address_space(root);
+    if (!as) {
+        return ret;
+    }
     range = addrrange_make(int128_make64(addr), int128_make64(size));
 
     view = address_space_get_flatview(as);
