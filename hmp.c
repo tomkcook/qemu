@@ -465,7 +465,8 @@ void hmp_info_vnc(Monitor *mon, const QDict *qdict)
         for (client = info->clients; client; client = client->next) {
             monitor_printf(mon, "Client:\n");
             monitor_printf(mon, "     address: %s:%s\n",
-                           client->value->host, client->value->service);
+                           client->value->base->host,
+                           client->value->base->service);
             monitor_printf(mon, "  x509_dname: %s\n",
                            client->value->x509_dname ?
                            client->value->x509_dname : "none");
@@ -513,7 +514,7 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
         for (chan = info->channels; chan; chan = chan->next) {
             monitor_printf(mon, "Channel:\n");
             monitor_printf(mon, "     address: %s:%s%s\n",
-                           chan->value->host, chan->value->port,
+                           chan->value->base->host, chan->value->base->port,
                            chan->value->tls ? " [tls]" : "");
             monitor_printf(mon, "     session: %" PRId64 "\n",
                            chan->value->connection_id);
@@ -1692,7 +1693,7 @@ void hmp_info_memdev(Monitor *mon, const QDict *qdict)
         ov = string_output_visitor_new(false);
         visit_type_uint16List(string_output_get_visitor(ov),
                               &m->value->host_nodes, NULL, NULL);
-        monitor_printf(mon, "memory device %d\n", i);
+        monitor_printf(mon, "memory backend: %d\n", i);
         monitor_printf(mon, "  size:  %" PRId64 "\n", m->value->size);
         monitor_printf(mon, "  merge: %s\n",
                        m->value->merge ? "true" : "false");
