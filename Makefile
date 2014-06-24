@@ -398,12 +398,8 @@ install-tools: tools
 
 install: all $(if $(BUILD_DOCS),install-doc) $(if $(BUILD_TOOLS),install-tools) install-sysconfig \
 install-datadir install-localstatedir
-	$(INSTALL_DIR) "$(DESTDIR)$(bindir)"
 ifneq ($(TOOLS),)
-	$(INSTALL_PROG) $(TOOLS) "$(DESTDIR)$(bindir)"
-ifneq ($(STRIP),)
-	$(STRIP) $(TOOLS:%="$(DESTDIR)$(bindir)/%")
-endif
+	$(call install-prog,$(TOOLS),$(DESTDIR)$(bindir))
 endif
 ifneq ($(CONFIG_MODULES),)
 	$(INSTALL_DIR) "$(DESTDIR)$(qemu_moddir)"
@@ -414,11 +410,7 @@ ifneq ($(CONFIG_MODULES),)
 	done
 endif
 ifneq ($(HELPERS-y),)
-	$(INSTALL_DIR) "$(DESTDIR)$(libexecdir)"
-	$(INSTALL_PROG) $(HELPERS-y) "$(DESTDIR)$(libexecdir)"
-ifneq ($(STRIP),)
-	$(STRIP) $(HELPERS-y:%="$(DESTDIR)$(libexecdir)/%")
-endif
+	$(call install-prog,$(HELPERS-y),$(DESTDIR)$(libexecdir))
 endif
 ifneq ($(BLOBS),)
 	set -e; for x in $(BLOBS); do \
