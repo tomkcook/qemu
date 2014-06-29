@@ -1115,6 +1115,7 @@ QemuOptsList *qemu_opts_append(QemuOptsList *dst,
     size_t num_opts, num_dst_opts;
     QemuOptDesc *desc;
     bool need_init = false;
+    bool need_head_update;
 
     if (!list) {
         return dst;
@@ -1125,6 +1126,12 @@ QemuOptsList *qemu_opts_append(QemuOptsList *dst,
      */
     if (!dst) {
         need_init = true;
+        need_head_update = true;
+    } else {
+        /* Moreover, even if dst is not NULL, the realloc may move it to a
+         * different address in which case we may get a stale tail pointer
+         * in dst->head. */
+        need_head_update = QTAILQ_EMPTY(&dst->head);
     }
 
     num_opts = count_opts_list(dst);
@@ -1135,8 +1142,10 @@ QemuOptsList *qemu_opts_append(QemuOptsList *dst,
     if (need_init) {
         dst->name = NULL;
         dst->implied_opt_name = NULL;
-        QTAILQ_INIT(&dst->head);
         dst->merge_lists = false;
+    }
+    if (need_head_update) {
+        QTAILQ_INIT(&dst->head);
     }
     dst->desc[num_dst_opts].name = NULL;
 
