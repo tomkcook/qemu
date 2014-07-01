@@ -1924,6 +1924,7 @@ void qemu_system_killed(int signal, pid_t pid)
 
 void qemu_system_shutdown_request(void)
 {
+    trace_qemu_system_shutdown_request();
     shutdown_requested = 1;
     qemu_notify_event();
 }
@@ -1936,6 +1937,7 @@ static void qemu_system_powerdown(void)
 
 void qemu_system_powerdown_request(void)
 {
+    trace_qemu_system_powerdown_request();
     powerdown_requested = 1;
     qemu_notify_event();
 }
@@ -4035,12 +4037,11 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    cpu_exec_init_all();
-
     current_machine = MACHINE(object_new(object_class_get_name(
                           OBJECT_CLASS(machine_class))));
     object_property_add_child(object_get_root(), "machine",
                               OBJECT(current_machine), &error_abort);
+    cpu_exec_init_all();
 
     if (machine_class->hw_version) {
         qemu_set_version(machine_class->hw_version);
