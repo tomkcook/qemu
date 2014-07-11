@@ -416,9 +416,10 @@ static void pl110_write(void *opaque, hwaddr offset,
     control:
         s->cr = val;
         s->bpp = (val >> 1) & 7;
-#if 0 /* TODO */
-        /* Calling qemu_console_resize from TCG context is disabled here.
-           It causes a deadlock on Windows. */
+#if 1 /* TODO */
+        /* Calling qemu_console_resize from TCG context was disabled here.
+           It causes a deadlock on Windows. Nevertheless it had to be
+           enabled again because otherwise Debian ARM crashes very early. */
         if (pl110_enabled(s)) {
             qemu_console_resize(s->con, s->cols, s->rows);
         }
