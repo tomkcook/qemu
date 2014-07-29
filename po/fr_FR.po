@@ -1,13 +1,13 @@
 # French translation for QEMU.
 # This file is put in the public domain.
 #
-# Aurelien Jarno <aurelien@aurel32.net>, 2013.
+# Aurelien Jarno <aurelien@aurel32.net>, 2013, 2014.
 msgid ""
 msgstr ""
 "Project-Id-Version: QEMU 2.0.50\n"
 "Report-Msgid-Bugs-To: qemu-devel@nongnu.org\n"
-"POT-Creation-Date: 2014-05-11 00:51+0200\n"
-"PO-Revision-Date: 2013-03-31 19:39+0200\n"
+"POT-Creation-Date: 2014-07-28 23:14+0200\n"
+"PO-Revision-Date: 2014-07-28 23:25+0200\n"
 "Last-Translator: Aurelien Jarno <aurelien@aurel32.net>\n"
 "Language-Team: French <FR@li.org>\n"
 "Language: fr\n"
@@ -17,68 +17,70 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
 "X-Generator: Lokalize 1.4\n"
 
-#: ui/gtk.c:220
+#: ui/gtk.c:321
 msgid " - Press Ctrl+Alt+G to release grab"
 msgstr "- Appuyer sur Ctrl+Alt+G pour arrêter la capture"
 
-#: ui/gtk.c:224
+#: ui/gtk.c:325
 msgid " [Paused]"
 msgstr " [En pause]"
 
-#: ui/gtk.c:1319
+#: ui/gtk.c:1601
 msgid "_Pause"
 msgstr "_Pause"
 
-#: ui/gtk.c:1325
+#: ui/gtk.c:1607
 msgid "_Reset"
 msgstr "_Réinitialiser"
 
-#: ui/gtk.c:1328
+#: ui/gtk.c:1610
 msgid "Power _Down"
 msgstr "_Éteindre"
 
-#: ui/gtk.c:1334
+#: ui/gtk.c:1616
 msgid "_Quit"
-msgstr ""
+msgstr "_Quitter"
 
-#: ui/gtk.c:1354
+#: ui/gtk.c:1692
 msgid "_Fullscreen"
-msgstr ""
+msgstr "Mode _plein écran"
 
-#: ui/gtk.c:1364
-#, fuzzy
+#: ui/gtk.c:1702
 msgid "Zoom _In"
-msgstr "Zoomer pour _ajuster"
+msgstr "Zoom _avant"
 
-#: ui/gtk.c:1371
-#, fuzzy
+#: ui/gtk.c:1709
 msgid "Zoom _Out"
-msgstr "Zoomer pour _ajuster"
+msgstr "_Zoom arrière"
 
-#: ui/gtk.c:1378
+#: ui/gtk.c:1716
 msgid "Best _Fit"
-msgstr ""
+msgstr "Zoom _idéal"
 
-#: ui/gtk.c:1385
+#: ui/gtk.c:1723
 msgid "Zoom To _Fit"
-msgstr "Zoomer pour _ajuster"
+msgstr "Zoomer pour a_juster"
 
-#: ui/gtk.c:1391
+#: ui/gtk.c:1729
 msgid "Grab On _Hover"
 msgstr "Capturer en _survolant"
 
-#: ui/gtk.c:1394
+#: ui/gtk.c:1732
 msgid "_Grab Input"
 msgstr "_Capturer les entrées"
 
-#: ui/gtk.c:1421
+#: ui/gtk.c:1761
 msgid "Show _Tabs"
 msgstr "Montrer les _onglets"
 
-#: ui/gtk.c:1435
+#: ui/gtk.c:1764
+msgid "Detach Tab"
+msgstr "_Détacher l'onglet"
+
+#: ui/gtk.c:1778
 msgid "_Machine"
 msgstr "_Machine"
 
-#: ui/gtk.c:1440
+#: ui/gtk.c:1783
 msgid "_View"
 msgstr "_Vue"
