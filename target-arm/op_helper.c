@@ -378,11 +378,7 @@ void HELPER(exception_return)(CPUARMState *env)
     uint32_t spsr = env->banked_spsr[spsr_idx];
     int new_el, i;
 
-    if (env->pstate & PSTATE_SP) {
-        env->sp_el[cur_el] = env->xregs[31];
-    } else {
-        env->sp_el[0] = env->xregs[31];
-    }
+    aarch64_save_sp(env, cur_el);
 
     env->exclusive_addr = -1;
 
@@ -416,7 +412,7 @@ void HELPER(exception_return)(CPUARMState *env)
         }
         env->aarch64 = 1;
         pstate_write(env, spsr);
-        env->xregs[31] = env->sp_el[new_el];
+        aarch64_restore_sp(env, new_el);
         env->pc = env->elr_el[cur_el];
     }
 
