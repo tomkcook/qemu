@@ -33,6 +33,9 @@
 #include "vsyscall.h"
 #endif
 
+#include "trace-tcg.h"
+
+
 #define PREFIX_REPZ   0x01
 #define PREFIX_REPNZ  0x02
 #define PREFIX_LOCK   0x04
