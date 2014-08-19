@@ -2181,7 +2181,8 @@ void mips_cpu_unassigned_access(CPUState *cs, hwaddr addr,
      * the access.
      */
     if (kvm_enabled()) {
-        return;
+        /* TODO: here a return was replaced by an assertion. */
+        g_assert_not_reached();
     }
 
     if (is_exec) {
