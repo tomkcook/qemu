@@ -1157,7 +1157,7 @@ static int drive_init_func(QemuOpts *opts, void *opaque)
 
 static int drive_enable_snapshot(QemuOpts *opts, void *opaque)
 {
-    if (NULL == qemu_opt_get(opts, "snapshot")) {
+    if (qemu_opt_get(opts, "snapshot") == NULL) {
         qemu_opt_set(opts, "snapshot", "on");
     }
     return 0;
@@ -2545,8 +2545,9 @@ static int foreach_device_config(int type, int (*func)(const char *cmdline))
         loc_push_restore(&conf->loc);
         rc = func(conf->cmdline);
         loc_pop(&conf->loc);
-        if (0 != rc)
+        if (rc) {
             return rc;
+        }
     }
     return 0;
 }
@@ -2956,6 +2957,7 @@ out:
     g_free(dummy);
     if (err) {
         qerror_report_err(err);
+        error_free(err);
         return -1;
     }
     return 0;
