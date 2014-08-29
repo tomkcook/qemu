@@ -310,7 +310,6 @@ void cpu_loop(CPUX86State *env)
                                           env->regs[8],
                                           env->regs[9],
                                           0, 0);
-            env->eip = env->exception_next_eip;
             break;
 #endif
 #ifdef TARGET_X86_64
