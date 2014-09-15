@@ -34,8 +34,7 @@ static void phycard_init(MachineState *machine)
     }
 
     /* RAM at address zero. */
-    memory_region_init_ram(ram, NULL, "phycard.ram", ram_size);
-    vmstate_register_ram_global(ram);
+    memory_region_allocate_system_memory(ram, NULL, "phycard.ram", ram_size);
     memory_region_add_subregion(sysmem, 0, ram);
 
     dev = sysbus_create_simple("syborg,interrupt", 0xC0000000,
