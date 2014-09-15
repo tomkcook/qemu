@@ -111,6 +111,8 @@ static inline char *realpath(const char *path, char *resolved_path)
 }
 #endif
 
+void cpu_ticks_init(void);
+
 /* icount */
 void configure_icount(QemuOpts *opts, Error **errp);
 extern int use_icount;

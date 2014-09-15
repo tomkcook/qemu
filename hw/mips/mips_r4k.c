@@ -209,7 +209,7 @@ void mips_init(MachineState *machine)
                 ((unsigned int)ram_size / (1 << 20)));
         exit(1);
     }
-    memory_region_init_ram(ram, NULL, "mips_r4k.ram", ram_size);
+    memory_region_init_ram(ram, NULL, "mips_r4k.ram", ram_size, &error_abort);
     vmstate_register_ram_global(ram);
 
     memory_region_add_subregion(address_space_mem, 0, ram);
@@ -232,7 +232,8 @@ void mips_init(MachineState *machine)
     g_assert(current_cpu->bigendian == bigendian);
     if ((bios_size > 0) && (bios_size <= BIOS_SIZE)) {
         bios = g_new(MemoryRegion, 1);
-        memory_region_init_ram(bios, NULL, "mips_r4k.bios", BIOS_SIZE);
+        memory_region_init_ram(bios, NULL, "mips_r4k.bios", BIOS_SIZE,
+                               &error_abort);
         vmstate_register_ram_global(bios);
         memory_region_set_readonly(bios, true);
         memory_region_add_subregion(get_system_memory(), 0x1fc00000, bios);
