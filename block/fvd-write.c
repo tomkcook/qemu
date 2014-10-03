@@ -77,7 +77,7 @@ static BlockDriverAIOCB *fvd_aio_writev (BlockDriverState * bs,
             acb->uuid, acb, acb->sector_num, acb->nb_sectors);
 
     if (do_aio_write (acb) < 0) {
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return NULL;
     }
 #ifdef FVD_DEBUG
@@ -86,6 +86,7 @@ static BlockDriverAIOCB *fvd_aio_writev (BlockDriverState * bs,
     return &acb->common;
 }
 
+#if 0
 static void fvd_write_cancel (FvdAIOCB * acb)
 {
     if (acb->write.hd_acb) {
@@ -103,6 +104,7 @@ static void fvd_write_cancel (FvdAIOCB * acb)
     }
     free_write_resource (acb);
 }
+#endif
 
 static void free_write_resource (FvdAIOCB * acb)
 {
@@ -120,7 +122,7 @@ static void free_write_resource (FvdAIOCB * acb)
         my_qemu_vfree (acb->jcb.iov.iov_base);
     }
 
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 
 #ifdef FVD_DEBUG
     pending_local_writes--;

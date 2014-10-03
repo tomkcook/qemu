@@ -126,7 +126,7 @@ static BlockDriverAIOCB *fvd_aio_readv (BlockDriverState * bs,
 
     if (!acb->read.read_backing.hd_acb) {
         my_qemu_vfree (acb->read.read_backing.iov.iov_base);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return NULL;
     }
 
@@ -174,7 +174,7 @@ static BlockDriverAIOCB *fvd_aio_readv (BlockDriverState * bs,
                 my_qemu_vfree (acb->read.read_backing.iov.iov_base);
             }
             my_qemu_vfree (acb->read.read_fvd.iov.iov_base);
-            my_qemu_aio_release (acb);
+            my_qemu_aio_unref (acb);
             return NULL;
         }
     }
@@ -242,7 +242,7 @@ static void finish_copy_on_read (void *opaque, int ret)
 
     QDEBUG ("READ: acb%llu-%p  no_more_copy_on_read\n", acb->uuid, acb);
     my_qemu_vfree (acb->copy.buf);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void finish_read (FvdAIOCB * acb)
@@ -261,7 +261,7 @@ static void finish_read (FvdAIOCB * acb)
         if (acb->read.read_fvd.iov.iov_base) {
             my_qemu_vfree (acb->read.read_fvd.iov.iov_base);
         }
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
 
         return;
     }
@@ -341,7 +341,7 @@ static void finish_read (FvdAIOCB * acb)
          * synchronous I/O may leave the copy-on-read callbacks never being
          * processed due to mismatching context id. */
         my_qemu_vfree (acb->read.read_backing.iov.iov_base);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return;
     }
 
@@ -386,7 +386,7 @@ static void finish_read (FvdAIOCB * acb)
 
     /* No more copy-on-read to do. */
     my_qemu_vfree (acb->copy.buf);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void finish_read_fvd (void *opaque, int ret)
@@ -491,6 +491,7 @@ static inline void calc_read_region (BDRVFvdState * s, int64_t sector_num,
     *p_last_sec_in_backing = last_sec_in_backing;
 }
 
+#if 0
 static void fvd_read_cancel (FvdAIOCB * acb)
 {
     if (acb->read.read_backing.hd_acb) {
@@ -505,7 +506,7 @@ static void fvd_read_cancel (FvdAIOCB * acb)
     if (acb->read.read_fvd.iov.iov_base) {
         my_qemu_vfree (acb->read.read_fvd.iov.iov_base);
     }
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void fvd_copy_cancel (FvdAIOCB * acb)
@@ -525,8 +526,9 @@ static void fvd_copy_cancel (FvdAIOCB * acb)
         /* This is a copy-on-read operation. */
         s->outstanding_copy_on_read_data -= acb->nb_sectors * 512;
     }
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
+#endif
 
 static void restart_dependent_writes (FvdAIOCB * acb)
 {
@@ -554,7 +556,7 @@ static void restart_dependent_writes (FvdAIOCB * acb)
             QDEBUG ("WRITE: acb%llu-%p  finished with error ret=%d\n",
                     req->uuid, req, -1);
             req->common.cb (req->common.opaque, -1);
-            my_qemu_aio_release (req);
+            my_qemu_aio_unref (req);
         }
 
         req = next;

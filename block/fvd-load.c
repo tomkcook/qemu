@@ -154,7 +154,7 @@ load_data_from_compact_image (FvdAIOCB * acb, FvdAIOCB * parent_acb,
             acb->load.one_child.acb = acb;
             return &acb->common;
         } else {
-            my_qemu_aio_release (acb);
+            my_qemu_aio_unref (acb);
             return NULL;
         }
     }
@@ -268,7 +268,7 @@ load_data_from_compact_image (FvdAIOCB * acb, FvdAIOCB * parent_acb,
         bdrv_aio_cancel (acb->load.children[i].hd_acb);
     }
     my_qemu_free (acb->load.children);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
     return NULL;
 }
 
@@ -277,7 +277,7 @@ static void aio_wrapper_bh (void *opaque)
     FvdAIOCB *acb = opaque;
     acb->common.cb (acb->common.opaque, 0);
     qemu_bh_delete (acb->wrapper.bh);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void finish_load_data_from_compact_image (void *opaque, int ret)
@@ -311,7 +311,7 @@ static void finish_load_data_from_compact_image (void *opaque, int ret)
     if (acb->load.children) {
         my_qemu_free (acb->load.children);
     }
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static inline FvdAIOCB *init_load_acb (FvdAIOCB * parent_acb,
@@ -339,11 +339,12 @@ static inline FvdAIOCB *init_load_acb (FvdAIOCB * parent_acb,
     return acb;
 }
 
+#if 0
 static void fvd_wrapper_cancel (FvdAIOCB * acb)
 {
     qemu_bh_cancel (acb->wrapper.bh);
     qemu_bh_delete (acb->wrapper.bh);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void fvd_load_compact_cancel (FvdAIOCB * acb)
@@ -360,5 +361,7 @@ static void fvd_load_compact_cancel (FvdAIOCB * acb)
     if (acb->load.one_child.hd_acb) {
         bdrv_aio_cancel (acb->load.one_child.hd_acb);
     }
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
+#endif
+

@@ -383,6 +383,7 @@ int main(int argc, char **argv)
     int c;
     int opt_index = 0;
     int flags = BDRV_O_UNMAP;
+    Error *local_error = NULL;
 
 #ifdef CONFIG_POSIX
     signal(SIGPIPE, SIG_IGN);
@@ -448,7 +449,11 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    qemu_init_main_loop();
+    if (qemu_init_main_loop(&local_error)) {
+        error_report("%s", error_get_pretty(local_error));
+        error_free(local_error);
+        exit(1);
+    }
     bdrv_init();
 
     /* initialize commands */

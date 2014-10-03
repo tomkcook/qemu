@@ -41,7 +41,6 @@ typedef enum {
     SIM_TIMER
 } sim_op_t;
 
-static void sim_aio_cancel (BlockDriverAIOCB * acb);
 static int64_t sim_uuid = 0;
 static int64_t current_time = 0;
 static int64_t rand_time = 0;
@@ -81,7 +80,6 @@ typedef struct SimAIOCB {
 
 static AIOCBInfo sim_aio_pool = {
     .aiocb_size = sizeof (SimAIOCB),
-    .cancel = sim_aio_cancel,
 };
 
 static SimAIOCB head = {
@@ -207,7 +205,7 @@ static void insert_in_list (SimAIOCB * acb)
 /* Debug problems related to reusing task objects. Problem already solved.*/
 #if 1
 # define my_qemu_aio_get qemu_aio_get
-# define my_qemu_aio_release qemu_aio_release
+# define my_qemu_aio_unref qemu_aio_unref
 
 #else
 static SimAIOCB *search_task_list (SimAIOCB * acb)
@@ -232,10 +230,10 @@ static inline void *my_qemu_aio_get (AIOCBInfo *pool, BlockDriverState *bs,
     return acb;
 }
 
-static inline void my_qemu_aio_release (SimAIOCB * acb)
+static inline void my_qemu_aio_unref (SimAIOCB * acb)
 {
-    QDEBUG ("SIM: qemu_aio_release task%" PRId64 "\n", acb->uuid);
-    qemu_aio_release (acb);
+    QDEBUG ("SIM: qemu_aio_unref task%" PRId64 "\n", acb->uuid);
+    qemu_aio_unref (acb);
 }
 #endif
 
@@ -374,7 +372,7 @@ void sim_free_timer (void *ts)
 {
     SimAIOCB *acb = ts;
     CHECK_TASK (acb->uuid);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 void sim_del_timer (void *ts)
@@ -493,7 +491,7 @@ static void sim_task_by_acb (SimAIOCB * acb)
                 acb->uuid, acb->time);
         sim_callback (acb);
         CHECK_TASK (acb->uuid);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
     } else {
         fprintf (stderr, "Unknown op %d\n", acb->op);
         exit (1);
@@ -557,6 +555,7 @@ static BlockDriverAIOCB *sim_aio_flush (BlockDriverState * bs,
     return insert_task (SIM_FLUSH, bs, 0, NULL, 0, cb, opaque);
 }
 
+#if 0
 static void sim_aio_cancel (BlockDriverAIOCB * blockacb)
 {
     SimAIOCB *acb = container_of (blockacb, SimAIOCB, common);
@@ -567,11 +566,12 @@ static void sim_aio_cancel (BlockDriverAIOCB * blockacb)
         acb->next->prev = acb->prev;
         acb->prev->next = acb->next;
         acb->prev = NULL;
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
     } else {
         ASSERT (FALSE);        /* Cancel a task not in the list. */
     }
 }
+#endif
 
 static int sim_probe (const uint8_t * buf, int buf_size, const char *filename)
 {

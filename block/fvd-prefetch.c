@@ -41,7 +41,7 @@ void fvd_init_prefetch (void *opaque)
             s->prefetch_error = TRUE;
             int j;
             for (j = 0; j < i; j++) {
-                my_qemu_aio_release (s->prefetch_acb[j]);
+                my_qemu_aio_unref (s->prefetch_acb[j]);
                 s->prefetch_acb[j] = NULL;
             }
 
@@ -111,7 +111,7 @@ static void terminate_prefetch (BlockDriverState * bs, int final_state)
     for (i = 0; i < s->num_prefetch_slots; i++) {
         if (s->prefetch_acb) {
             my_qemu_vfree (s->prefetch_acb[i]->copy.buf);
-            my_qemu_aio_release (s->prefetch_acb[i]);
+            my_qemu_aio_unref (s->prefetch_acb[i]);
             s->prefetch_acb[i] = NULL;
         }
     }

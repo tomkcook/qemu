@@ -325,7 +325,7 @@ static void finish_write_journal (void *opaque, int ret)
         if (acb->jcb.iov.iov_base != NULL) {
             my_qemu_vfree (acb->jcb.iov.iov_base);
         }
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
     } else {
         ASSERT (acb->type == OP_WRITE);
         finish_write (acb, ret);

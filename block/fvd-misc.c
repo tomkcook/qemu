@@ -13,6 +13,7 @@
  *  BlockDriver interface for the Fast Virtual Disk (FVD) format.
  *===========================================================================*/
 
+#if 0
 static void fvd_flush_cancel (FvdAIOCB * acb)
 {
     if (acb->flush.data_acb) {
@@ -21,7 +22,7 @@ static void fvd_flush_cancel (FvdAIOCB * acb)
     if (acb->flush.metadata_acb) {
         bdrv_aio_cancel (acb->flush.metadata_acb);
     }
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void fvd_aio_cancel (BlockDriverAIOCB * blockacb)
@@ -60,13 +61,14 @@ static void fvd_aio_cancel (BlockDriverAIOCB * blockacb)
         break;
     }
 }
+#endif
 
 static inline void finish_flush (FvdAIOCB * acb)
 {
     QDEBUG ("FLUSH: acb%llu-%p  finish_flush ret=%d\n",
             acb->uuid, acb, acb->flush.ret);
     acb->common.cb (acb->common.opaque, acb->flush.ret);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
 
 static void finish_flush_data (void *opaque, int ret)
@@ -123,7 +125,7 @@ static BlockDriverAIOCB *fvd_aio_flush (BlockDriverState * bs,
     acb->flush.ret = 0;
     acb->flush.data_acb = bdrv_aio_flush (s->fvd_data, finish_flush_data, acb);
     if (!acb->flush.data_acb) {
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return NULL;
     }
 
@@ -131,7 +133,7 @@ static BlockDriverAIOCB *fvd_aio_flush (BlockDriverState * bs,
                                               finish_flush_metadata, acb);
     if (!acb->flush.metadata_acb) {
         bdrv_aio_cancel (acb->flush.data_acb);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return NULL;
     }
 
@@ -182,7 +184,7 @@ static void fvd_close (BlockDriverState * bs)
                     bdrv_aio_cancel (acb->copy.hd_acb);
                 }
                 my_qemu_vfree (s->prefetch_acb[i]->copy.buf);
-                my_qemu_aio_release (s->prefetch_acb[i]);
+                my_qemu_aio_unref (s->prefetch_acb[i]);
                 s->prefetch_acb[i] = NULL;
             }
         }

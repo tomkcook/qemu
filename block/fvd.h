@@ -382,7 +382,9 @@ static void restart_dependent_writes(struct FvdAIOCB *acb);
 static void finish_prefetch_read(void *opaque, int ret);
 static int read_fvd_header(BDRVFvdState * s, FvdHeader * header);
 static int update_fvd_header(BDRVFvdState * s, FvdHeader * header);
+#if 0
 static void fvd_aio_cancel(BlockDriverAIOCB * blockacb);
+#endif
 static BlockDriverAIOCB *store_data_in_compact_image(struct FvdAIOCB *acb,
             int soft_write, struct FvdAIOCB *parent_acb, BlockDriverState * bs,
             int64_t sector_num, QEMUIOVector * qiov, int nb_sectors,
@@ -413,12 +415,14 @@ static BlockDriverAIOCB *fvd_aio_flush(BlockDriverState * bs,
 static int fvd_get_info(BlockDriverState * bs, BlockDriverInfo * bdi);
 static int fvd_update(BlockDriverState * bs, int argc, char **argv);
 static int fvd_has_zero_init(BlockDriverState * bs);
+#if 0
 static void fvd_read_cancel(FvdAIOCB * acb);
 static void fvd_write_cancel(FvdAIOCB * acb);
 static void fvd_copy_cancel(FvdAIOCB * acb);
 static void fvd_load_compact_cancel(FvdAIOCB * acb);
 static void fvd_store_compact_cancel(FvdAIOCB * acb);
 static void fvd_wrapper_cancel(FvdAIOCB * acb);
+#endif
 static void flush_metadata_to_disk_on_exit (BlockDriverState *bs);
 static inline BlockDriverAIOCB *load_data(FvdAIOCB * parent_acb,
             BlockDriverState * bs, int64_t sector_num, QEMUIOVector * orig_qiov,

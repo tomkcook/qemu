@@ -184,7 +184,7 @@ static BlockDriverAIOCB *store_data_in_compact_image (FvdAIOCB * acb,
             acb->store.one_child.acb = acb;
             return &acb->common;
         } else {
-            my_qemu_aio_release (acb);
+            my_qemu_aio_unref (acb);
             return NULL;
         }
     }
@@ -298,7 +298,7 @@ static BlockDriverAIOCB *store_data_in_compact_image (FvdAIOCB * acb,
         bdrv_aio_cancel (acb->store.children[i].hd_acb);
     }
     my_qemu_free (acb->store.children);
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
     return NULL;
 }
 
@@ -376,7 +376,7 @@ static void finish_store_data_in_compact_image (void *opaque, int ret)
                 "store_last_child_finished_with_error ret=%d\n",
                 acb->uuid, acb, acb->store.ret);
         acb->common.cb (acb->common.opaque, acb->store.ret);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return;
     }
 
@@ -385,7 +385,7 @@ static void finish_store_data_in_compact_image (void *opaque, int ret)
                 "store_last_child_finished_without_table_update\n",
                 acb->uuid, acb);
         acb->common.cb (acb->common.opaque, acb->store.ret);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return;
     }
 
@@ -416,7 +416,7 @@ static void finish_store_data_in_compact_image (void *opaque, int ret)
                 acb->uuid, acb);
         acb->store.parent_acb->write.update_table = update_table;
         acb->common.cb (acb->common.opaque, acb->store.ret);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
         return;
     }
 
@@ -430,7 +430,7 @@ static void finish_store_data_in_compact_image (void *opaque, int ret)
                 "store_last_child_finished_without_table_update\n",
                 acb->uuid, acb);
         acb->common.cb (acb->common.opaque, acb->store.ret);
-        my_qemu_aio_release (acb);
+        my_qemu_aio_unref (acb);
     }
 }
 
@@ -465,6 +465,7 @@ static inline FvdAIOCB *init_store_acb (int soft_write,
     return acb;
 }
 
+#if 0
 static void fvd_store_compact_cancel (FvdAIOCB * acb)
 {
     if (acb->store.children) {
@@ -490,5 +491,6 @@ static void fvd_store_compact_cancel (FvdAIOCB * acb)
         QLIST_REMOVE (acb, jcb.next_wait_for_journal);
     }
 
-    my_qemu_aio_release (acb);
+    my_qemu_aio_unref (acb);
 }
+#endif

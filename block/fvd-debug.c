@@ -69,7 +69,7 @@ static void TRACE_STORE_IN_FVD (const char *str, int64_t sector_num,
 # define my_qemu_free g_free
 # define my_qemu_vfree qemu_vfree
 # define my_qemu_aio_get qemu_aio_get
-# define my_qemu_aio_release qemu_aio_release
+# define my_qemu_aio_unref qemu_aio_unref
 # define COPY_UUID(to,from) do {} while (0)
 
 #else
@@ -232,7 +232,7 @@ static inline void *_my_qemu_aio_get (AIOCBInfo *pool, BlockDriverState *bs,
     return acb;
 }
 
-static inline void my_qemu_aio_release (void *p)
+static inline void my_qemu_aio_unref (void *p)
 {
     pending_qemu_aio_get--;
     ASSERT (pending_qemu_aio_get >= 0);
@@ -242,7 +242,7 @@ static inline void my_qemu_aio_release (void *p)
     trace_free (&acb->tracer);
 #endif
 
-    qemu_aio_release (p);
+    qemu_aio_unref (p);
 }
 
 static inline void *_my_qemu_malloc (size_t size)

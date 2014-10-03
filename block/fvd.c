@@ -50,7 +50,6 @@ bool in_qemu_tool;
 
 static AIOCBInfo fvd_aio_pool = {
     .aiocb_size = sizeof (FvdAIOCB),
-    .cancel = fvd_aio_cancel,
 };
 
 static BlockDriver bdrv_fvd = {
