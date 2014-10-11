@@ -3346,6 +3346,21 @@ if compile_prog "" "" ; then
   fallocate_punch_hole=yes
 fi
 
+# check for posix_fallocate
+posix_fallocate=no
+cat > $TMPC << EOF
+#include <fcntl.h>
+
+int main(void)
+{
+    posix_fallocate(0, 0, 0);
+    return 0;
+}
+EOF
+if compile_prog "" "" ; then
+    posix_fallocate=yes
+fi
+
 # check for sync_file_range
 sync_file_range=no
 cat > $TMPC << EOF
@@ -4000,12 +4015,11 @@ if compile_prog "-Werror" "" ; then
 fi
 
 ########################################
-# check if we have valgrind/valgrind.h and valgrind/memcheck.h
+# check if we have valgrind/valgrind.h
 
 valgrind_h=no
 cat > $TMPC << EOF
 #include <valgrind/valgrind.h>
-#include <valgrind/memcheck.h>
 int main(void) {
   return 0;
 }
@@ -4573,6 +4587,9 @@ fi
 if test "$fallocate_punch_hole" = "yes" ; then
   echo "CONFIG_FALLOCATE_PUNCH_HOLE=y" >> $config_host_mak
 fi
+if test "$posix_fallocate" = "yes" ; then
+  echo "CONFIG_POSIX_FALLOCATE=y" >> $config_host_mak
+fi
 if test "$sync_file_range" = "yes" ; then
   echo "CONFIG_SYNC_FILE_RANGE=y" >> $config_host_mak
 fi
@@ -5061,7 +5078,7 @@ case "$target_name" in
   aarch64)
     TARGET_BASE_ARCH=arm
     bflt="yes"
-    gdb_xml_files="aarch64-core.xml aarch64-fpu.xml"
+    gdb_xml_files="aarch64-core.xml aarch64-fpu.xml arm-core.xml arm-vfp.xml arm-vfp3.xml arm-neon.xml"
   ;;
   cris)
   ;;
