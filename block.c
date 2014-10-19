@@ -335,18 +335,13 @@ void bdrv_register(BlockDriver *bdrv)
     QLIST_INSERT_HEAD(&bdrv_drivers, bdrv, list);
 }
 
-static bool bdrv_is_valid_name(const char *name)
-{
-    return qemu_opts_id_wellformed(name);
-}
-
 /* create a new block device (by default it is empty) */
 BlockDriverState *bdrv_new(const char *device_name, Error **errp)
 {
     BlockDriverState *bs;
     int i;
 
-    if (*device_name && !bdrv_is_valid_name(device_name)) {
+    if (*device_name && !id_wellformed(device_name)) {
         error_setg(errp, "Invalid device name");
         return NULL;
     }
@@ -874,7 +869,7 @@ static void bdrv_assign_node_name(BlockDriverState *bs,
     }
 
     /* Check for empty string or invalid characters */
-    if (!bdrv_is_valid_name(node_name)) {
+    if (!id_wellformed(node_name)) {
         error_setg(errp, "Invalid node name");
         return;
     }
@@ -5048,6 +5043,11 @@ void bdrv_invalidate_cache(BlockDriverState *bs, Error **errp)
         return;
     }
 
+    if (!(bs->open_flags & BDRV_O_INCOMING)) {
+        return;
+    }
+    bs->open_flags &= ~BDRV_O_INCOMING;
+
     if (bs->drv->bdrv_invalidate_cache) {
         bs->drv->bdrv_invalidate_cache(bs, &local_err);
     } else if (bs->file) {
@@ -5080,19 +5080,6 @@ void bdrv_invalidate_cache_all(Error **errp)
             error_propagate(errp, local_err);
             return;
         }
-    }
-}
-
-void bdrv_clear_incoming_migration_all(void)
-{
-    BlockDriverState *bs;
-
-    QTAILQ_FOREACH(bs, &bdrv_states, device_list) {
-        AioContext *aio_context = bdrv_get_aio_context(bs);
-
-        aio_context_acquire(aio_context);
-        bs->open_flags = bs->open_flags & ~(BDRV_O_INCOMING);
-        aio_context_release(aio_context);
     }
 }
 
