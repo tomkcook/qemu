@@ -68,7 +68,7 @@
 #include "sysemu/sysemu.h"      /* serial_hds */
 #include "qemu/timer.h"         /* QEMU_CLOCK_VIRTUAL */
 
-#include "block/block.h"        /* bdrv_getlength */
+#include "sysemu/block-backend.h" /* blk_getlength */
 #include "sysemu/blockdev.h"    /* drive_get */
 #include "ui/console.h"         /* console_select */
 #include "disas/disas.h"        /* lookup_symbol */
@@ -3838,7 +3838,7 @@ static void ar7_common_init(MachineState *machine,
     AR7State *s;
     DeviceState *dev;
     DriveInfo *dinfo;
-    BlockDriverState *flash_driver = NULL;
+    BlockBackend *flash_driver = NULL;
     MemoryRegion *system_memory = get_system_memory();
     int rom_size;
 #if defined(CONFIG_VLYNQ) // TODO
@@ -3907,9 +3907,9 @@ static void ar7_common_init(MachineState *machine,
        run. */
     dinfo = drive_get(IF_PFLASH, 0, 0);
     if (dinfo) {
-        int64_t image_size = bdrv_getlength(dinfo->bdrv);
+        int64_t image_size = blk_getlength(blk_by_legacy_dinfo(dinfo));
         if (image_size > 0) {
-            flash_driver = dinfo->bdrv;
+            flash_driver = blk_by_legacy_dinfo(dinfo);
             flash_size = image_size;
         }
     }

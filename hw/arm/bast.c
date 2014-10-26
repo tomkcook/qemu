@@ -419,7 +419,7 @@ static void stcb_init(MachineState *machine)
     SysBusDevice *s;
     int i;
     int ret;
-    BlockDriverState *flash_bds = NULL;
+    BlockBackend *flash_bds = NULL;
     //~ qemu_irq *i8259;
 
     /* ensure memory is limited to 256MB */
@@ -457,7 +457,7 @@ static void stcb_init(MachineState *machine)
     /* Acquire flash contents and register pflash device */
     if (dinfo) {
         /* load from specified flash device */
-        flash_bds = dinfo->bdrv;
+        flash_bds = blk_by_legacy_dinfo(dinfo);
     } else {
         /* Try and load default bootloader image */
         char *filename= qemu_find_file(QEMU_FILE_TYPE_BIOS, BIOS_FILENAME);

@@ -29,7 +29,7 @@ static int traceflag;
 pflash_t *pflash_device_register(hwaddr base,
                                  DeviceState *qdev, const char *name,
                                  hwaddr size,
-                                 BlockDriverState *bs, int width,
+                                 BlockBackend *bs, int width,
                                  uint16_t flash_manufacturer,
                                  uint16_t flash_type,
                                  int be)

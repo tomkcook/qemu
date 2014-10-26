@@ -736,16 +736,16 @@ static const VMStateDescription vmstate_bcm2835_emmc = {
 
 static int bcm2835_emmc_init(SysBusDevice *sbd)
 {
-    DriveInfo *di;
+    DriveInfo *dinfo;
     DeviceState *dev = DEVICE(sbd);
     bcm2835_emmc_state *s = BCM2835_EMMC(dev);
 
-    di = drive_get(IF_SD, 0, 0);
-    if (!di) {
+    dinfo = drive_get(IF_SD, 0, 0);
+    if (!dinfo) {
         fprintf(stderr, "bcm2835_emmc: missing SD card\n");
         exit(1);
     }
-    s->card = sd_init(di->bdrv, 0);
+    s->card = sd_init(blk_by_legacy_dinfo(dinfo), 0);
 
     s->arg2 = 0;
     s->blksizecnt = 0;
