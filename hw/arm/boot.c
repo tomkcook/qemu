@@ -556,6 +556,8 @@ void arm_load_kernel(ARMCPU *cpu, struct arm_boot_info *info)
     info->initrd_start = info->loader_start +
         MIN(info->ram_size / 2, 128 * 1024 * 1024);
 
+    cs = CPU(cpu);
+
     /* Assume that raw images are linux kernels, and ELF images are not.  */
     /* If the filename contains 'vmlinux', assume ELF images are linux, too. */
     is_linux = (strstr(info->kernel_filename, "vmlinux") != NULL);
