@@ -25,7 +25,6 @@
 #include "hw/hw.h"
 #include "monitor/qdev.h"
 #include "hw/usb.h"
-#include "hw/pcmcia.h"
 #include "hw/i386/pc.h"
 #include "hw/pci/pci.h"
 #include "sysemu/watchdog.h"
@@ -2792,13 +2791,6 @@ static mon_cmd_t info_cmds[] = {
         .mhandler.cmd = hmp_info_status,
     },
     {
-        .name       = "pcmcia",
-        .args_type  = "",
-        .params     = "",
-        .help       = "show guest PCMCIA status",
-        .mhandler.cmd = pcmcia_info,
-    },
-    {
         .name       = "mice",
         .args_type  = "",
         .params     = "",
@@ -4322,23 +4314,29 @@ void object_add_completion(ReadLineState *rs, int nb_args, const char *str)
     g_slist_free(list);
 }
 
-static void device_del_bus_completion(ReadLineState *rs,  BusState *bus,
-                                      const char *str, size_t len)
+static void peripheral_device_del_completion(ReadLineState *rs,
+                                             const char *str, size_t len)
 {
-    BusChild *kid;
+    Object *peripheral;
+    GSList *list = NULL, *item;
 
-    QTAILQ_FOREACH(kid, &bus->children, sibling) {
-        DeviceState *dev = kid->child;
-        BusState *dev_child;
+    peripheral = object_resolve_path("/machine/peripheral/", NULL);
+    if (peripheral == NULL) {
+        return;
+    }
+
+    object_child_foreach(peripheral, qdev_build_hotpluggable_device_list,
+                         &list);
+
+    for (item = list; item; item = g_slist_next(item)) {
+        DeviceState *dev = item->data;
 
         if (dev->id && !strncmp(str, dev->id, len)) {
             readline_add_completion(rs, dev->id);
         }
-
-        QLIST_FOREACH(dev_child, &dev->child_bus, sibling) {
-            device_del_bus_completion(rs, dev_child, str, len);
-        }
     }
+
+    g_slist_free(list);
 }
 
 void chardev_remove_completion(ReadLineState *rs, int nb_args, const char *str)
@@ -4413,7 +4411,7 @@ void device_del_completion(ReadLineState *rs, int nb_args, const char *str)
 
     len = strlen(str);
     readline_set_completion_index(rs, len);
-    device_del_bus_completion(rs, sysbus_get_default(), str, len);
+    peripheral_device_del_completion(rs, str, len);
 }
 
 void object_del_completion(ReadLineState *rs, int nb_args, const char *str)

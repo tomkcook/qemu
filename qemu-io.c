@@ -183,7 +183,7 @@ static int quit_f(BlockDriverState *bs, int argc, char **argv)
     return 1;
 }
 
-#if !defined(_WIN32)
+#if defined(CONFIG_FVD)
 # include "qemu-io-sim.c"
 #endif
 
