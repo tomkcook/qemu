@@ -16,12 +16,11 @@ typedef struct DisasContext {
     struct TranslationBlock *tb;
     int singlestep_enabled;
     int thumb;
-    int sctlr_b;
-    int cpsr_e;
-    TCGMemOp mo_endianness;
+    int bswap_code;
 #if !defined(CONFIG_USER_ONLY)
     int user;
 #endif
+    bool ns;        /* Use non-secure CPREG bank on access */
     bool cpacr_fpen; /* FP enabled via CPACR.FPEN */
     bool vfp_enabled; /* FP enabled via FPSCR.EN */
     int vec_len;

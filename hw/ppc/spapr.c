@@ -1656,6 +1656,9 @@ static void spapr_machine_initfn(Object *obj)
 {
     object_property_add_str(obj, "kvm-type",
                             spapr_get_kvm_type, spapr_set_kvm_type, NULL);
+    object_property_set_description(obj, "kvm-type",
+                                    "Specifies the KVM virtualization mode (HV, PR)",
+                                    NULL);
 }
 
 static void ppc_cpu_do_nmi_on_cpu(void *arg)

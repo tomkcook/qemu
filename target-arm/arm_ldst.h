@@ -25,10 +25,10 @@
 
 /* Load an instruction and return it in the standard little-endian order */
 static inline uint32_t arm_ldl_code(CPUARMState *env, target_ulong addr,
-                                    bool sctlr_b)
+                                    bool do_swap)
 {
     uint32_t insn = cpu_ldl_code(env, addr);
-    if (bswap_code(sctlr_b)) {
+    if (do_swap) {
         return bswap32(insn);
     }
     return insn;
@@ -36,10 +36,10 @@ static inline uint32_t arm_ldl_code(CPUARMState *env, target_ulong addr,
 
 /* Ditto, for a halfword (Thumb) instruction */
 static inline uint16_t arm_lduw_code(CPUARMState *env, target_ulong addr,
-                                     bool sctlr_b)
+                                     bool do_swap)
 {
     uint16_t insn = cpu_lduw_code(env, addr);
-    if (bswap_code(sctlr_b)) {
+    if (do_swap) {
         return bswap16(insn);
     }
     return insn;
