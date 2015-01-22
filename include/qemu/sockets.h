@@ -62,6 +62,11 @@ int qemu_setsockopt(int sockfd, int level, int optname,
 #define qemu_recv(sockfd, buf, len, flags) recv(sockfd, buf, len, flags)
 #define qemu_sendto(sockfd, buf, len, flags, destaddr, addrlen) \
     sendto(sockfd, buf, len, flags, destaddr, addrlen)
+
+/* Windows has different names for the same constants with the same values */
+#define SHUT_RD   0
+#define SHUT_WR   1
+#define SHUT_RDWR 2
 #endif
 
 /* callback function for nonblocking connect
