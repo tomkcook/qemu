@@ -177,7 +177,6 @@ static void vga_update_memory_access(VGACommonState *s)
             size = 0x8000;
             break;
         }
-        base += isa_mem_base;
         memory_region_init_alias(&s->chain4_alias, memory_region_owner(&s->vram),
                                  "vga.chain4", &s->vram, offset, size);
         memory_region_add_subregion_overlap(s->legacy_address_space, base,
@@ -2035,7 +2034,7 @@ static bool vga_endian_state_needed(void *opaque)
     return s->default_endian_fb != s->big_endian_fb;
 }
 
-const VMStateDescription vmstate_vga_endian = {
+static const VMStateDescription vmstate_vga_endian = {
     .name = "vga.endian",
     .version_id = 1,
     .minimum_version_id = 1,
@@ -2221,7 +2220,7 @@ void vga_init(VGACommonState *s, Object *obj, MemoryRegion *address_space,
 
     vga_io_memory = vga_init_io(s, obj, &vga_ports, &vbe_ports);
     memory_region_add_subregion_overlap(address_space,
-                                        isa_mem_base + 0x000a0000,
+                                        0x000a0000,
                                         vga_io_memory,
                                         1);
     memory_region_set_coalescing(vga_io_memory);

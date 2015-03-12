@@ -868,7 +868,8 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     /* read the backing file name */
     if (header.backing_file_offset != 0) {
         len = header.backing_file_size;
-        if (len > MIN(1023, s->cluster_size - header.backing_file_offset)) {
+        if (len > MIN(1023, s->cluster_size - header.backing_file_offset) ||
+            len >= sizeof(bs->backing_file)) {
             error_setg(errp, "Backing file name too long");
             ret = -EINVAL;
             goto fail;
@@ -2520,15 +2521,12 @@ static int qcow2_save_vmstate(BlockDriverState *bs, QEMUIOVector *qiov,
 {
     BDRVQcowState *s = bs->opaque;
     int64_t total_sectors = bs->total_sectors;
-    int growable = bs->growable;
     bool zero_beyond_eof = bs->zero_beyond_eof;
     int ret;
 
     BLKDBG_EVENT(bs->file, BLKDBG_VMSTATE_SAVE);
-    bs->growable = 1;
     bs->zero_beyond_eof = false;
     ret = bdrv_pwritev(bs, qcow2_vm_state_offset(s) + pos, qiov);
-    bs->growable = growable;
     bs->zero_beyond_eof = zero_beyond_eof;
 
     /* bdrv_co_do_writev will have increased the total_sectors value to include
@@ -2543,15 +2541,12 @@ static int qcow2_load_vmstate(BlockDriverState *bs, uint8_t *buf,
                               int64_t pos, int size)
 {
     BDRVQcowState *s = bs->opaque;
-    int growable = bs->growable;
     bool zero_beyond_eof = bs->zero_beyond_eof;
     int ret;
 
     BLKDBG_EVENT(bs->file, BLKDBG_VMSTATE_LOAD);
-    bs->growable = 1;
     bs->zero_beyond_eof = false;
     ret = bdrv_pread(bs, qcow2_vm_state_offset(s) + pos, buf, size);
-    bs->growable = growable;
     bs->zero_beyond_eof = zero_beyond_eof;
 
     return ret;

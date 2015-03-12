@@ -29,6 +29,7 @@
 #ifndef CONFIG_USER_ONLY
 #include <migration/qemu-file.h>
 #endif
+#include <qjson.h>
 
 typedef void SaveStateHandler(QEMUFile *f, void *opaque);
 typedef int LoadStateHandler(QEMUFile *f, void *opaque, int version_id);
@@ -138,9 +139,7 @@ struct VMStateDescription {
     const VMStateSubsection *subsections;
 };
 
-#ifdef CONFIG_USER_ONLY
 extern const VMStateDescription vmstate_dummy;
-#endif
 
 extern const VMStateInfo vmstate_info_bool;
 
@@ -357,6 +356,16 @@ extern const VMStateInfo vmstate_info_bitmap;
     .size       = sizeof(_type *),                                    \
     .flags      = VMS_ARRAY|VMS_STRUCT|VMS_ARRAY_OF_POINTER,         \
     .offset     = vmstate_offset_array(_s, _f, _type*, _n),          \
+}
+
+#define VMSTATE_STRUCT_SUB_ARRAY(_field, _state, _start, _num, _version, _vmsd, _type) { \
+    .name       = (stringify(_field)),                                     \
+    .version_id = (_version),                                              \
+    .num        = (_num),                                                  \
+    .vmsd       = &(_vmsd),                                                \
+    .size       = sizeof(_type),                                           \
+    .flags      = VMS_STRUCT|VMS_ARRAY,                                    \
+    .offset     = vmstate_offset_sub_array(_state, _field, _type, _start), \
 }
 
 #define VMSTATE_STRUCT_ARRAY_TEST(_field, _state, _num, _test, _version, _vmsd, _type) { \
@@ -642,17 +651,29 @@ extern const VMStateInfo vmstate_info_bitmap;
 #define VMSTATE_FLOAT64(_f, _s)                                       \
     VMSTATE_FLOAT64_V(_f, _s, 0)
 
-#define VMSTATE_TIMER_TEST(_f, _s, _test)                             \
+#define VMSTATE_TIMER_PTR_TEST(_f, _s, _test)                             \
     VMSTATE_POINTER_TEST(_f, _s, _test, vmstate_info_timer, QEMUTimer *)
 
-#define VMSTATE_TIMER_V(_f, _s, _v)                                   \
+#define VMSTATE_TIMER_PTR_V(_f, _s, _v)                                   \
     VMSTATE_POINTER(_f, _s, _v, vmstate_info_timer, QEMUTimer *)
+
+#define VMSTATE_TIMER_PTR(_f, _s)                                         \
+    VMSTATE_TIMER_PTR_V(_f, _s, 0)
+
+#define VMSTATE_TIMER_PTR_ARRAY(_f, _s, _n)                              \
+    VMSTATE_ARRAY_OF_POINTER(_f, _s, _n, 0, vmstate_info_timer, QEMUTimer *)
+
+#define VMSTATE_TIMER_TEST(_f, _s, _test)                             \
+    VMSTATE_SINGLE_TEST(_f, _s, _test, 0, vmstate_info_timer, QEMUTimer)
+
+#define VMSTATE_TIMER_V(_f, _s, _v)                                   \
+    VMSTATE_SINGLE(_f, _s, _v, vmstate_info_timer, QEMUTimer)
 
 #define VMSTATE_TIMER(_f, _s)                                         \
     VMSTATE_TIMER_V(_f, _s, 0)
 
 #define VMSTATE_TIMER_ARRAY(_f, _s, _n)                              \
-    VMSTATE_ARRAY_OF_POINTER(_f, _s, _n, 0, vmstate_info_timer, QEMUTimer *)
+    VMSTATE_ARRAY(_f, _s, _n, 0, vmstate_info_timer, QEMUTimer)
 
 #define VMSTATE_BOOL_ARRAY_V(_f, _s, _n, _v)                         \
     VMSTATE_ARRAY(_f, _s, _n, _v, vmstate_info_bool, bool)
@@ -779,7 +800,7 @@ extern const VMStateInfo vmstate_info_bitmap;
 int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
                        void *opaque, int version_id);
 void vmstate_save_state(QEMUFile *f, const VMStateDescription *vmsd,
-                        void *opaque);
+                        void *opaque, QJSON *vmdesc);
 
 int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
                                    const VMStateDescription *vmsd,

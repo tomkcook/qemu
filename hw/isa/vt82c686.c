@@ -234,7 +234,7 @@ static const VMStateDescription vmstate_acpi = {
         VMSTATE_UINT16(ar.pm1.evt.en, VT686PMState),
         VMSTATE_UINT16(ar.pm1.cnt.cnt, VT686PMState),
         VMSTATE_STRUCT(apm, VT686PMState, 0, vmstate_apm, APMState),
-        VMSTATE_TIMER(ar.tmr.timer, VT686PMState),
+        VMSTATE_TIMER_PTR(ar.tmr.timer, VT686PMState),
         VMSTATE_INT64(ar.tmr.overflow_time, VT686PMState),
         VMSTATE_END_OF_LIST()
     }
@@ -429,7 +429,8 @@ static int vt82c686b_initfn(PCIDevice *d)
     uint8_t *wmask;
     int i;
 
-    isa_bus = isa_bus_new(&d->qdev, pci_address_space_io(d));
+    isa_bus = isa_bus_new(DEVICE(d), get_system_memory(),
+                          pci_address_space_io(d));
 
     pci_conf = d->config;
     pci_config_set_prog_interface(pci_conf, 0x0);

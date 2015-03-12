@@ -354,13 +354,11 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
     ThrottleConfig cfg;
     int snapshot = 0;
     bool copy_on_read;
-    int ret;
     Error *error = NULL;
     QemuOpts *opts;
     const char *id;
     bool has_driver_specific_opts;
     BlockdevDetectZeroesOptions detect_zeroes;
-    BlockDriver *drv = NULL;
 
     /* Check common options by copying from bs_opts to opts, all other options
      * stay in bs_opts for processing by bdrv_open(). */
@@ -426,11 +424,11 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
             goto early_err;
         }
 
-        drv = bdrv_find_format(buf);
-        if (!drv) {
-            error_setg(errp, "'%s' invalid format", buf);
+        if (qdict_haskey(bs_opts, "driver")) {
+            error_setg(errp, "Cannot specify both 'driver' and 'format'");
             goto early_err;
         }
+        qdict_put(bs_opts, "driver", qstring_from_str(buf));
     }
 
     /* disk I/O throttling */
@@ -505,13 +503,46 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
     }
 
     /* init */
-    blk = blk_new_with_bs(qemu_opts_id(opts), errp);
-    if (!blk) {
-        goto early_err;
+    if ((!file || !*file) && !has_driver_specific_opts) {
+        blk = blk_new_with_bs(qemu_opts_id(opts), errp);
+        if (!blk) {
+            goto early_err;
+        }
+
+        bs = blk_bs(blk);
+        bs->open_flags = snapshot ? BDRV_O_SNAPSHOT : 0;
+        bs->read_only = ro;
+
+        QDECREF(bs_opts);
+    } else {
+        if (file && !*file) {
+            file = NULL;
+        }
+
+        if (snapshot) {
+            /* always use cache=unsafe with snapshot */
+            bdrv_flags &= ~BDRV_O_CACHE_MASK;
+            bdrv_flags |= (BDRV_O_SNAPSHOT|BDRV_O_CACHE_WB|BDRV_O_NO_FLUSH);
+        }
+
+        if (copy_on_read) {
+            bdrv_flags |= BDRV_O_COPY_ON_READ;
+        }
+
+        if (runstate_check(RUN_STATE_INMIGRATE)) {
+            bdrv_flags |= BDRV_O_INCOMING;
+        }
+
+        bdrv_flags |= ro ? 0 : BDRV_O_RDWR;
+
+        blk = blk_new_open(qemu_opts_id(opts), file, NULL, bs_opts, bdrv_flags,
+                           errp);
+        if (!blk) {
+            goto err_no_bs_opts;
+        }
+        bs = blk_bs(blk);
     }
-    bs = blk_bs(blk);
-    bs->open_flags = snapshot ? BDRV_O_SNAPSHOT : 0;
-    bs->read_only = ro;
+
     bs->detect_zeroes = detect_zeroes;
 
     bdrv_set_on_error(bs, on_read_error, on_write_error);
@@ -522,53 +553,14 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
         bdrv_set_io_limits(bs, &cfg);
     }
 
-    if (!file || !*file) {
-        if (has_driver_specific_opts) {
-            file = NULL;
-        } else {
-            QDECREF(bs_opts);
-            qemu_opts_del(opts);
-            return blk;
-        }
-    }
-    if (snapshot) {
-        /* always use cache=unsafe with snapshot */
-        bdrv_flags &= ~BDRV_O_CACHE_MASK;
-        bdrv_flags |= (BDRV_O_SNAPSHOT|BDRV_O_CACHE_WB|BDRV_O_NO_FLUSH);
-    }
-
-    if (copy_on_read) {
-        bdrv_flags |= BDRV_O_COPY_ON_READ;
-    }
-
-    if (runstate_check(RUN_STATE_INMIGRATE)) {
-        bdrv_flags |= BDRV_O_INCOMING;
-    }
-
-    bdrv_flags |= ro ? 0 : BDRV_O_RDWR;
-
-    QINCREF(bs_opts);
-    ret = bdrv_open(&bs, file, NULL, bs_opts, bdrv_flags, drv, &error);
-    assert(bs == blk_bs(blk));
-
-    if (ret < 0) {
-        error_setg(errp, "could not open disk image %s: %s",
-                   file ?: blk_name(blk), error_get_pretty(error));
-        error_free(error);
-        goto err;
-    }
-
     if (bdrv_key_required(bs)) {
         autostart = 0;
     }
 
-    QDECREF(bs_opts);
+err_no_bs_opts:
     qemu_opts_del(opts);
-
     return blk;
 
-err:
-    blk_unref(blk);
 early_err:
     qemu_opts_del(opts);
 err_no_opts:
@@ -1793,7 +1785,6 @@ void qmp_block_passwd(bool has_device, const char *device,
     Error *local_err = NULL;
     BlockDriverState *bs;
     AioContext *aio_context;
-    int err;
 
     bs = bdrv_lookup_bs(has_device ? device : NULL,
                         has_node_name ? node_name : NULL,
@@ -1806,16 +1797,8 @@ void qmp_block_passwd(bool has_device, const char *device,
     aio_context = bdrv_get_aio_context(bs);
     aio_context_acquire(aio_context);
 
-    err = bdrv_set_key(bs, password);
-    if (err == -EINVAL) {
-        error_set(errp, QERR_DEVICE_NOT_ENCRYPTED, bdrv_get_device_name(bs));
-        goto out;
-    } else if (err < 0) {
-        error_set(errp, QERR_INVALID_PASSWORD);
-        goto out;
-    }
+    bdrv_add_key(bs, password, errp);
 
-out:
     aio_context_release(aio_context);
 }
 
@@ -1833,18 +1816,7 @@ static void qmp_bdrv_open_encrypted(BlockDriverState *bs, const char *filename,
         return;
     }
 
-    if (bdrv_key_required(bs)) {
-        if (password) {
-            if (bdrv_set_key(bs, password) < 0) {
-                error_set(errp, QERR_INVALID_PASSWORD);
-            }
-        } else {
-            error_set(errp, QERR_DEVICE_ENCRYPTED, bdrv_get_device_name(bs),
-                      bdrv_get_encrypted_filename(bs));
-        }
-    } else if (password) {
-        error_set(errp, QERR_DEVICE_NOT_ENCRYPTED, bdrv_get_device_name(bs));
-    }
+    bdrv_add_key(bs, password, errp);
 }
 
 void qmp_change_blockdev(const char *device, const char *filename,
@@ -2653,7 +2625,8 @@ out:
 }
 
 /* Get the block job for a given device name and acquire its AioContext */
-static BlockJob *find_block_job(const char *device, AioContext **aio_context)
+static BlockJob *find_block_job(const char *device, AioContext **aio_context,
+                                Error **errp)
 {
     BlockDriverState *bs;
 
@@ -2673,6 +2646,8 @@ static BlockJob *find_block_job(const char *device, AioContext **aio_context)
     return bs->job;
 
 notfound:
+    error_set(errp, ERROR_CLASS_DEVICE_NOT_ACTIVE,
+              "No active block job on device '%s'", device);
     *aio_context = NULL;
     return NULL;
 }
@@ -2680,10 +2655,9 @@ notfound:
 void qmp_block_job_set_speed(const char *device, int64_t speed, Error **errp)
 {
     AioContext *aio_context;
-    BlockJob *job = find_block_job(device, &aio_context);
+    BlockJob *job = find_block_job(device, &aio_context, errp);
 
     if (!job) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_ACTIVE, device);
         return;
     }
 
@@ -2695,10 +2669,9 @@ void qmp_block_job_cancel(const char *device,
                           bool has_force, bool force, Error **errp)
 {
     AioContext *aio_context;
-    BlockJob *job = find_block_job(device, &aio_context);
+    BlockJob *job = find_block_job(device, &aio_context, errp);
 
     if (!job) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_ACTIVE, device);
         return;
     }
 
@@ -2721,10 +2694,9 @@ out:
 void qmp_block_job_pause(const char *device, Error **errp)
 {
     AioContext *aio_context;
-    BlockJob *job = find_block_job(device, &aio_context);
+    BlockJob *job = find_block_job(device, &aio_context, errp);
 
     if (!job) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_ACTIVE, device);
         return;
     }
 
@@ -2736,10 +2708,9 @@ void qmp_block_job_pause(const char *device, Error **errp)
 void qmp_block_job_resume(const char *device, Error **errp)
 {
     AioContext *aio_context;
-    BlockJob *job = find_block_job(device, &aio_context);
+    BlockJob *job = find_block_job(device, &aio_context, errp);
 
     if (!job) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_ACTIVE, device);
         return;
     }
 
@@ -2751,10 +2722,9 @@ void qmp_block_job_resume(const char *device, Error **errp)
 void qmp_block_job_complete(const char *device, Error **errp)
 {
     AioContext *aio_context;
-    BlockJob *job = find_block_job(device, &aio_context);
+    BlockJob *job = find_block_job(device, &aio_context, errp);
 
     if (!job) {
-        error_set(errp, QERR_BLOCK_JOB_NOT_ACTIVE, device);
         return;
     }
 

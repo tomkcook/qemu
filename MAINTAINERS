@@ -599,6 +599,11 @@ F: hw/net/opencores_eth.c
 
 Devices
 -------
+EDU
+M: Jiri Slaby <jslaby@suse.cz>
+S: Maintained
+F: hw/misc/edu.c
+
 IDE
 M: Kevin Wolf <kwolf@redhat.com>
 M: Stefan Hajnoczi <stefanha@redhat.com>
@@ -778,6 +783,11 @@ M: Samuel Thibault <samuel.thibault@ens-lyon.org>
 S: Maintained
 F: backends/baum.c
 
+Coverity model
+M: Markus Armbruster <armbru@redhat.com>
+S: Supported
+F: scripts/coverity-model.c
+
 CPU
 M: Andreas Färber <afaerber@suse.de>
 S: Supported
@@ -853,6 +863,7 @@ T: git git://repo.or.cz/qemu/qmp-unstable.git queue/qmp
 Network device layer
 M: Anthony Liguori <aliguori@amazon.com>
 M: Stefan Hajnoczi <stefanha@redhat.com>
+M: Jason Wang <jasowang@redhat.com>
 S: Maintained
 F: net/
 T: git git://github.com/stefanha/qemu.git net

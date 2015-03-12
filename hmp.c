@@ -16,6 +16,7 @@
 #include "hmp.h"
 #include "net/net.h"
 #include "sysemu/char.h"
+#include "sysemu/block-backend.h"
 #include "qemu/option.h"
 #include "qemu/timer.h"
 #include "qmp-commands.h"
@@ -474,6 +475,8 @@ void hmp_info_blockstats(Monitor *mon, const QDict *qdict)
                        " wr_total_time_ns=%" PRId64
                        " rd_total_time_ns=%" PRId64
                        " flush_total_time_ns=%" PRId64
+                       " rd_merged=%" PRId64
+                       " wr_merged=%" PRId64
                        "\n",
                        stats->value->stats->rd_bytes,
                        stats->value->stats->wr_bytes,
@@ -482,7 +485,9 @@ void hmp_info_blockstats(Monitor *mon, const QDict *qdict)
                        stats->value->stats->flush_operations,
                        stats->value->stats->wr_total_time_ns,
                        stats->value->stats->rd_total_time_ns,
-                       stats->value->stats->flush_total_time_ns);
+                       stats->value->stats->flush_total_time_ns,
+                       stats->value->stats->rd_merged,
+                       stats->value->stats->wr_merged);
     }
 
     qapi_free_BlockStatsList(stats_list);
@@ -535,6 +540,7 @@ out:
     qapi_free_VncInfo(info);
 }
 
+#ifdef CONFIG_SPICE
 void hmp_info_spice(Monitor *mon, const QDict *qdict)
 {
     SpiceChannelList *chan;
@@ -581,6 +587,7 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
 out:
     qapi_free_SpiceInfo(info);
 }
+#endif
 
 void hmp_info_balloon(Monitor *mon, const QDict *qdict)
 {
@@ -1714,14 +1721,14 @@ void hmp_chardev_remove(Monitor *mon, const QDict *qdict)
 
 void hmp_qemu_io(Monitor *mon, const QDict *qdict)
 {
-    BlockDriverState *bs;
+    BlockBackend *blk;
     const char* device = qdict_get_str(qdict, "device");
     const char* command = qdict_get_str(qdict, "command");
     Error *err = NULL;
 
-    bs = bdrv_find(device);
-    if (bs) {
-        qemuio_command(bs, command);
+    blk = blk_by_name(device);
+    if (blk) {
+        qemuio_command(blk, command);
     } else {
         error_set(&err, QERR_DEVICE_NOT_FOUND, device);
     }

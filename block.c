@@ -508,9 +508,8 @@ int bdrv_create_file(const char *filename, QemuOpts *opts, Error **errp)
     Error *local_err = NULL;
     int ret;
 
-    drv = bdrv_find_protocol(filename, true);
+    drv = bdrv_find_protocol(filename, true, errp);
     if (drv == NULL) {
-        error_setg(errp, "Could not find protocol for file '%s'", filename);
         return -ENOENT;
     }
 
@@ -628,7 +627,8 @@ static BlockDriver *find_hdev_driver(const char *filename)
 }
 
 BlockDriver *bdrv_find_protocol(const char *filename,
-                                bool allow_protocol_prefix)
+                                bool allow_protocol_prefix,
+                                Error **errp)
 {
     BlockDriver *drv1;
     char protocol[128];
@@ -666,6 +666,8 @@ BlockDriver *bdrv_find_protocol(const char *filename,
             return drv1;
         }
     }
+
+    error_setg(errp, "Unknown protocol '%s'", protocol);
     return NULL;
 }
 
@@ -970,7 +972,6 @@ static int bdrv_open_common(BlockDriverState *bs, BlockDriverState *file,
     bs->zero_beyond_eof = true;
     open_flags = bdrv_open_flags(bs, flags);
     bs->read_only = !(open_flags & BDRV_O_RDWR);
-    bs->growable = !!(flags & BDRV_O_PROTOCOL);
 
     if (use_bdrv_whitelist && !bdrv_is_whitelisted(drv, bs->read_only)) {
         error_setg(errp,
@@ -1136,9 +1137,8 @@ static int bdrv_fill_options(QDict **options, const char **pfilename, int flags,
     } else {
         if (!drvname && protocol) {
             if (filename) {
-                drv = bdrv_find_protocol(filename, parse_filename);
+                drv = bdrv_find_protocol(filename, parse_filename, errp);
                 if (!drv) {
-                    error_setg(errp, "Unknown protocol");
                     return -EINVAL;
                 }
 
@@ -1885,7 +1885,6 @@ void bdrv_close(BlockDriverState *bs)
         bs->encrypted = 0;
         bs->valid_key = 0;
         bs->sg = 0;
-        bs->growable = 0;
         bs->zero_beyond_eof = false;
         QDECREF(bs->options);
         bs->options = NULL;
@@ -2207,7 +2206,6 @@ int bdrv_commit(BlockDriverState *bs)
     int n, ro, open_flags;
     int ret = 0;
     uint8_t *buf = NULL;
-    char filename[PATH_MAX];
 
     if (!drv)
         return -ENOMEDIUM;
@@ -2222,8 +2220,6 @@ int bdrv_commit(BlockDriverState *bs)
     }
 
     ro = bs->backing_hd->read_only;
-    /* Use pstrcpy (not strncpy): filename must be NUL-terminated. */
-    pstrcpy(filename, sizeof(filename), bs->backing_hd->filename);
     open_flags =  bs->backing_hd->open_flags;
 
     if (ro) {
@@ -2648,25 +2644,17 @@ exit:
 static int bdrv_check_byte_request(BlockDriverState *bs, int64_t offset,
                                    size_t size)
 {
-    int64_t len;
-
-    if (size > INT_MAX) {
+    if (size > BDRV_REQUEST_MAX_SECTORS << BDRV_SECTOR_BITS) {
         return -EIO;
     }
 
-    if (!bdrv_is_inserted(bs))
+    if (!bdrv_is_inserted(bs)) {
         return -ENOMEDIUM;
+    }
 
-    if (bs->growable)
-        return 0;
-
-    len = bdrv_getlength(bs);
-
-    if (offset < 0)
+    if (offset < 0) {
         return -EIO;
-
-    if ((offset > len) || (len - offset < size))
-        return -EIO;
+    }
 
     return 0;
 }
@@ -2674,7 +2662,7 @@ static int bdrv_check_byte_request(BlockDriverState *bs, int64_t offset,
 static int bdrv_check_request(BlockDriverState *bs, int64_t sector_num,
                               int nb_sectors)
 {
-    if (nb_sectors < 0 || nb_sectors > INT_MAX / BDRV_SECTOR_SIZE) {
+    if (nb_sectors < 0 || nb_sectors > BDRV_REQUEST_MAX_SECTORS) {
         return -EIO;
     }
 
@@ -2761,7 +2749,7 @@ static int bdrv_rw_co(BlockDriverState *bs, int64_t sector_num, uint8_t *buf,
         .iov_len = nb_sectors * BDRV_SECTOR_SIZE,
     };
 
-    if (nb_sectors < 0 || nb_sectors > INT_MAX / BDRV_SECTOR_SIZE) {
+    if (nb_sectors < 0 || nb_sectors > BDRV_REQUEST_MAX_SECTORS) {
         return -EINVAL;
     }
 
@@ -2829,12 +2817,9 @@ int bdrv_make_zero(BlockDriverState *bs, BdrvRequestFlags flags)
     }
 
     for (;;) {
-        nb_sectors = target_sectors - sector_num;
+        nb_sectors = MIN(target_sectors - sector_num, BDRV_REQUEST_MAX_SECTORS);
         if (nb_sectors <= 0) {
             return 0;
-        }
-        if (nb_sectors > INT_MAX / BDRV_SECTOR_SIZE) {
-            nb_sectors = INT_MAX / BDRV_SECTOR_SIZE;
         }
         ret = bdrv_get_block_status(bs, sector_num, nb_sectors, &n);
         if (ret < 0) {
@@ -3048,10 +3033,10 @@ static int coroutine_fn bdrv_aligned_preadv(BlockDriverState *bs,
     }
 
     /* Forward the request to the BlockDriver */
-    if (!(bs->zero_beyond_eof && bs->growable)) {
+    if (!bs->zero_beyond_eof) {
         ret = drv->bdrv_co_readv(bs, sector_num, nb_sectors, qiov);
     } else {
-        /* Read zeros after EOF of growable BDSes */
+        /* Read zeros after EOF */
         int64_t total_sectors, max_nb_sectors;
 
         total_sectors = bdrv_nb_sectors(bs);
@@ -3113,8 +3098,10 @@ static int coroutine_fn bdrv_co_do_preadv(BlockDriverState *bs,
     if (!drv) {
         return -ENOMEDIUM;
     }
-    if (bdrv_check_byte_request(bs, offset, bytes)) {
-        return -EIO;
+
+    ret = bdrv_check_byte_request(bs, offset, bytes);
+    if (ret < 0) {
+        return ret;
     }
 
     if (bs->copy_on_read) {
@@ -3170,7 +3157,7 @@ static int coroutine_fn bdrv_co_do_readv(BlockDriverState *bs,
     int64_t sector_num, int nb_sectors, QEMUIOVector *qiov,
     BdrvRequestFlags flags)
 {
-    if (nb_sectors < 0 || nb_sectors > (UINT_MAX >> BDRV_SECTOR_BITS)) {
+    if (nb_sectors < 0 || nb_sectors > BDRV_REQUEST_MAX_SECTORS) {
         return -EINVAL;
     }
 
@@ -3195,10 +3182,7 @@ int coroutine_fn bdrv_co_copy_on_readv(BlockDriverState *bs,
                             BDRV_REQ_COPY_ON_READ);
 }
 
-/* if no limit is specified in the BlockLimits use a default
- * of 32768 512-byte sectors (16 MiB) per request.
- */
-#define MAX_WRITE_ZEROES_DEFAULT 32768
+#define MAX_WRITE_ZEROES_BOUNCE_BUFFER 32768
 
 static int coroutine_fn bdrv_co_do_write_zeroes(BlockDriverState *bs,
     int64_t sector_num, int nb_sectors, BdrvRequestFlags flags)
@@ -3208,8 +3192,8 @@ static int coroutine_fn bdrv_co_do_write_zeroes(BlockDriverState *bs,
     struct iovec iov = {0};
     int ret = 0;
 
-    int max_write_zeroes = bs->bl.max_write_zeroes ?
-                           bs->bl.max_write_zeroes : MAX_WRITE_ZEROES_DEFAULT;
+    int max_write_zeroes = MIN_NON_ZERO(bs->bl.max_write_zeroes,
+                                        BDRV_REQUEST_MAX_SECTORS);
 
     while (nb_sectors > 0 && !ret) {
         int num = nb_sectors;
@@ -3245,7 +3229,7 @@ static int coroutine_fn bdrv_co_do_write_zeroes(BlockDriverState *bs,
         if (ret == -ENOTSUP) {
             /* Fall back to bounce buffer if write zeroes is unsupported */
             int max_xfer_len = MIN_NON_ZERO(bs->bl.max_transfer_length,
-                                            MAX_WRITE_ZEROES_DEFAULT);
+                                            MAX_WRITE_ZEROES_BOUNCE_BUFFER);
             num = MIN(num, max_xfer_len);
             iov.iov_len = num * BDRV_SECTOR_SIZE;
             if (iov.iov_base == NULL) {
@@ -3331,7 +3315,7 @@ static int coroutine_fn bdrv_aligned_pwritev(BlockDriverState *bs,
 
     block_acct_highest_sector(&bs->stats, sector_num, nb_sectors);
 
-    if (bs->growable && ret >= 0) {
+    if (ret >= 0) {
         bs->total_sectors = MAX(bs->total_sectors, sector_num + nb_sectors);
     }
 
@@ -3360,8 +3344,10 @@ static int coroutine_fn bdrv_co_do_pwritev(BlockDriverState *bs,
     if (bs->read_only) {
         return -EACCES;
     }
-    if (bdrv_check_byte_request(bs, offset, bytes)) {
-        return -EIO;
+
+    ret = bdrv_check_byte_request(bs, offset, bytes);
+    if (ret < 0) {
+        return ret;
     }
 
     /* throttling disk I/O */
@@ -3464,7 +3450,7 @@ static int coroutine_fn bdrv_co_do_writev(BlockDriverState *bs,
     int64_t sector_num, int nb_sectors, QEMUIOVector *qiov,
     BdrvRequestFlags flags)
 {
-    if (nb_sectors < 0 || nb_sectors > (INT_MAX >> BDRV_SECTOR_BITS)) {
+    if (nb_sectors < 0 || nb_sectors > BDRV_REQUEST_MAX_SECTORS) {
         return -EINVAL;
     }
 
@@ -3720,6 +3706,36 @@ int bdrv_set_key(BlockDriverState *bs, const char *key)
         }
     }
     return ret;
+}
+
+/*
+ * Provide an encryption key for @bs.
+ * If @key is non-null:
+ *     If @bs is not encrypted, fail.
+ *     Else if the key is invalid, fail.
+ *     Else set @bs's key to @key, replacing the existing key, if any.
+ * If @key is null:
+ *     If @bs is encrypted and still lacks a key, fail.
+ *     Else do nothing.
+ * On failure, store an error object through @errp if non-null.
+ */
+void bdrv_add_key(BlockDriverState *bs, const char *key, Error **errp)
+{
+    if (key) {
+        if (!bdrv_is_encrypted(bs)) {
+            error_setg(errp, "Device '%s' is not encrypted",
+                      bdrv_get_device_name(bs));
+        } else if (bdrv_set_key(bs, key) < 0) {
+            error_set(errp, QERR_INVALID_PASSWORD);
+        }
+    } else {
+        if (bdrv_key_required(bs)) {
+            error_set(errp, ERROR_CLASS_DEVICE_ENCRYPTED,
+                      "'%s' (%s) is encrypted",
+                      bdrv_get_device_name(bs),
+                      bdrv_get_encrypted_filename(bs));
+        }
+    }
 }
 
 const char *bdrv_get_format_name(BlockDriverState *bs)
@@ -4185,12 +4201,18 @@ int bdrv_write_compressed(BlockDriverState *bs, int64_t sector_num,
                           const uint8_t *buf, int nb_sectors)
 {
     BlockDriver *drv = bs->drv;
-    if (!drv)
+    int ret;
+
+    if (!drv) {
         return -ENOMEDIUM;
-    if (!drv->bdrv_write_compressed)
+    }
+    if (!drv->bdrv_write_compressed) {
         return -ENOTSUP;
-    if (bdrv_check_request(bs, sector_num, nb_sectors))
-        return -EIO;
+    }
+    ret = bdrv_check_request(bs, sector_num, nb_sectors);
+    if (ret < 0) {
+        return ret;
+    }
 
     assert(QLIST_EMPTY(&bs->dirty_bitmaps));
 
@@ -4564,6 +4586,8 @@ static int multiwrite_merge(BlockDriverState *bs, BlockRequest *reqs,
             reqs[outidx].qiov       = reqs[i].qiov;
         }
     }
+
+    block_acct_merge_done(&bs->stats, BLOCK_ACCT_WRITE, num_reqs - outidx - 1);
 
     return outidx + 1;
 }
@@ -5100,20 +5124,18 @@ static void coroutine_fn bdrv_discard_co_entry(void *opaque)
     rwco->ret = bdrv_co_discard(rwco->bs, rwco->sector_num, rwco->nb_sectors);
 }
 
-/* if no limit is specified in the BlockLimits use a default
- * of 32768 512-byte sectors (16 MiB) per request.
- */
-#define MAX_DISCARD_DEFAULT 32768
-
 int coroutine_fn bdrv_co_discard(BlockDriverState *bs, int64_t sector_num,
                                  int nb_sectors)
 {
-    int max_discard;
+    int max_discard, ret;
 
     if (!bs->drv) {
         return -ENOMEDIUM;
-    } else if (bdrv_check_request(bs, sector_num, nb_sectors)) {
-        return -EIO;
+    }
+
+    ret = bdrv_check_request(bs, sector_num, nb_sectors);
+    if (ret < 0) {
+        return ret;
     } else if (bs->read_only) {
         return -EROFS;
     }
@@ -5129,7 +5151,7 @@ int coroutine_fn bdrv_co_discard(BlockDriverState *bs, int64_t sector_num,
         return 0;
     }
 
-    max_discard = bs->bl.max_discard ?  bs->bl.max_discard : MAX_DISCARD_DEFAULT;
+    max_discard = MIN_NON_ZERO(bs->bl.max_discard, BDRV_REQUEST_MAX_SECTORS);
     while (nb_sectors > 0) {
         int ret;
         int num = nb_sectors;
@@ -5605,9 +5627,8 @@ void bdrv_img_create(const char *filename, const char *fmt,
         return;
     }
 
-    proto_drv = bdrv_find_protocol(filename, true);
+    proto_drv = bdrv_find_protocol(filename, true, errp);
     if (!proto_drv) {
-        error_setg(errp, "Unknown protocol '%s'", filename);
         return;
     }
 
