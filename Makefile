@@ -84,6 +84,9 @@ LIBS+=-lz $(LIBS_TOOLS)
 HELPERS-$(CONFIG_LINUX) = qemu-bridge-helper$(EXESUF)
 
 DOCS=qemu-doc.html qemu-tech.html qemu.1 qemu-img.1 qemu-nbd.8 qmp-commands.txt
+ifdef CONFIG_LINUX
+DOCS+=kvm_stat.1
+endif
 ifdef CONFIG_VIRTFS
 DOCS+=fsdev/virtfs-proxy-helper.1
 endif
@@ -106,8 +109,8 @@ endif
 -include $(SUBDIR_DEVICES_MAK_DEP)
 
 %/config-devices.mak: default-configs/%.mak
-	$(call quiet-command,$(SHELL) $(SRC_PATH)/scripts/make_device_config.sh $@ $<, "  GEN   $@")
-	@if test -f $@; then \
+	$(call quiet-command,$(SHELL) $(SRC_PATH)/scripts/make_device_config.sh $@.tmp $<, "  GEN   $@.tmp")
+	$(call quiet-command, if test -f $@; then \
 	  if cmp -s $@.old $@; then \
 	    mv $@.tmp $@; \
 	    cp -p $@ $@.old; \
@@ -123,7 +126,7 @@ endif
 	 else \
 	  mv $@.tmp $@; \
 	  cp -p $@ $@.old; \
-	 fi
+	 fi, "  GEN  $@");
 
 defconfig:
 	rm -f config-all-devices.mak $(SUBDIR_DEVICES_MAK)
@@ -208,9 +211,9 @@ ALL_SUBDIRS=$(TARGET_DIRS) $(patsubst %,pc-bios/%, $(ROMS))
 
 recurse-all: $(SUBDIR_RULES) $(ROMSUBDIR_RULES)
 
-$(BUILD_DIR)/version.o: $(SRC_PATH)/version.rc $(BUILD_DIR)/config-host.h | $(BUILD_DIR)/version.lo
+$(BUILD_DIR)/version.o: $(SRC_PATH)/version.rc config-host.h | $(BUILD_DIR)/version.lo
 	$(call quiet-command,$(WINDRES) -I$(BUILD_DIR) -o $@ $<,"  RC    version.o")
-$(BUILD_DIR)/version.lo: $(SRC_PATH)/version.rc $(BUILD_DIR)/config-host.h
+$(BUILD_DIR)/version.lo: $(SRC_PATH)/version.rc config-host.h
 	$(call quiet-command,$(WINDRES) -I$(BUILD_DIR) -o $@ $<,"  RC    version.lo")
 
 Makefile: $(version-obj-y) $(version-lobj-y)
@@ -501,6 +504,12 @@ qemu-nbd.8: qemu-nbd.texi
 	$(call quiet-command, \
 	  perl -Ww -- $(SRC_PATH)/scripts/texi2pod.pl $< qemu-nbd.pod && \
 	  $(POD2MAN) --section=8 --center=" " --release=" " qemu-nbd.pod > $@, \
+	  "  GEN   $@")
+
+kvm_stat.1: scripts/kvm/kvm_stat.texi
+	$(call quiet-command, \
+	  perl -Ww -- $(SRC_PATH)/scripts/texi2pod.pl $< kvm_stat.pod && \
+	  $(POD2MAN) --section=1 --center=" " --release=" " kvm_stat.pod > $@, \
 	  "  GEN   $@")
 
 dvi: qemu-doc.dvi qemu-tech.dvi

@@ -778,7 +778,7 @@ static void qemu_tcg_init_cpu_signals(void)
 
 static QemuMutex qemu_global_mutex;
 static QemuCond qemu_io_proceeded_cond;
-static bool iothread_requesting_mutex;
+static unsigned iothread_requesting_mutex;
 
 static QemuThread io_thread;
 
@@ -1025,6 +1025,9 @@ static void *qemu_tcg_cpu_thread_fn(void *arg)
         }
     }
 
+    /* process any pending work */
+    exit_request = 1;
+
     while (1) {
         tcg_exec_all();
 
@@ -1115,15 +1118,16 @@ bool qemu_in_vcpu_thread(void)
 
 void qemu_mutex_lock_iothread(void)
 {
-    if (!tcg_enabled()) {
+    atomic_inc(&iothread_requesting_mutex);
+    if (!tcg_enabled() || !first_cpu) {
         qemu_mutex_lock(&qemu_global_mutex);
+        atomic_dec(&iothread_requesting_mutex);
     } else {
-        iothread_requesting_mutex = true;
         if (qemu_mutex_trylock(&qemu_global_mutex)) {
             qemu_cpu_kick_thread(first_cpu);
             qemu_mutex_lock(&qemu_global_mutex);
         }
-        iothread_requesting_mutex = false;
+        atomic_dec(&iothread_requesting_mutex);
         qemu_cond_broadcast(&qemu_io_proceeded_cond);
     }
 }
@@ -1474,6 +1478,7 @@ void qmp_memsave(int64_t addr, int64_t size, const char *filename,
     uint32_t l;
     CPUState *cpu;
     uint8_t buf[1024];
+    int64_t orig_addr = addr, orig_size = size;
 
     if (!has_cpu) {
         cpu_index = 0;
@@ -1497,7 +1502,8 @@ void qmp_memsave(int64_t addr, int64_t size, const char *filename,
         if (l > size)
             l = size;
         if (cpu_memory_rw_debug(cpu, addr, buf, l, 0) != 0) {
-            error_setg(errp, "Invalid addr 0x%016" PRIx64 "specified", addr);
+            error_setg(errp, "Invalid addr 0x%016" PRIx64 "/size %" PRId64
+                             " specified", orig_addr, orig_size);
             goto exit;
         }
         if (fwrite(buf, 1, l, f) != l) {

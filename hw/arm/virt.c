@@ -522,9 +522,9 @@ static void create_one_flash(const char *name, hwaddr flashbase,
     DeviceState *dev = qdev_create(NULL, "cfi.pflash01");
     const uint64_t sectorlength = 256 * 1024;
 
-    if (dinfo && qdev_prop_set_drive(dev, "drive",
-                                     blk_by_legacy_dinfo(dinfo))) {
-        abort();
+    if (dinfo) {
+        qdev_prop_set_drive(dev, "drive", blk_by_legacy_dinfo(dinfo),
+                            &error_abort);
     }
 
     qdev_prop_set_uint32(dev, "num-blocks", flashsize / sectorlength);
@@ -758,6 +758,7 @@ static void machvirt_init(MachineState *machine)
         CPUClass *cc = CPU_CLASS(oc);
         Object *cpuobj;
         Error *err = NULL;
+        char *cpuopts = g_strdup(cpustr[1]);
 
         if (!oc) {
             fprintf(stderr, "Unable to find CPU definition\n");
@@ -766,7 +767,8 @@ static void machvirt_init(MachineState *machine)
         cpuobj = object_new(object_class_get_name(oc));
 
         /* Handle any CPU options specified by the user */
-        cc->parse_features(CPU(cpuobj), cpustr[1], &err);
+        cc->parse_features(CPU(cpuobj), cpuopts, &err);
+        g_free(cpuopts);
         if (err) {
             error_report("%s", error_get_pretty(err));
             exit(1);

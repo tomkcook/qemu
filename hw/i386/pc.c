@@ -25,6 +25,8 @@
 #include "hw/i386/pc.h"
 #include "hw/char/serial.h"
 #include "hw/i386/apic.h"
+#include "hw/i386/topology.h"
+#include "sysemu/cpus.h"
 #include "hw/block/fdc.h"
 #include "hw/ide.h"
 #include "hw/pci/pci.h"
@@ -41,6 +43,7 @@
 #include "hw/pci/msi.h"
 #include "hw/sysbus.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/numa.h"
 #include "sysemu/kvm.h"
 #include "kvm_i386.h"
 #include "hw/xen/xen.h"
@@ -414,7 +417,7 @@ void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
 
     set_boot_dev(s, boot_device, &local_err);
     if (local_err) {
-        error_report("%s", error_get_pretty(local_err));
+        error_report_err(local_err);
         exit(1);
     }
 
@@ -626,6 +629,39 @@ bool e820_get_entry(int idx, uint32_t type, uint64_t *address, uint64_t *length)
         return true;
     }
     return false;
+}
+
+/* Enables contiguous-apic-ID mode, for compatibility */
+static bool compat_apic_id_mode;
+
+void enable_compat_apic_id_mode(void)
+{
+    compat_apic_id_mode = true;
+}
+
+/* Calculates initial APIC ID for a specific CPU index
+ *
+ * Currently we need to be able to calculate the APIC ID from the CPU index
+ * alone (without requiring a CPU object), as the QEMU<->Seabios interfaces have
+ * no concept of "CPU index", and the NUMA tables on fw_cfg need the APIC ID of
+ * all CPUs up to max_cpus.
+ */
+static uint32_t x86_cpu_apic_id_from_index(unsigned int cpu_index)
+{
+    uint32_t correct_id;
+    static bool warned;
+
+    correct_id = x86_apicid_from_cpu_idx(smp_cores, smp_threads, cpu_index);
+    if (compat_apic_id_mode) {
+        if (cpu_index != correct_id && !warned) {
+            error_report("APIC IDs set in compatibility mode, "
+                         "CPU topology won't match the configuration");
+            warned = true;
+        }
+        return cpu_index;
+    } else {
+        return correct_id;
+    }
 }
 
 /* Calculates the limit to CPU APIC ID values
@@ -1040,8 +1076,7 @@ void pc_cpus_init(const char *cpu_model, DeviceState *icc_bridge)
         cpu = pc_new_cpu(cpu_model, x86_cpu_apic_id_from_index(i),
                          icc_bridge, &error);
         if (error) {
-            error_report("%s", error_get_pretty(error));
-            error_free(error);
+            error_report_err(error);
             exit(1);
         }
     }
@@ -1138,15 +1173,11 @@ void pc_acpi_init(const char *default_dsdt)
     if (filename == NULL) {
         fprintf(stderr, "WARNING: failed to find %s\n", default_dsdt);
     } else {
-        char *arg;
-        QemuOpts *opts;
+        QemuOpts *opts = qemu_opts_create(qemu_find_opts("acpi"), NULL, 0,
+                                          &error_abort);
         Error *err = NULL;
 
-        arg = g_strdup_printf("file=%s", filename);
-
-        /* creates a deep copy of "arg" */
-        opts = qemu_opts_parse(qemu_find_opts("acpi"), arg, 0);
-        g_assert(opts != NULL);
+        qemu_opt_set(opts, "file", filename, &error_abort);
 
         acpi_table_add_builtin(opts, &err);
         if (err) {
@@ -1154,7 +1185,6 @@ void pc_acpi_init(const char *default_dsdt)
                          error_get_pretty(err));
             error_free(err);
         }
-        g_free(arg);
         g_free(filename);
     }
 }
@@ -1243,6 +1273,13 @@ FWCfgState *pc_memory_init(MachineState *machine,
         if (machine->ram_slots > ACPI_MAX_RAM_SLOTS) {
             error_report("unsupported amount of memory slots: %"PRIu64,
                          machine->ram_slots);
+            exit(EXIT_FAILURE);
+        }
+
+        if (QEMU_ALIGN_UP(machine->maxram_size,
+                          TARGET_PAGE_SIZE) != machine->maxram_size) {
+            error_report("maximum memory size must by aligned to multiple of "
+                         "%d bytes", TARGET_PAGE_SIZE);
             exit(EXIT_FAILURE);
         }
 
@@ -1419,17 +1456,8 @@ void pc_basic_device_init(ISABus *isa_bus, qemu_irq *gsi,
         pcspk_init(isa_bus, pit);
     }
 
-    for(i = 0; i < MAX_SERIAL_PORTS; i++) {
-        if (serial_hds[i]) {
-            serial_isa_init(isa_bus, i, serial_hds[i]);
-        }
-    }
-
-    for(i = 0; i < MAX_PARALLEL_PORTS; i++) {
-        if (parallel_hds[i]) {
-            parallel_init(isa_bus, i, parallel_hds[i]);
-        }
-    }
+    serial_hds_isa_init(isa_bus, MAX_SERIAL_PORTS);
+    parallel_hds_isa_init(isa_bus, MAX_PARALLEL_PORTS);
 
     a20_line = qemu_allocate_irqs(handle_a20_line_change, first_cpu, 2);
     i8042 = isa_create_simple(isa_bus, "i8042");
@@ -1680,6 +1708,20 @@ static void pc_machine_device_plug_cb(HotplugHandler *hotplug_dev,
     }
 }
 
+static void pc_machine_device_unplug_request_cb(HotplugHandler *hotplug_dev,
+                                                DeviceState *dev, Error **errp)
+{
+    error_setg(errp, "acpi: device unplug request for not supported device"
+               " type: %s", object_get_typename(OBJECT(dev)));
+}
+
+static void pc_machine_device_unplug_cb(HotplugHandler *hotplug_dev,
+                                        DeviceState *dev, Error **errp)
+{
+    error_setg(errp, "acpi: device unplug for not supported device"
+               " type: %s", object_get_typename(OBJECT(dev)));
+}
+
 static HotplugHandler *pc_get_hotpug_handler(MachineState *machine,
                                              DeviceState *dev)
 {
@@ -1809,6 +1851,8 @@ static void pc_machine_class_init(ObjectClass *oc, void *data)
     pcmc->get_hotplug_handler = mc->get_hotplug_handler;
     mc->get_hotplug_handler = pc_get_hotpug_handler;
     hc->plug = pc_machine_device_plug_cb;
+    hc->unplug_request = pc_machine_device_unplug_request_cb;
+    hc->unplug = pc_machine_device_unplug_cb;
 }
 
 static const TypeInfo pc_machine_info = {

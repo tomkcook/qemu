@@ -29,6 +29,10 @@
 #include "block/qapi.h"
 #include "qemu-io.h"
 
+#ifdef CONFIG_SPICE
+#include <spice/enums.h>
+#endif
+
 static void hmp_handle_error(Monitor *mon, Error **errp)
 {
     assert(errp);
@@ -412,7 +416,7 @@ void hmp_info_block(Monitor *mon, const QDict *qdict)
 
     /* Print BlockBackend information */
     if (!nodes) {
-        block_list = qmp_query_block(false);
+        block_list = qmp_query_block(NULL);
     } else {
         block_list = NULL;
     }
@@ -545,6 +549,25 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
 {
     SpiceChannelList *chan;
     SpiceInfo *info;
+    const char *channel_name;
+    const char * const channel_names[] = {
+        [SPICE_CHANNEL_MAIN] = "main",
+        [SPICE_CHANNEL_DISPLAY] = "display",
+        [SPICE_CHANNEL_INPUTS] = "inputs",
+        [SPICE_CHANNEL_CURSOR] = "cursor",
+        [SPICE_CHANNEL_PLAYBACK] = "playback",
+        [SPICE_CHANNEL_RECORD] = "record",
+        [SPICE_CHANNEL_TUNNEL] = "tunnel",
+        [SPICE_CHANNEL_SMARTCARD] = "smartcard",
+        [SPICE_CHANNEL_USBREDIR] = "usbredir",
+        [SPICE_CHANNEL_PORT] = "port",
+#if 0
+        /* minimum spice-protocol is 0.12.3, webdav was added in 0.12.7,
+         * no easy way to #ifdef (SPICE_CHANNEL_* is a enum).  Disable
+         * as quick fix for build failures with older versions. */
+        [SPICE_CHANNEL_WEBDAV] = "webdav",
+#endif
+    };
 
     info = qmp_query_spice(NULL);
 
@@ -581,6 +604,15 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
                            chan->value->connection_id);
             monitor_printf(mon, "     channel: %" PRId64 ":%" PRId64 "\n",
                            chan->value->channel_type, chan->value->channel_id);
+
+            channel_name = "unknown";
+            if (chan->value->channel_type > 0 &&
+                chan->value->channel_type < ARRAY_SIZE(channel_names) &&
+                channel_names[chan->value->channel_type]) {
+                channel_name = channel_names[chan->value->channel_type];
+            }
+
+            monitor_printf(mon, "     channel name: %s\n", channel_name);
         }
     }
 
@@ -924,7 +956,7 @@ void hmp_system_wakeup(Monitor *mon, const QDict *qdict)
     qmp_system_wakeup(NULL);
 }
 
-void hmp_inject_nmi(Monitor *mon, const QDict *qdict)
+void hmp_nmi(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
 
@@ -1533,7 +1565,7 @@ void hmp_closefd(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &err);
 }
 
-void hmp_send_key(Monitor *mon, const QDict *qdict)
+void hmp_sendkey(Monitor *mon, const QDict *qdict)
 {
     const char *keys = qdict_get_str(qdict, "keys");
     KeyValueList *keylist, *head = NULL, *tmp = NULL;
@@ -1602,7 +1634,7 @@ err_out:
     goto out;
 }
 
-void hmp_screen_dump(Monitor *mon, const QDict *qdict)
+void hmp_screendump(Monitor *mon, const QDict *qdict)
 {
     const char *filename = qdict_get_str(qdict, "filename");
     Error *err = NULL;

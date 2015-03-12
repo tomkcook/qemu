@@ -1286,9 +1286,9 @@ DisplaySurface *qemu_create_displaysurface_guestmem(int width, int height,
         linesize = width * PIXMAN_FORMAT_BPP(format) / 8;
     }
 
-    size = linesize * height;
+    size = (hwaddr)linesize * height;
     data = cpu_physical_memory_map(addr, &size, 0);
-    if (size != linesize * height) {
+    if (size != (hwaddr)linesize * height) {
         cpu_physical_memory_unmap(data, size, 0, 0);
         return NULL;
     }
@@ -2004,18 +2004,6 @@ void qemu_console_copy(QemuConsole *con, int src_x, int src_y,
 DisplaySurface *qemu_console_surface(QemuConsole *console)
 {
     return console->surface;
-}
-
-DisplayState *qemu_console_displaystate(QemuConsole *console)
-{
-    return console->ds;
-}
-
-PixelFormat qemu_different_endianness_pixelformat(int bpp)
-{
-    pixman_format_code_t fmt = qemu_default_pixman_format(bpp, false);
-    PixelFormat pf = qemu_pixelformat_from_pixman(fmt);
-    return pf;
 }
 
 PixelFormat qemu_default_pixelformat(int bpp)

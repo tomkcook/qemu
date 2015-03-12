@@ -667,13 +667,13 @@ static void qbus_print(Monitor *mon, BusState *bus, int indent)
 }
 #undef qdev_printf
 
-void do_info_qtree(Monitor *mon, const QDict *qdict)
+void hmp_info_qtree(Monitor *mon, const QDict *qdict)
 {
     if (sysbus_get_default())
         qbus_print(mon, sysbus_get_default(), 0);
 }
 
-void do_info_qdm(Monitor *mon, const QDict *qdict)
+void hmp_info_qdm(Monitor *mon, const QDict *qdict)
 {
     qdev_print_devinfos(true);
 }
@@ -772,8 +772,8 @@ int qemu_global_option(const char *str)
     }
 
     opts = qemu_opts_create(&qemu_global_opts, NULL, 0, &error_abort);
-    qemu_opt_set(opts, "driver", driver);
-    qemu_opt_set(opts, "property", property);
-    qemu_opt_set(opts, "value", str+offset+1);
+    qemu_opt_set(opts, "driver", driver, &error_abort);
+    qemu_opt_set(opts, "property", property, &error_abort);
+    qemu_opt_set(opts, "value", str + offset + 1, &error_abort);
     return 0;
 }

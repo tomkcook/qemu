@@ -145,7 +145,7 @@ static void blk_delete(BlockBackend *blk)
         bdrv_unref(blk->bs);
         blk->bs = NULL;
     }
-    /* Avoid double-remove after blk_hide_on_behalf_of_do_drive_del() */
+    /* Avoid double-remove after blk_hide_on_behalf_of_hmp_drive_del() */
     if (blk->name[0]) {
         QTAILQ_REMOVE(&blk_backends, blk, link);
     }
@@ -206,7 +206,7 @@ BlockBackend *blk_next(BlockBackend *blk)
 /*
  * Return @blk's name, a non-null string.
  * Wart: the name is empty iff @blk has been hidden with
- * blk_hide_on_behalf_of_do_drive_del().
+ * blk_hide_on_behalf_of_hmp_drive_del().
  */
 const char *blk_name(BlockBackend *blk)
 {
@@ -282,7 +282,7 @@ BlockBackend *blk_by_legacy_dinfo(DriveInfo *dinfo)
  * Strictly for use by do_drive_del().
  * TODO get rid of it!
  */
-void blk_hide_on_behalf_of_do_drive_del(BlockBackend *blk)
+void blk_hide_on_behalf_of_hmp_drive_del(BlockBackend *blk)
 {
     QTAILQ_REMOVE(&blk_backends, blk, link);
     blk->name[0] = 0;
@@ -891,4 +891,14 @@ int blk_save_vmstate(BlockBackend *blk, const uint8_t *buf,
 int blk_load_vmstate(BlockBackend *blk, uint8_t *buf, int64_t pos, int size)
 {
     return bdrv_load_vmstate(blk->bs, buf, pos, size);
+}
+
+int blk_probe_blocksizes(BlockBackend *blk, BlockSizes *bsz)
+{
+    return bdrv_probe_blocksizes(blk->bs, bsz);
+}
+
+int blk_probe_geometry(BlockBackend *blk, HDGeometry *geo)
+{
+    return bdrv_probe_geometry(blk->bs, geo);
 }

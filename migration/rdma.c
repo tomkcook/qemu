@@ -510,7 +510,7 @@ static inline uint8_t *ram_chunk_end(const RDMALocalBlock *rdma_ram_block,
     return result;
 }
 
-static int __qemu_rdma_add_block(RDMAContext *rdma, void *host_addr,
+static int rdma_add_block(RDMAContext *rdma, void *host_addr,
                          ram_addr_t block_offset, uint64_t length)
 {
     RDMALocalBlocks *local = &rdma->local_ram_blocks;
@@ -551,13 +551,12 @@ static int __qemu_rdma_add_block(RDMAContext *rdma, void *host_addr,
 
     g_hash_table_insert(rdma->blockmap, (void *) block_offset, block);
 
-    trace___qemu_rdma_add_block(local->nb_blocks,
-                           (uint64_t) block->local_host_addr, block->offset,
-                           block->length,
-                           (uint64_t) (block->local_host_addr + block->length),
-                           BITS_TO_LONGS(block->nb_chunks) *
-                               sizeof(unsigned long) * 8,
-                           block->nb_chunks);
+    trace_rdma_add_block(local->nb_blocks, (uint64_t) block->local_host_addr,
+                         block->offset, block->length,
+                         (uint64_t) (block->local_host_addr + block->length),
+                         BITS_TO_LONGS(block->nb_chunks) *
+                             sizeof(unsigned long) * 8,
+                         block->nb_chunks);
 
     local->nb_blocks++;
 
@@ -572,7 +571,7 @@ static int __qemu_rdma_add_block(RDMAContext *rdma, void *host_addr,
 static void qemu_rdma_init_one_block(void *host_addr,
     ram_addr_t block_offset, ram_addr_t length, void *opaque)
 {
-    __qemu_rdma_add_block(opaque, host_addr, block_offset, length);
+    rdma_add_block(opaque, host_addr, block_offset, length);
 }
 
 /*
@@ -595,7 +594,7 @@ static int qemu_rdma_init_ram_blocks(RDMAContext *rdma)
     return 0;
 }
 
-static int __qemu_rdma_delete_block(RDMAContext *rdma, ram_addr_t block_offset)
+static int rdma_delete_block(RDMAContext *rdma, ram_addr_t block_offset)
 {
     RDMALocalBlocks *local = &rdma->local_ram_blocks;
     RDMALocalBlock *block = g_hash_table_lookup(rdma->blockmap,
@@ -657,7 +656,7 @@ static int __qemu_rdma_delete_block(RDMAContext *rdma, ram_addr_t block_offset)
         local->block = NULL;
     }
 
-    trace___qemu_rdma_delete_block(local->nb_blocks,
+    trace_rdma_delete_block(local->nb_blocks,
                            (uint64_t)block->local_host_addr,
                            block->offset, block->length,
                            (uint64_t)(block->local_host_addr + block->length),
@@ -703,7 +702,7 @@ static void qemu_rdma_dump_id(const char *who, struct ibv_context *verbs)
                 verbs->device->ibdev_path,
                 port.link_layer,
                 (port.link_layer == IBV_LINK_LAYER_INFINIBAND) ? "Infiniband" :
-                 ((port.link_layer == IBV_LINK_LAYER_ETHERNET) 
+                 ((port.link_layer == IBV_LINK_LAYER_ETHERNET)
                     ? "Ethernet" : "Unknown"));
 }
 
@@ -738,7 +737,7 @@ static void qemu_rdma_dump_gid(const char *who, struct rdma_cm_id *id)
  * and validate what time of hardware it is.
  *
  * Unfortunately, this puts the user in a fix:
- * 
+ *
  *  If the source VM connects with an IPv4 address without knowing that the
  *  destination has bound to '[::]' the migration will unconditionally fail
  *  unless the management software is explicitly listening on the the IPv4
@@ -746,13 +745,13 @@ static void qemu_rdma_dump_gid(const char *who, struct rdma_cm_id *id)
  *
  *  If the source VM connects with an IPv6 address, then we're OK because we can
  *  throw an error on the source (and similarly on the destination).
- * 
+ *
  *  But in mixed environments, this will be broken for a while until it is fixed
  *  inside linux.
  *
  * We do provide a *tiny* bit of help in this function: We can list all of the
  * devices in the system and check to see if all the devices are RoCE or
- * Infiniband. 
+ * Infiniband.
  *
  * If we detect that we have a *pure* RoCE environment, then we can safely
  * thrown an error even if the management software has specified '[::]' as the
@@ -771,17 +770,17 @@ static int qemu_rdma_broken_ipv6_kernel(Error **errp, struct ibv_context *verbs)
     /* This bug only exists in linux, to our knowledge. */
 #ifdef CONFIG_LINUX
 
-    /* 
+    /*
      * Verbs are only NULL if management has bound to '[::]'.
-     * 
+     *
      * Let's iterate through all the devices and see if there any pure IB
      * devices (non-ethernet).
-     * 
+     *
      * If not, then we can safely proceed with the migration.
      * Otherwise, there are no guarantees until the bug is fixed in linux.
      */
     if (!verbs) {
-	    int num_devices, x;
+        int num_devices, x;
         struct ibv_device ** dev_list = ibv_get_device_list(&num_devices);
         bool roce_found = false;
         bool ib_found = false;
@@ -826,8 +825,8 @@ static int qemu_rdma_broken_ipv6_kernel(Error **errp, struct ibv_context *verbs)
 
     /*
      * If we have a verbs context, that means that some other than '[::]' was
-     * used by the management software for binding. In which case we can actually 
-     * warn the user about a potential broken kernel;
+     * used by the management software for binding. In which case we can
+     * actually warn the user about a potentially broken kernel.
      */
 
     /* IB ports start with 1, not 0 */
@@ -1627,7 +1626,7 @@ static int qemu_rdma_exchange_get_response(RDMAContext *rdma,
         return -EIO;
     }
     if (head->len > RDMA_CONTROL_MAX_BUFFER - sizeof(*head)) {
-        error_report("too long length: %d\n", head->len);
+        error_report("too long length: %d", head->len);
         return -EINVAL;
     }
     if (sizeof(*head) + head->len != byte_len) {
@@ -2187,8 +2186,7 @@ static void qemu_rdma_cleanup(RDMAContext *rdma)
 
     if (rdma->local_ram_blocks.block) {
         while (rdma->local_ram_blocks.nb_blocks) {
-            __qemu_rdma_delete_block(rdma,
-                    rdma->local_ram_blocks.block->offset);
+            rdma_delete_block(rdma, rdma->local_ram_blocks.block->offset);
         }
     }
 

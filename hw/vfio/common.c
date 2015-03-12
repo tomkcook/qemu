@@ -201,7 +201,7 @@ static int vfio_dma_unmap(VFIOContainer *container,
     };
 
     if (ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, &unmap)) {
-        error_report("VFIO_UNMAP_DMA: %d\n", -errno);
+        error_report("VFIO_UNMAP_DMA: %d", -errno);
         return -errno;
     }
 
@@ -234,7 +234,7 @@ static int vfio_dma_map(VFIOContainer *container, hwaddr iova,
         return 0;
     }
 
-    error_report("VFIO_MAP_DMA: %d\n", -errno);
+    error_report("VFIO_MAP_DMA: %d", -errno);
     return -errno;
 }
 
@@ -274,7 +274,7 @@ static void vfio_iommu_map_notify(Notifier *n, void *data)
                                  iotlb->translated_addr,
                                  &xlat, &len, iotlb->perm & IOMMU_WO);
     if (!memory_region_is_ram(mr)) {
-        error_report("iommu map to non memory area %"HWADDR_PRIx"\n",
+        error_report("iommu map to non memory area %"HWADDR_PRIx"",
                      xlat);
         return;
     }
@@ -283,7 +283,7 @@ static void vfio_iommu_map_notify(Notifier *n, void *data)
      * check that it did not truncate too much.
      */
     if (len & iotlb->addr_mask) {
-        error_report("iommu has granularity incompatible with target AS\n");
+        error_report("iommu has granularity incompatible with target AS");
         return;
     }
 
@@ -475,12 +475,12 @@ static void vfio_listener_region_del(MemoryListener *listener,
     }
 }
 
-const MemoryListener vfio_memory_listener = {
+static const MemoryListener vfio_memory_listener = {
     .region_add = vfio_listener_region_add,
     .region_del = vfio_listener_region_del,
 };
 
-void vfio_listener_release(VFIOContainer *container)
+static void vfio_listener_release(VFIOContainer *container)
 {
     memory_listener_unregister(&container->iommu_data.type1.listener);
 }
@@ -493,7 +493,7 @@ int vfio_mmap_region(Object *obj, VFIORegion *region,
     int ret = 0;
     VFIODevice *vbasedev = region->vbasedev;
 
-    if (VFIO_ALLOW_MMAP && size && region->flags &
+    if (vbasedev->allow_mmap && size && region->flags &
         VFIO_REGION_INFO_FLAG_MMAP) {
         int prot = 0;
 
@@ -566,7 +566,7 @@ static void vfio_kvm_device_add_group(VFIOGroup *group)
         };
 
         if (kvm_vm_ioctl(kvm_state, KVM_CREATE_DEVICE, &cd)) {
-            error_report("Failed to create KVM VFIO device: %m\n");
+            error_report("Failed to create KVM VFIO device: %m");
             return;
         }
 
@@ -932,8 +932,8 @@ static int vfio_container_do_ioctl(AddressSpace *as, int32_t groupid,
     if (group->container) {
         ret = ioctl(container->fd, req, param);
         if (ret < 0) {
-            error_report("vfio: failed to ioctl container: ret=%d, %s",
-                         ret, strerror(errno));
+            error_report("vfio: failed to ioctl %d to container: ret=%d, %s",
+                         _IOC_NR(req) - VFIO_BASE, ret, strerror(errno));
         }
     }
 
@@ -949,6 +949,7 @@ int vfio_container_ioctl(AddressSpace *as, int32_t groupid,
     switch (req) {
     case VFIO_CHECK_EXTENSION:
     case VFIO_IOMMU_SPAPR_TCE_GET_INFO:
+    case VFIO_EEH_PE_OP:
         break;
     default:
         /* Return an error on unknown requests */

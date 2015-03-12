@@ -26,6 +26,9 @@
 #include "cpu.h"
 #include "tcg.h"
 #include "hw/hw.h"
+#if !defined(CONFIG_USER_ONLY)
+#include "hw/boards.h"
+#endif
 #include "hw/qdev.h"
 #include "qemu/osdep.h"
 #include "sysemu/kvm.h"
@@ -554,6 +557,7 @@ void cpu_exec_init(CPUArchState *env)
 #ifndef CONFIG_USER_ONLY
     cpu->as = &address_space_memory;
     cpu->thread_id = qemu_get_thread_id();
+    cpu_reload_memory_map(cpu);
 #endif
     QTAILQ_INSERT_TAIL(&cpus, cpu, node);
 #if defined(CONFIG_USER_ONLY)
@@ -1194,7 +1198,7 @@ static void *file_ram_alloc(RAMBlock *block,
 
 error:
     if (mem_prealloc) {
-        error_report("%s\n", error_get_pretty(*errp));
+        error_report("%s", error_get_pretty(*errp));
         exit(1);
     }
     return NULL;
@@ -1256,8 +1260,7 @@ static void qemu_ram_setup_dump(void *addr, ram_addr_t size)
     int ret;
 
     /* Use MADV_DONTDUMP, if user doesn't want the guest memory in the core */
-    if (!qemu_opt_get_bool(qemu_get_machine_opts(),
-                           "dump-guest-core", true)) {
+    if (!machine_dump_guest_core(current_machine)) {
         ret = qemu_madvise(addr, size, QEMU_MADV_DONTDUMP);
         if (ret) {
             perror("qemu_madvise");
@@ -1332,7 +1335,7 @@ void qemu_ram_unset_idstr(ram_addr_t addr)
 
 static int memory_try_enable_merging(void *addr, size_t len)
 {
-    if (!qemu_opt_get_bool(qemu_get_machine_opts(), "mem-merge", true)) {
+    if (!machine_mem_merge(current_machine)) {
         /* disabled by the user */
         return 0;
     }
@@ -1352,6 +1355,8 @@ int qemu_ram_resize(ram_addr_t base, ram_addr_t newsize, Error **errp)
     RAMBlock *block = find_ram_block(base);
 
     assert(block);
+
+    newsize = TARGET_PAGE_ALIGN(newsize);
 
     if (block->used_length == newsize) {
         return 0;

@@ -180,21 +180,19 @@ QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
                     const char *optstr)
 {
     QemuOpts *opts;
-    char buf[32];
 
     opts = drive_def(optstr);
     if (!opts) {
         return NULL;
     }
     if (type != IF_DEFAULT) {
-        qemu_opt_set(opts, "if", if_name[type]);
+        qemu_opt_set(opts, "if", if_name[type], &error_abort);
     }
     if (index >= 0) {
-        snprintf(buf, sizeof(buf), "%d", index);
-        qemu_opt_set(opts, "index", buf);
+        qemu_opt_set_number(opts, "index", index, &error_abort);
     }
     if (file)
-        qemu_opt_set(opts, "file", file);
+        qemu_opt_set(opts, "file", file, &error_abort);
     return opts;
 }
 
@@ -584,7 +582,7 @@ static void qemu_opt_rename(QemuOpts *opts, const char *from, const char *to,
 
     /* rename all items in opts */
     while ((value = qemu_opt_get(opts, from))) {
-        qemu_opt_set(opts, to, value);
+        qemu_opt_set(opts, to, value, &error_abort);
         qemu_opt_unset(opts, from);
     }
 }
@@ -720,8 +718,7 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
         qemu_opt_rename(all_opts, opt_renames[i].from, opt_renames[i].to,
                         &local_err);
         if (local_err) {
-            error_report("%s", error_get_pretty(local_err));
-            error_free(local_err);
+            error_report_err(local_err);
             return NULL;
         }
     }
@@ -738,15 +735,15 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
         /* Specific options take precedence */
         if (!qemu_opt_get(all_opts, "cache.writeback")) {
             qemu_opt_set_bool(all_opts, "cache.writeback",
-                              !!(flags & BDRV_O_CACHE_WB));
+                              !!(flags & BDRV_O_CACHE_WB), &error_abort);
         }
         if (!qemu_opt_get(all_opts, "cache.direct")) {
             qemu_opt_set_bool(all_opts, "cache.direct",
-                              !!(flags & BDRV_O_NOCACHE));
+                              !!(flags & BDRV_O_NOCACHE), &error_abort);
         }
         if (!qemu_opt_get(all_opts, "cache.no-flush")) {
             qemu_opt_set_bool(all_opts, "cache.no-flush",
-                              !!(flags & BDRV_O_NO_FLUSH));
+                              !!(flags & BDRV_O_NO_FLUSH), &error_abort);
         }
         qemu_opt_unset(all_opts, "cache");
     }
@@ -759,8 +756,7 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
                                    &error_abort);
     qemu_opts_absorb_qdict(legacy_opts, bs_opts, &local_err);
     if (local_err) {
-        error_report("%s", error_get_pretty(local_err));
-        error_free(local_err);
+        error_report_err(local_err);
         goto fail;
     }
 
@@ -937,13 +933,14 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
         devopts = qemu_opts_create(qemu_find_opts("device"), NULL, 0,
                                    &error_abort);
         if (arch_type == QEMU_ARCH_S390X) {
-            qemu_opt_set(devopts, "driver", "virtio-blk-s390");
+            qemu_opt_set(devopts, "driver", "virtio-blk-s390", &error_abort);
         } else {
-            qemu_opt_set(devopts, "driver", "virtio-blk-pci");
+            qemu_opt_set(devopts, "driver", "virtio-blk-pci", &error_abort);
         }
-        qemu_opt_set(devopts, "drive", qdict_get_str(bs_opts, "id"));
+        qemu_opt_set(devopts, "drive", qdict_get_str(bs_opts, "id"),
+                     &error_abort);
         if (devaddr) {
-            qemu_opt_set(devopts, "addr", devaddr);
+            qemu_opt_set(devopts, "addr", devaddr, &error_abort);
         }
     }
 
@@ -975,8 +972,7 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type)
     bs_opts = NULL;
     if (!blk) {
         if (local_err) {
-            error_report("%s", error_get_pretty(local_err));
-            error_free(local_err);
+            error_report_err(local_err);
         }
         goto fail;
     } else {
@@ -1017,7 +1013,7 @@ fail:
     return dinfo;
 }
 
-void do_commit(Monitor *mon, const QDict *qdict)
+void hmp_commit(Monitor *mon, const QDict *qdict)
 {
     const char *device = qdict_get_str(qdict, "device");
     BlockDriverState *bs;
@@ -1945,7 +1941,7 @@ void qmp_block_set_io_throttle(const char *device, int64_t bps, int64_t bps_rd,
     aio_context_release(aio_context);
 }
 
-int do_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data)
+int hmp_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data)
 {
     const char *id = qdict_get_str(qdict, "id");
     BlockBackend *blk;
@@ -1970,8 +1966,7 @@ int do_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data)
     aio_context_acquire(aio_context);
 
     if (bdrv_op_is_blocked(bs, BLOCK_OP_TYPE_DRIVE_DEL, &local_err)) {
-        error_report("%s", error_get_pretty(local_err));
-        error_free(local_err);
+        error_report_err(local_err);
         aio_context_release(aio_context);
         return -1;
     }
@@ -1987,7 +1982,7 @@ int do_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data)
      * then we can just get rid of the block driver state right here.
      */
     if (blk_get_attached_dev(blk)) {
-        blk_hide_on_behalf_of_do_drive_del(blk);
+        blk_hide_on_behalf_of_hmp_drive_del(blk);
         /* Further I/O must not pause the guest */
         bdrv_set_on_error(bs, BLOCKDEV_ON_ERROR_REPORT,
                           BLOCKDEV_ON_ERROR_REPORT);
