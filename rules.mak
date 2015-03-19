@@ -102,7 +102,11 @@ endif
 %.o: %.dtrace
 	$(call quiet-command,dtrace -o $@ -G -s $<, "  GEN   $(TARGET_DIR)$@")
 
+ifdef CONFIG_WIN32
+%$(DSOSUF): CFLAGS += -DBUILD_DSO
+else
 %$(DSOSUF): CFLAGS += -fPIC -DBUILD_DSO
+endif
 %$(DSOSUF): LDFLAGS += $(LDFLAGS_SHARED)
 %$(DSOSUF): %.mo
 	$(call LINK,$^)
