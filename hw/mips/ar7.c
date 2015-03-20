@@ -3834,6 +3834,7 @@ static void ar7_common_init(MachineState *machine,
                             int flash_size)
 {
     char *filename;
+    MIPSCPU *cpu;
     CPUMIPSState *env;
     AR7State *s;
     DeviceState *dev;
@@ -3862,12 +3863,13 @@ static void ar7_common_init(MachineState *machine,
 #endif
         machine->cpu_model = "4KEcR1";
     }
-    env = cpu_init(machine->cpu_model);
-    if (!env) {
+    cpu = cpu_mips_init(machine->cpu_model);
+    if (!cpu) {
         fprintf(stderr,
                 "Unable to find CPU definition %s\n", machine->cpu_model);
         exit(1);
     }
+    env = &cpu->env;
 
     qemu_register_reset(main_cpu_reset, env);
 

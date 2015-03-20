@@ -73,6 +73,7 @@
 #include "block/qapi.h"
 #include "qapi/qmp-event.h"
 #include "qapi-event.h"
+#include "sysemu/block-backend.h"
 
 /* for hmp_info_irq/pic */
 #if defined(TARGET_SPARC)
@@ -1974,7 +1975,7 @@ static void hmp_info_numa(Monitor *mon, const QDict *qdict)
 
 #ifdef CONFIG_PROFILER
 
-int64_t qemu_time;
+int64_t tcg_time;
 int64_t dev_time;
 
 static void hmp_info_profile(Monitor *mon, const QDict *qdict)
@@ -1982,8 +1983,8 @@ static void hmp_info_profile(Monitor *mon, const QDict *qdict)
     monitor_printf(mon, "async time  %" PRId64 " (%0.3f)\n",
                    dev_time, dev_time / (double)get_ticks_per_sec());
     monitor_printf(mon, "qemu time   %" PRId64 " (%0.3f)\n",
-                   qemu_time, qemu_time / (double)get_ticks_per_sec());
-    qemu_time = 0;
+                   tcg_time, tcg_time / (double)get_ticks_per_sec());
+    tcg_time = 0;
     dev_time = 0;
 }
 #else
@@ -2887,6 +2888,13 @@ static mon_cmd_t info_cmds[] = {
         .params     = "",
         .help       = "show qdev device model list",
         .mhandler.cmd = hmp_info_qdm,
+    },
+    {
+        .name       = "qom-tree",
+        .args_type  = "path:s?",
+        .params     = "[path]",
+        .help       = "show QOM composition tree",
+        .mhandler.cmd = hmp_info_qom_tree,
     },
     {
         .name       = "roms",
@@ -4683,11 +4691,13 @@ static void monitor_find_completion_by_table(Monitor *mon,
 
         if (cmd->sub_table) {
             /* do the job again */
-            return monitor_find_completion_by_table(mon, cmd->sub_table,
-                                                    &args[1], nb_args - 1);
+            monitor_find_completion_by_table(mon, cmd->sub_table,
+                                             &args[1], nb_args - 1);
+            return;
         }
         if (cmd->command_completion) {
-            return cmd->command_completion(mon->rs, nb_args, args[nb_args - 1]);
+            cmd->command_completion(mon->rs, nb_args, args[nb_args - 1]);
+            return;
         }
 
         ptype = next_arg_type(cmd->args_type);
@@ -5414,15 +5424,15 @@ int monitor_read_block_device_key(Monitor *mon, const char *device,
                                   BlockCompletionFunc *completion_cb,
                                   void *opaque)
 {
-    BlockDriverState *bs;
+    BlockBackend *blk;
 
-    bs = bdrv_find(device);
-    if (!bs) {
+    blk = blk_by_name(device);
+    if (!blk) {
         monitor_printf(mon, "Device not found %s\n", device);
         return -1;
     }
 
-    return monitor_read_bdrv_key_start(mon, bs, completion_cb, opaque);
+    return monitor_read_bdrv_key_start(mon, blk_bs(blk), completion_cb, opaque);
 }
 
 QemuOptsList qemu_mon_opts = {
