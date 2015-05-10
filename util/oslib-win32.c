@@ -265,6 +265,18 @@ char *qemu_get_exec_dir(void)
 }
 
 /*
+ * ffs is a GCC builtin function. Builds without optimization used to get it from
+ * libiberty.a which is not available in recent versions of MinGW or MinGW-w64,
+ * so we need a local implementation.
+ */
+
+int ffs(int i)
+{
+    /* Use gcc's builtin ffs. */
+    return __builtin_ffs(i);
+}
+
+/*
  * The original implementation of g_poll from glib has a problem on Windows
  * when using timeouts < 10 ms.
  *
