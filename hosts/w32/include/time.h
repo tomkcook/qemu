@@ -24,12 +24,14 @@ struct timespec {
 };
 #endif /* !HAVE_STRUCT_TIMESPEC && !_TIMESPEC_DEFINED */
 
+#if !defined(CLOCK_REALTIME)
 typedef enum {
   CLOCK_REALTIME = 0
 } clockid_t;
 
 int clock_getres (clockid_t clock_id, struct timespec *res);
 int clock_gettime(clockid_t clock_id, struct timespec *pTimespec);
+#endif /* CLOCK_REALTIME */
 
 #endif /* W64 */
 

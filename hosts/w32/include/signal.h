@@ -13,7 +13,7 @@
 
 #include_next <signal.h>
 
-#if !defined(WIN64)
+#if !defined(WIN64) && !defined(pthread_sigmask)
 
 #include <sys/types.h>    /* sigset_t */
 
