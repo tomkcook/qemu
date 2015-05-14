@@ -373,6 +373,7 @@ static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write)
     return false;
 }
 
+/* Called from RCU critical section */
 MemoryRegion *address_space_translate(AddressSpace *as, hwaddr addr,
                                       hwaddr *xlat, hwaddr *plen,
                                       bool is_write)
@@ -380,9 +381,7 @@ MemoryRegion *address_space_translate(AddressSpace *as, hwaddr addr,
     IOMMUTLBEntry iotlb;
     MemoryRegionSection *section;
     MemoryRegion *mr;
-    hwaddr len = *plen;
 
-    rcu_read_lock();
     for (;;) {
         AddressSpaceDispatch *d = atomic_rcu_read(&as->dispatch);
         section = address_space_translate_internal(d, addr, &addr, plen, true);
@@ -395,7 +394,7 @@ MemoryRegion *address_space_translate(AddressSpace *as, hwaddr addr,
         iotlb = mr->iommu_ops->translate(mr, addr, is_write);
         addr = ((iotlb.translated_addr & ~iotlb.addr_mask)
                 | (addr & iotlb.addr_mask));
-        len = MIN(len, (addr | iotlb.addr_mask) - addr + 1);
+        *plen = MIN(*plen, (addr | iotlb.addr_mask) - addr + 1);
         if (!(iotlb.perm & (1 << is_write))) {
             mr = &io_mem_unassigned;
             break;
@@ -406,12 +405,10 @@ MemoryRegion *address_space_translate(AddressSpace *as, hwaddr addr,
 
     if (xen_enabled() && memory_access_is_direct(mr, is_write)) {
         hwaddr page = ((addr & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE) - addr;
-        len = MIN(page, len);
+        *plen = MIN(page, *plen);
     }
 
-    *plen = len;
     *xlat = addr;
-    rcu_read_unlock();
     return mr;
 }
 
@@ -428,15 +425,6 @@ address_space_translate_for_iotlb(CPUState *cpu, hwaddr addr,
     return section;
 }
 #endif
-
-void cpu_exec_init_all(void)
-{
-#if !defined(CONFIG_USER_ONLY)
-    qemu_mutex_init(&ram_list.mutex);
-    memory_map_init();
-    io_mem_init();
-#endif
-}
 
 #if !defined(CONFIG_USER_ONLY)
 
@@ -1864,7 +1852,7 @@ static const MemoryRegionOps notdirty_mem_ops = {
 };
 
 /* Generate a debug exception if a watchpoint has been hit.  */
-static void check_watchpoint(int offset, int len, int flags)
+static void check_watchpoint(int offset, int len, MemTxAttrs attrs, int flags)
 {
     CPUState *cpu = current_cpu;
     CPUArchState *env = cpu->env_ptr;
@@ -1890,6 +1878,7 @@ static void check_watchpoint(int offset, int len, int flags)
                 wp->flags |= BP_WATCHPOINT_HIT_WRITE;
             }
             wp->hitaddr = vaddr;
+            wp->hitattrs = attrs;
             if (!cpu->watchpoint_hit) {
                 cpu->watchpoint_hit = wp;
                 tb_check_watchpoint(cpu);
@@ -1911,69 +1900,93 @@ static void check_watchpoint(int offset, int len, int flags)
 /* Watchpoint access routines.  Watchpoints are inserted using TLB tricks,
    so these check for a hit then pass through to the normal out-of-line
    phys routines.  */
-static uint64_t watch_mem_read(void *opaque, hwaddr addr,
-                               unsigned size)
+static MemTxResult watch_mem_read(void *opaque, hwaddr addr, uint64_t *pdata,
+                                  unsigned size, MemTxAttrs attrs)
 {
-    check_watchpoint(addr & ~TARGET_PAGE_MASK, size, BP_MEM_READ);
-    switch (size) {
-    case 1: return ldub_phys(&address_space_memory, addr);
-    case 2: return lduw_phys(&address_space_memory, addr);
-    case 4: return ldl_phys(&address_space_memory, addr);
-    default: abort();
-    }
-}
+    MemTxResult res;
+    uint64_t data;
 
-static void watch_mem_write(void *opaque, hwaddr addr,
-                            uint64_t val, unsigned size)
-{
-    check_watchpoint(addr & ~TARGET_PAGE_MASK, size, BP_MEM_WRITE);
+    check_watchpoint(addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_READ);
     switch (size) {
     case 1:
-        stb_phys(&address_space_memory, addr, val);
+        data = address_space_ldub(&address_space_memory, addr, attrs, &res);
         break;
     case 2:
-        stw_phys(&address_space_memory, addr, val);
+        data = address_space_lduw(&address_space_memory, addr, attrs, &res);
         break;
     case 4:
-        stl_phys(&address_space_memory, addr, val);
+        data = address_space_ldl(&address_space_memory, addr, attrs, &res);
         break;
     default: abort();
     }
+    *pdata = data;
+    return res;
+}
+
+static MemTxResult watch_mem_write(void *opaque, hwaddr addr,
+                                   uint64_t val, unsigned size,
+                                   MemTxAttrs attrs)
+{
+    MemTxResult res;
+
+    check_watchpoint(addr & ~TARGET_PAGE_MASK, size, attrs, BP_MEM_WRITE);
+    switch (size) {
+    case 1:
+        address_space_stb(&address_space_memory, addr, val, attrs, &res);
+        break;
+    case 2:
+        address_space_stw(&address_space_memory, addr, val, attrs, &res);
+        break;
+    case 4:
+        address_space_stl(&address_space_memory, addr, val, attrs, &res);
+        break;
+    default: abort();
+    }
+    return res;
 }
 
 static const MemoryRegionOps watch_mem_ops = {
-    .read = watch_mem_read,
-    .write = watch_mem_write,
+    .read_with_attrs = watch_mem_read,
+    .write_with_attrs = watch_mem_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static uint64_t subpage_read(void *opaque, hwaddr addr,
-                             unsigned len)
+static MemTxResult subpage_read(void *opaque, hwaddr addr, uint64_t *data,
+                                unsigned len, MemTxAttrs attrs)
 {
     subpage_t *subpage = opaque;
     uint8_t buf[8];
+    MemTxResult res;
 
 #if defined(DEBUG_SUBPAGE)
     printf("%s: subpage %p len %u addr " TARGET_FMT_plx "\n", __func__,
            subpage, len, addr);
 #endif
-    address_space_read(subpage->as, addr + subpage->base, buf, len);
+    res = address_space_read(subpage->as, addr + subpage->base,
+                             attrs, buf, len);
+    if (res) {
+        return res;
+    }
     switch (len) {
     case 1:
-        return ldub_p(buf);
+        *data = ldub_p(buf);
+        return MEMTX_OK;
     case 2:
-        return lduw_p(buf);
+        *data = lduw_p(buf);
+        return MEMTX_OK;
     case 4:
-        return ldl_p(buf);
+        *data = ldl_p(buf);
+        return MEMTX_OK;
     case 8:
-        return ldq_p(buf);
+        *data = ldq_p(buf);
+        return MEMTX_OK;
     default:
         abort();
     }
 }
 
-static void subpage_write(void *opaque, hwaddr addr,
-                          uint64_t value, unsigned len)
+static MemTxResult subpage_write(void *opaque, hwaddr addr,
+                                 uint64_t value, unsigned len, MemTxAttrs attrs)
 {
     subpage_t *subpage = opaque;
     uint8_t buf[8];
@@ -1999,7 +2012,8 @@ static void subpage_write(void *opaque, hwaddr addr,
     default:
         abort();
     }
-    address_space_write(subpage->as, addr + subpage->base, buf, len);
+    return address_space_write(subpage->as, addr + subpage->base,
+                               attrs, buf, len);
 }
 
 static bool subpage_accepts(void *opaque, hwaddr addr,
@@ -2016,8 +2030,8 @@ static bool subpage_accepts(void *opaque, hwaddr addr,
 }
 
 static const MemoryRegionOps subpage_ops = {
-    .read = subpage_read,
-    .write = subpage_write,
+    .read_with_attrs = subpage_read,
+    .write_with_attrs = subpage_write,
     .impl.min_access_size = 1,
     .impl.max_access_size = 8,
     .valid.min_access_size = 1,
@@ -2310,16 +2324,17 @@ static int memory_access_size(MemoryRegion *mr, unsigned l, hwaddr addr)
     return l;
 }
 
-bool address_space_rw(AddressSpace *as, hwaddr addr, uint8_t *buf,
-                      int len, bool is_write)
+MemTxResult address_space_rw(AddressSpace *as, hwaddr addr, MemTxAttrs attrs,
+                             uint8_t *buf, int len, bool is_write)
 {
     hwaddr l;
     uint8_t *ptr;
     uint64_t val;
     hwaddr addr1;
     MemoryRegion *mr;
-    bool error = false;
+    MemTxResult result = MEMTX_OK;
 
+    rcu_read_lock();
     while (len > 0) {
         l = len;
         mr = address_space_translate(as, addr, &addr1, &l, is_write);
@@ -2333,22 +2348,26 @@ bool address_space_rw(AddressSpace *as, hwaddr addr, uint8_t *buf,
                 case 8:
                     /* 64 bit write access */
                     val = ldq_p(buf);
-                    error |= io_mem_write(mr, addr1, val, 8);
+                    result |= memory_region_dispatch_write(mr, addr1, val, 8,
+                                                           attrs);
                     break;
                 case 4:
                     /* 32 bit write access */
                     val = ldl_p(buf);
-                    error |= io_mem_write(mr, addr1, val, 4);
+                    result |= memory_region_dispatch_write(mr, addr1, val, 4,
+                                                           attrs);
                     break;
                 case 2:
                     /* 16 bit write access */
                     val = lduw_p(buf);
-                    error |= io_mem_write(mr, addr1, val, 2);
+                    result |= memory_region_dispatch_write(mr, addr1, val, 2,
+                                                           attrs);
                     break;
                 case 1:
                     /* 8 bit write access */
                     val = ldub_p(buf);
-                    error |= io_mem_write(mr, addr1, val, 1);
+                    result |= memory_region_dispatch_write(mr, addr1, val, 1,
+                                                           attrs);
                     break;
                 default:
                     abort();
@@ -2367,22 +2386,26 @@ bool address_space_rw(AddressSpace *as, hwaddr addr, uint8_t *buf,
                 switch (l) {
                 case 8:
                     /* 64 bit read access */
-                    error |= io_mem_read(mr, addr1, &val, 8);
+                    result |= memory_region_dispatch_read(mr, addr1, &val, 8,
+                                                          attrs);
                     stq_p(buf, val);
                     break;
                 case 4:
                     /* 32 bit read access */
-                    error |= io_mem_read(mr, addr1, &val, 4);
+                    result |= memory_region_dispatch_read(mr, addr1, &val, 4,
+                                                          attrs);
                     stl_p(buf, val);
                     break;
                 case 2:
                     /* 16 bit read access */
-                    error |= io_mem_read(mr, addr1, &val, 2);
+                    result |= memory_region_dispatch_read(mr, addr1, &val, 2,
+                                                          attrs);
                     stw_p(buf, val);
                     break;
                 case 1:
                     /* 8 bit read access */
-                    error |= io_mem_read(mr, addr1, &val, 1);
+                    result |= memory_region_dispatch_read(mr, addr1, &val, 1,
+                                                          attrs);
                     stb_p(buf, val);
                     break;
                 default:
@@ -2398,26 +2421,29 @@ bool address_space_rw(AddressSpace *as, hwaddr addr, uint8_t *buf,
         buf += l;
         addr += l;
     }
+    rcu_read_unlock();
 
-    return error;
+    return result;
 }
 
-bool address_space_write(AddressSpace *as, hwaddr addr,
-                         const uint8_t *buf, int len)
+MemTxResult address_space_write(AddressSpace *as, hwaddr addr, MemTxAttrs attrs,
+                                const uint8_t *buf, int len)
 {
-    return address_space_rw(as, addr, (uint8_t *)buf, len, true);
+    return address_space_rw(as, addr, attrs, (uint8_t *)buf, len, true);
 }
 
-bool address_space_read(AddressSpace *as, hwaddr addr, uint8_t *buf, int len)
+MemTxResult address_space_read(AddressSpace *as, hwaddr addr, MemTxAttrs attrs,
+                               uint8_t *buf, int len)
 {
-    return address_space_rw(as, addr, buf, len, false);
+    return address_space_rw(as, addr, attrs, buf, len, false);
 }
 
 
 void cpu_physical_memory_rw(hwaddr addr, uint8_t *buf,
                             int len, int is_write)
 {
-    address_space_rw(&address_space_memory, addr, buf, len, is_write);
+    address_space_rw(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
+                     buf, len, is_write);
 }
 
 enum write_rom_type {
@@ -2433,6 +2459,7 @@ static inline void cpu_physical_memory_write_rom_internal(AddressSpace *as,
     hwaddr addr1;
     MemoryRegion *mr;
 
+    rcu_read_lock();
     while (len > 0) {
         l = len;
         mr = address_space_translate(as, addr, &addr1, &l, true);
@@ -2458,6 +2485,7 @@ static inline void cpu_physical_memory_write_rom_internal(AddressSpace *as,
         buf += l;
         addr += l;
     }
+    rcu_read_unlock();
 }
 
 /* used for ROM loading : can write in RAM and ROM */
@@ -2488,46 +2516,77 @@ typedef struct {
     void *buffer;
     hwaddr addr;
     hwaddr len;
+    bool in_use;
 } BounceBuffer;
 
 static BounceBuffer bounce;
 
 typedef struct MapClient {
-    void *opaque;
-    void (*callback)(void *opaque);
+    QEMUBH *bh;
     QLIST_ENTRY(MapClient) link;
 } MapClient;
 
+QemuMutex map_client_list_lock;
 static QLIST_HEAD(map_client_list, MapClient) map_client_list
     = QLIST_HEAD_INITIALIZER(map_client_list);
 
-void *cpu_register_map_client(void *opaque, void (*callback)(void *opaque))
+static void cpu_unregister_map_client_do(MapClient *client)
 {
-    MapClient *client = g_malloc(sizeof(*client));
-
-    client->opaque = opaque;
-    client->callback = callback;
-    QLIST_INSERT_HEAD(&map_client_list, client, link);
-    return client;
-}
-
-static void cpu_unregister_map_client(void *_client)
-{
-    MapClient *client = (MapClient *)_client;
-
     QLIST_REMOVE(client, link);
     g_free(client);
 }
 
-static void cpu_notify_map_clients(void)
+static void cpu_notify_map_clients_locked(void)
 {
     MapClient *client;
 
     while (!QLIST_EMPTY(&map_client_list)) {
         client = QLIST_FIRST(&map_client_list);
-        client->callback(client->opaque);
-        cpu_unregister_map_client(client);
+        qemu_bh_schedule(client->bh);
+        cpu_unregister_map_client_do(client);
     }
+}
+
+void cpu_register_map_client(QEMUBH *bh)
+{
+    MapClient *client = g_malloc(sizeof(*client));
+
+    qemu_mutex_lock(&map_client_list_lock);
+    client->bh = bh;
+    QLIST_INSERT_HEAD(&map_client_list, client, link);
+    if (!atomic_read(&bounce.in_use)) {
+        cpu_notify_map_clients_locked();
+    }
+    qemu_mutex_unlock(&map_client_list_lock);
+}
+
+void cpu_exec_init_all(void)
+{
+    qemu_mutex_init(&ram_list.mutex);
+    memory_map_init();
+    io_mem_init();
+    qemu_mutex_init(&map_client_list_lock);
+}
+
+void cpu_unregister_map_client(QEMUBH *bh)
+{
+    MapClient *client;
+
+    qemu_mutex_lock(&map_client_list_lock);
+    QLIST_FOREACH(client, &map_client_list, link) {
+        if (client->bh == bh) {
+            cpu_unregister_map_client_do(client);
+            break;
+        }
+    }
+    qemu_mutex_unlock(&map_client_list_lock);
+}
+
+static void cpu_notify_map_clients(void)
+{
+    qemu_mutex_lock(&map_client_list_lock);
+    cpu_notify_map_clients_locked();
+    qemu_mutex_unlock(&map_client_list_lock);
 }
 
 bool address_space_access_valid(AddressSpace *as, hwaddr addr, int len, bool is_write)
@@ -2535,6 +2594,7 @@ bool address_space_access_valid(AddressSpace *as, hwaddr addr, int len, bool is_
     MemoryRegion *mr;
     hwaddr l, xlat;
 
+    rcu_read_lock();
     while (len > 0) {
         l = len;
         mr = address_space_translate(as, addr, &xlat, &l, is_write);
@@ -2548,6 +2608,7 @@ bool address_space_access_valid(AddressSpace *as, hwaddr addr, int len, bool is_
         len -= l;
         addr += l;
     }
+    rcu_read_unlock();
     return true;
 }
 
@@ -2574,9 +2635,12 @@ void *address_space_map(AddressSpace *as,
     }
 
     l = len;
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &xlat, &l, is_write);
+
     if (!memory_access_is_direct(mr, is_write)) {
-        if (bounce.buffer) {
+        if (atomic_xchg(&bounce.in_use, true)) {
+            rcu_read_unlock();
             return NULL;
         }
         /* Avoid unbounded allocations */
@@ -2588,9 +2652,11 @@ void *address_space_map(AddressSpace *as,
         memory_region_ref(mr);
         bounce.mr = mr;
         if (!is_write) {
-            address_space_read(as, addr, bounce.buffer, l);
+            address_space_read(as, addr, MEMTXATTRS_UNSPECIFIED,
+                               bounce.buffer, l);
         }
 
+        rcu_read_unlock();
         *plen = l;
         return bounce.buffer;
     }
@@ -2614,6 +2680,7 @@ void *address_space_map(AddressSpace *as,
     }
 
     memory_region_ref(mr);
+    rcu_read_unlock();
     *plen = done;
     return qemu_ram_ptr_length(raddr + base, plen);
 }
@@ -2641,11 +2708,13 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
         return;
     }
     if (is_write) {
-        address_space_write(as, bounce.addr, bounce.buffer, access_len);
+        address_space_write(as, bounce.addr, MEMTXATTRS_UNSPECIFIED,
+                            bounce.buffer, access_len);
     }
     qemu_vfree(bounce.buffer);
     bounce.buffer = NULL;
     memory_region_unref(bounce.mr);
+    atomic_mb_set(&bounce.in_use, false);
     cpu_notify_map_clients();
 }
 
@@ -2663,19 +2732,23 @@ void cpu_physical_memory_unmap(void *buffer, hwaddr len,
 }
 
 /* warning: addr must be aligned */
-static inline uint32_t ldl_phys_internal(AddressSpace *as, hwaddr addr,
-                                         enum device_endian endian)
+static inline uint32_t address_space_ldl_internal(AddressSpace *as, hwaddr addr,
+                                                  MemTxAttrs attrs,
+                                                  MemTxResult *result,
+                                                  enum device_endian endian)
 {
     uint8_t *ptr;
     uint64_t val;
     MemoryRegion *mr;
     hwaddr l = 4;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l, false);
     if (l < 4 || !memory_access_is_direct(mr, false)) {
         /* I/O case */
-        io_mem_read(mr, addr1, &val, 4);
+        r = memory_region_dispatch_read(mr, addr1, &val, 4, attrs);
 #if defined(TARGET_WORDS_BIGENDIAN)
         if (endian == DEVICE_LITTLE_ENDIAN) {
             val = bswap32(val);
@@ -2701,40 +2774,70 @@ static inline uint32_t ldl_phys_internal(AddressSpace *as, hwaddr addr,
             val = ldl_p(ptr);
             break;
         }
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
     return val;
+}
+
+uint32_t address_space_ldl(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldl_internal(as, addr, attrs, result,
+                                      DEVICE_NATIVE_ENDIAN);
+}
+
+uint32_t address_space_ldl_le(AddressSpace *as, hwaddr addr,
+                              MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldl_internal(as, addr, attrs, result,
+                                      DEVICE_LITTLE_ENDIAN);
+}
+
+uint32_t address_space_ldl_be(AddressSpace *as, hwaddr addr,
+                              MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldl_internal(as, addr, attrs, result,
+                                      DEVICE_BIG_ENDIAN);
 }
 
 uint32_t ldl_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldl_phys_internal(as, addr, DEVICE_NATIVE_ENDIAN);
+    return address_space_ldl(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint32_t ldl_le_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldl_phys_internal(as, addr, DEVICE_LITTLE_ENDIAN);
+    return address_space_ldl_le(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint32_t ldl_be_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldl_phys_internal(as, addr, DEVICE_BIG_ENDIAN);
+    return address_space_ldl_be(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* warning: addr must be aligned */
-static inline uint64_t ldq_phys_internal(AddressSpace *as, hwaddr addr,
-                                         enum device_endian endian)
+static inline uint64_t address_space_ldq_internal(AddressSpace *as, hwaddr addr,
+                                                  MemTxAttrs attrs,
+                                                  MemTxResult *result,
+                                                  enum device_endian endian)
 {
     uint8_t *ptr;
     uint64_t val;
     MemoryRegion *mr;
     hwaddr l = 8;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l,
                                  false);
     if (l < 8 || !memory_access_is_direct(mr, false)) {
         /* I/O case */
-        io_mem_read(mr, addr1, &val, 8);
+        r = memory_region_dispatch_read(mr, addr1, &val, 8, attrs);
 #if defined(TARGET_WORDS_BIGENDIAN)
         if (endian == DEVICE_LITTLE_ENDIAN) {
             val = bswap64(val);
@@ -2760,48 +2863,90 @@ static inline uint64_t ldq_phys_internal(AddressSpace *as, hwaddr addr,
             val = ldq_p(ptr);
             break;
         }
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
     return val;
+}
+
+uint64_t address_space_ldq(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldq_internal(as, addr, attrs, result,
+                                      DEVICE_NATIVE_ENDIAN);
+}
+
+uint64_t address_space_ldq_le(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldq_internal(as, addr, attrs, result,
+                                      DEVICE_LITTLE_ENDIAN);
+}
+
+uint64_t address_space_ldq_be(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_ldq_internal(as, addr, attrs, result,
+                                      DEVICE_BIG_ENDIAN);
 }
 
 uint64_t ldq_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldq_phys_internal(as, addr, DEVICE_NATIVE_ENDIAN);
+    return address_space_ldq(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint64_t ldq_le_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldq_phys_internal(as, addr, DEVICE_LITTLE_ENDIAN);
+    return address_space_ldq_le(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint64_t ldq_be_phys(AddressSpace *as, hwaddr addr)
 {
-    return ldq_phys_internal(as, addr, DEVICE_BIG_ENDIAN);
+    return address_space_ldq_be(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* XXX: optimize */
-uint32_t ldub_phys(AddressSpace *as, hwaddr addr)
+uint32_t address_space_ldub(AddressSpace *as, hwaddr addr,
+                            MemTxAttrs attrs, MemTxResult *result)
 {
     uint8_t val;
-    address_space_rw(as, addr, &val, 1, 0);
+    MemTxResult r;
+
+    r = address_space_rw(as, addr, attrs, &val, 1, 0);
+    if (result) {
+        *result = r;
+    }
     return val;
 }
 
+uint32_t ldub_phys(AddressSpace *as, hwaddr addr)
+{
+    return address_space_ldub(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
+}
+
 /* warning: addr must be aligned */
-static inline uint32_t lduw_phys_internal(AddressSpace *as, hwaddr addr,
-                                          enum device_endian endian)
+static inline uint32_t address_space_lduw_internal(AddressSpace *as,
+                                                   hwaddr addr,
+                                                   MemTxAttrs attrs,
+                                                   MemTxResult *result,
+                                                   enum device_endian endian)
 {
     uint8_t *ptr;
     uint64_t val;
     MemoryRegion *mr;
     hwaddr l = 2;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l,
                                  false);
     if (l < 2 || !memory_access_is_direct(mr, false)) {
         /* I/O case */
-        io_mem_read(mr, addr1, &val, 2);
+        r = memory_region_dispatch_read(mr, addr1, &val, 2, attrs);
 #if defined(TARGET_WORDS_BIGENDIAN)
         if (endian == DEVICE_LITTLE_ENDIAN) {
             val = bswap16(val);
@@ -2827,39 +2972,68 @@ static inline uint32_t lduw_phys_internal(AddressSpace *as, hwaddr addr,
             val = lduw_p(ptr);
             break;
         }
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
     return val;
+}
+
+uint32_t address_space_lduw(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_lduw_internal(as, addr, attrs, result,
+                                       DEVICE_NATIVE_ENDIAN);
+}
+
+uint32_t address_space_lduw_le(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_lduw_internal(as, addr, attrs, result,
+                                       DEVICE_LITTLE_ENDIAN);
+}
+
+uint32_t address_space_lduw_be(AddressSpace *as, hwaddr addr,
+                           MemTxAttrs attrs, MemTxResult *result)
+{
+    return address_space_lduw_internal(as, addr, attrs, result,
+                                       DEVICE_BIG_ENDIAN);
 }
 
 uint32_t lduw_phys(AddressSpace *as, hwaddr addr)
 {
-    return lduw_phys_internal(as, addr, DEVICE_NATIVE_ENDIAN);
+    return address_space_lduw(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint32_t lduw_le_phys(AddressSpace *as, hwaddr addr)
 {
-    return lduw_phys_internal(as, addr, DEVICE_LITTLE_ENDIAN);
+    return address_space_lduw_le(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 uint32_t lduw_be_phys(AddressSpace *as, hwaddr addr)
 {
-    return lduw_phys_internal(as, addr, DEVICE_BIG_ENDIAN);
+    return address_space_lduw_be(as, addr, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* warning: addr must be aligned. The ram page is not masked as dirty
    and the code inside is not invalidated. It is useful if the dirty
    bits are used to track modified PTEs */
-void stl_phys_notdirty(AddressSpace *as, hwaddr addr, uint32_t val)
+void address_space_stl_notdirty(AddressSpace *as, hwaddr addr, uint32_t val,
+                                MemTxAttrs attrs, MemTxResult *result)
 {
     uint8_t *ptr;
     MemoryRegion *mr;
     hwaddr l = 4;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l,
                                  true);
     if (l < 4 || !memory_access_is_direct(mr, true)) {
-        io_mem_write(mr, addr1, val, 4);
+        r = memory_region_dispatch_write(mr, addr1, val, 4, attrs);
     } else {
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
         ptr = qemu_get_ram_ptr(addr1);
@@ -2873,19 +3047,33 @@ void stl_phys_notdirty(AddressSpace *as, hwaddr addr, uint32_t val)
                 cpu_physical_memory_set_dirty_range_nocode(addr1, 4);
             }
         }
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
+}
+
+void stl_phys_notdirty(AddressSpace *as, hwaddr addr, uint32_t val)
+{
+    address_space_stl_notdirty(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* warning: addr must be aligned */
-static inline void stl_phys_internal(AddressSpace *as,
-                                     hwaddr addr, uint32_t val,
-                                     enum device_endian endian)
+static inline void address_space_stl_internal(AddressSpace *as,
+                                              hwaddr addr, uint32_t val,
+                                              MemTxAttrs attrs,
+                                              MemTxResult *result,
+                                              enum device_endian endian)
 {
     uint8_t *ptr;
     MemoryRegion *mr;
     hwaddr l = 4;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l,
                                  true);
     if (l < 4 || !memory_access_is_direct(mr, true)) {
@@ -2898,7 +3086,7 @@ static inline void stl_phys_internal(AddressSpace *as,
             val = bswap32(val);
         }
 #endif
-        io_mem_write(mr, addr1, val, 4);
+        r = memory_region_dispatch_write(mr, addr1, val, 4, attrs);
     } else {
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
@@ -2915,41 +3103,82 @@ static inline void stl_phys_internal(AddressSpace *as,
             break;
         }
         invalidate_and_set_dirty(addr1, 4);
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
+}
+
+void address_space_stl(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stl_internal(as, addr, val, attrs, result,
+                               DEVICE_NATIVE_ENDIAN);
+}
+
+void address_space_stl_le(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stl_internal(as, addr, val, attrs, result,
+                               DEVICE_LITTLE_ENDIAN);
+}
+
+void address_space_stl_be(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stl_internal(as, addr, val, attrs, result,
+                               DEVICE_BIG_ENDIAN);
 }
 
 void stl_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stl_phys_internal(as, addr, val, DEVICE_NATIVE_ENDIAN);
+    address_space_stl(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stl_le_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stl_phys_internal(as, addr, val, DEVICE_LITTLE_ENDIAN);
+    address_space_stl_le(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stl_be_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stl_phys_internal(as, addr, val, DEVICE_BIG_ENDIAN);
+    address_space_stl_be(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* XXX: optimize */
-void stb_phys(AddressSpace *as, hwaddr addr, uint32_t val)
+void address_space_stb(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
 {
     uint8_t v = val;
-    address_space_rw(as, addr, &v, 1, 1);
+    MemTxResult r;
+
+    r = address_space_rw(as, addr, attrs, &v, 1, 1);
+    if (result) {
+        *result = r;
+    }
+}
+
+void stb_phys(AddressSpace *as, hwaddr addr, uint32_t val)
+{
+    address_space_stb(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* warning: addr must be aligned */
-static inline void stw_phys_internal(AddressSpace *as,
-                                     hwaddr addr, uint32_t val,
-                                     enum device_endian endian)
+static inline void address_space_stw_internal(AddressSpace *as,
+                                              hwaddr addr, uint32_t val,
+                                              MemTxAttrs attrs,
+                                              MemTxResult *result,
+                                              enum device_endian endian)
 {
     uint8_t *ptr;
     MemoryRegion *mr;
     hwaddr l = 2;
     hwaddr addr1;
+    MemTxResult r;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr1, &l, true);
     if (l < 2 || !memory_access_is_direct(mr, true)) {
 #if defined(TARGET_WORDS_BIGENDIAN)
@@ -2961,7 +3190,7 @@ static inline void stw_phys_internal(AddressSpace *as,
             val = bswap16(val);
         }
 #endif
-        io_mem_write(mr, addr1, val, 2);
+        r = memory_region_dispatch_write(mr, addr1, val, 2, attrs);
     } else {
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
@@ -2978,41 +3207,96 @@ static inline void stw_phys_internal(AddressSpace *as,
             break;
         }
         invalidate_and_set_dirty(addr1, 2);
+        r = MEMTX_OK;
     }
+    if (result) {
+        *result = r;
+    }
+    rcu_read_unlock();
+}
+
+void address_space_stw(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stw_internal(as, addr, val, attrs, result,
+                               DEVICE_NATIVE_ENDIAN);
+}
+
+void address_space_stw_le(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stw_internal(as, addr, val, attrs, result,
+                               DEVICE_LITTLE_ENDIAN);
+}
+
+void address_space_stw_be(AddressSpace *as, hwaddr addr, uint32_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    address_space_stw_internal(as, addr, val, attrs, result,
+                               DEVICE_BIG_ENDIAN);
 }
 
 void stw_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stw_phys_internal(as, addr, val, DEVICE_NATIVE_ENDIAN);
+    address_space_stw(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stw_le_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stw_phys_internal(as, addr, val, DEVICE_LITTLE_ENDIAN);
+    address_space_stw_le(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stw_be_phys(AddressSpace *as, hwaddr addr, uint32_t val)
 {
-    stw_phys_internal(as, addr, val, DEVICE_BIG_ENDIAN);
+    address_space_stw_be(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* XXX: optimize */
+void address_space_stq(AddressSpace *as, hwaddr addr, uint64_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    MemTxResult r;
+    val = tswap64(val);
+    r = address_space_rw(as, addr, attrs, (void *) &val, 8, 1);
+    if (result) {
+        *result = r;
+    }
+}
+
+void address_space_stq_le(AddressSpace *as, hwaddr addr, uint64_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    MemTxResult r;
+    val = cpu_to_le64(val);
+    r = address_space_rw(as, addr, attrs, (void *) &val, 8, 1);
+    if (result) {
+        *result = r;
+    }
+}
+void address_space_stq_be(AddressSpace *as, hwaddr addr, uint64_t val,
+                       MemTxAttrs attrs, MemTxResult *result)
+{
+    MemTxResult r;
+    val = cpu_to_be64(val);
+    r = address_space_rw(as, addr, attrs, (void *) &val, 8, 1);
+    if (result) {
+        *result = r;
+    }
+}
+
 void stq_phys(AddressSpace *as, hwaddr addr, uint64_t val)
 {
-    val = tswap64(val);
-    address_space_rw(as, addr, (void *) &val, 8, 1);
+    address_space_stq(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stq_le_phys(AddressSpace *as, hwaddr addr, uint64_t val)
 {
-    val = cpu_to_le64(val);
-    address_space_rw(as, addr, (void *) &val, 8, 1);
+    address_space_stq_le(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 void stq_be_phys(AddressSpace *as, hwaddr addr, uint64_t val)
 {
-    val = cpu_to_be64(val);
-    address_space_rw(as, addr, (void *) &val, 8, 1);
+    address_space_stq_be(as, addr, val, MEMTXATTRS_UNSPECIFIED, NULL);
 }
 
 /* virtual memory access for debug (includes writing to ROM) */
@@ -3036,7 +3320,8 @@ int cpu_memory_rw_debug(CPUState *cpu, target_ulong addr,
         if (is_write) {
             cpu_physical_memory_write_rom(cpu->as, phys_addr, buf, l);
         } else {
-            address_space_rw(cpu->as, phys_addr, buf, l, 0);
+            address_space_rw(cpu->as, phys_addr, MEMTXATTRS_UNSPECIFIED,
+                             buf, l, 0);
         }
         len -= l;
         buf += l;
@@ -3065,12 +3350,15 @@ bool cpu_physical_memory_is_io(hwaddr phys_addr)
 {
     MemoryRegion*mr;
     hwaddr l = 1;
+    bool res;
 
+    rcu_read_lock();
     mr = address_space_translate(&address_space_memory,
                                  phys_addr, &phys_addr, &l, false);
 
-    return !(memory_region_is_ram(mr) ||
-             memory_region_is_romd(mr));
+    res = !(memory_region_is_ram(mr) || memory_region_is_romd(mr));
+    rcu_read_unlock();
+    return res;
 }
 
 void qemu_ram_foreach_block(RAMBlockIterFunc func, void *opaque)

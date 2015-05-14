@@ -80,12 +80,6 @@
 #define sigsetjmp(env, savemask) setjmp(env)
 #define siglongjmp(env, val) longjmp(env, val)
 
-/* Declaration of ffs() is missing in MinGW's strings.h. */
-int ffs(int i);
-
-/* Declaration of ffsl() is missing in MinGW's string.h. */
-int ffsl(long int i);
-
 /* Missing POSIX functions. Don't use MinGW-w64 macros. */
 #undef gmtime_r
 struct tm *gmtime_r(const time_t *timep, struct tm *result);

@@ -1030,7 +1030,7 @@ static int spapr_post_load(void *opaque, int version_id)
     sPAPREnvironment *spapr = (sPAPREnvironment *)opaque;
     int err = 0;
 
-    /* In earlier versions, there was no seperate qdev for the PAPR
+    /* In earlier versions, there was no separate qdev for the PAPR
      * RTC, so the RTC offset was stored directly in sPAPREnvironment.
      * So when migrating from those versions, poke the incoming offset
      * value into the RTC device */
@@ -1826,6 +1826,38 @@ static const TypeInfo spapr_machine_info = {
 #define SPAPR_COMPAT_2_1 \
         SPAPR_COMPAT_2_2
 
+static void spapr_compat_2_3(Object *obj)
+{
+}
+
+static void spapr_compat_2_2(Object *obj)
+{
+    spapr_compat_2_3(obj);
+}
+
+static void spapr_compat_2_1(Object *obj)
+{
+    spapr_compat_2_2(obj);
+}
+
+static void spapr_machine_2_3_instance_init(Object *obj)
+{
+    spapr_compat_2_3(obj);
+    spapr_machine_initfn(obj);
+}
+
+static void spapr_machine_2_2_instance_init(Object *obj)
+{
+    spapr_compat_2_2(obj);
+    spapr_machine_initfn(obj);
+}
+
+static void spapr_machine_2_1_instance_init(Object *obj)
+{
+    spapr_compat_2_1(obj);
+    spapr_machine_initfn(obj);
+}
+
 static void spapr_machine_2_1_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -1844,6 +1876,7 @@ static const TypeInfo spapr_machine_2_1_info = {
     .name          = TYPE_SPAPR_MACHINE "2.1",
     .parent        = TYPE_SPAPR_MACHINE,
     .class_init    = spapr_machine_2_1_class_init,
+    .instance_init = spapr_machine_2_1_instance_init,
 };
 
 static void spapr_machine_2_2_class_init(ObjectClass *oc, void *data)
@@ -1863,6 +1896,7 @@ static const TypeInfo spapr_machine_2_2_info = {
     .name          = TYPE_SPAPR_MACHINE "2.2",
     .parent        = TYPE_SPAPR_MACHINE,
     .class_init    = spapr_machine_2_2_class_init,
+    .instance_init = spapr_machine_2_2_instance_init,
 };
 
 static void spapr_machine_2_3_class_init(ObjectClass *oc, void *data)
@@ -1871,14 +1905,29 @@ static void spapr_machine_2_3_class_init(ObjectClass *oc, void *data)
 
     mc->name = "pseries-2.3";
     mc->desc = "pSeries Logical Partition (PAPR compliant) v2.3";
-    mc->alias = "pseries";
-    mc->is_default = 1;
 }
 
 static const TypeInfo spapr_machine_2_3_info = {
     .name          = TYPE_SPAPR_MACHINE "2.3",
     .parent        = TYPE_SPAPR_MACHINE,
     .class_init    = spapr_machine_2_3_class_init,
+    .instance_init = spapr_machine_2_3_instance_init,
+};
+
+static void spapr_machine_2_4_class_init(ObjectClass *oc, void *data)
+{
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    mc->name = "pseries-2.4";
+    mc->desc = "pSeries Logical Partition (PAPR compliant) v2.4";
+    mc->alias = "pseries";
+    mc->is_default = 1;
+}
+
+static const TypeInfo spapr_machine_2_4_info = {
+    .name          = TYPE_SPAPR_MACHINE "2.4",
+    .parent        = TYPE_SPAPR_MACHINE,
+    .class_init    = spapr_machine_2_4_class_init,
 };
 
 static void spapr_machine_register_types(void)
@@ -1887,6 +1936,7 @@ static void spapr_machine_register_types(void)
     type_register_static(&spapr_machine_2_1_info);
     type_register_static(&spapr_machine_2_2_info);
     type_register_static(&spapr_machine_2_3_info);
+    type_register_static(&spapr_machine_2_4_info);
 }
 
 type_init(spapr_machine_register_types)

@@ -338,6 +338,7 @@ libssh2=""
 vhdx=""
 quorum=""
 numa=""
+tcmalloc="no"
 
 # parse CC options first
 for opt do
@@ -1162,6 +1163,10 @@ for opt do
   ;;
   --enable-numa) numa="yes"
   ;;
+  --disable-tcmalloc) tcmalloc="no"
+  ;;
+  --enable-tcmalloc) tcmalloc="yes"
+  ;;
   *)
       echo "ERROR: unknown option $opt"
       echo "Try '$0 --help' for more information"
@@ -1435,6 +1440,8 @@ Advanced options (experts only):
   --enable-quorum          enable quorum block filter support
   --disable-numa           disable libnuma support
   --enable-numa            enable libnuma support
+  --disable-tcmalloc       disable tcmalloc support
+  --enable-tcmalloc        enable tcmalloc support
 
 NOTE: The object files are built at the place where configure is launched
 EOF
@@ -1579,6 +1586,17 @@ if test "$static" = "yes" ; then
   else
     pie="no"
   fi
+fi
+
+# Unconditional check for compiler __thread support
+  cat > $TMPC << EOF
+static __thread int tls_var;
+int main(void) { return tls_var; }
+EOF
+
+if ! compile_prog "-Werror" "" ; then
+    error_exit "Your compiler does not support the __thread specifier for " \
+	"Thread-Local Storage (TLS). Please upgrade to a version that does."
 fi
 
 if test "$pie" = ""; then
@@ -3173,7 +3191,7 @@ else
 fi
 
 if test "$opengl" != "no" ; then
-  opengl_pkgs="gl"
+  opengl_pkgs="gl glesv2"
   if $pkg_config $opengl_pkgs x11 && test "$have_glx" = "yes"; then
     opengl_cflags="$($pkg_config --cflags $opengl_pkgs) $x11_cflags"
     opengl_libs="$($pkg_config --libs $opengl_pkgs) $x11_libs"
@@ -3365,6 +3383,22 @@ EOF
       feature_not_found "numa" "install numactl devel"
     fi
     numa=no
+  fi
+fi
+
+##########################################
+# tcmalloc probe
+
+if test "$tcmalloc" = "yes" ; then
+  cat > $TMPC << EOF
+#include <stdlib.h>
+int main(void) { malloc(1); return 0; }
+EOF
+
+  if compile_prog "" "-ltcmalloc" ; then
+    LIBS="-ltcmalloc $LIBS"
+  else
+    feature_not_found "tcmalloc" "install gperftools devel"
   fi
 fi
 
@@ -4487,6 +4521,7 @@ echo "lzo support       $lzo"
 echo "snappy support    $snappy"
 echo "bzip2 support     $bzip2"
 echo "NUMA host support $numa"
+echo "tcmalloc support  $tcmalloc"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -5219,8 +5254,6 @@ case "$target_name" in
     TARGET_BASE_ARCH=mips
     echo "TARGET_ABI_MIPSN64=y" >> $config_target_mak
   ;;
-  tricore)
-  ;;
   moxie)
   ;;
   or32)
@@ -5270,6 +5303,8 @@ case "$target_name" in
   ;;
   s390x)
     gdb_xml_files="s390x-core64.xml s390-acr.xml s390-fpr.xml"
+  ;;
+  tricore)
   ;;
   unicore32)
   ;;

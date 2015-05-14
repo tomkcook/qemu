@@ -332,7 +332,7 @@ EQMP
 
     {
         .name       = "send-key",
-        .args_type  = "keys:O,hold-time:i?",
+        .args_type  = "keys:q,hold-time:i?",
         .mhandler.cmd_new = qmp_marshal_input_send_key,
     },
 
@@ -785,8 +785,7 @@ EQMP
         .args_type  = "protocol:s,hostname:s,port:i?,tls-port:i?,cert-subject:s?",
         .params     = "protocol hostname port tls-port cert-subject",
         .help       = "send migration info to spice/vnc client",
-        .mhandler.cmd_async = client_migrate_info,
-        .flags      = MONITOR_CMD_ASYNC,
+        .mhandler.cmd_new = client_migrate_info,
     },
 
 SQMP
@@ -1008,6 +1007,43 @@ EQMP
         .mhandler.cmd_new = qmp_marshal_input_block_stream,
     },
 
+SQMP
+block-stream
+------------
+
+Copy data from a backing file into a block device.
+
+Arguments:
+
+- "device": The device's ID, must be unique (json-string)
+- "base": The file name of the backing image above which copying starts
+          (json-string, optional)
+- "backing-file": The backing file string to write into the active layer. This
+                  filename is not validated.
+
+                  If a pathname string is such that it cannot be resolved by
+                  QEMU, that means that subsequent QMP or HMP commands must use
+                  node-names for the image in question, as filename lookup
+                  methods will fail.
+
+                  If not specified, QEMU will automatically determine the
+                  backing file string to use, or error out if there is no
+                  obvious choice.  Care should be taken when specifying the
+                  string, to specify a valid filename or protocol.
+                  (json-string, optional) (Since 2.1)
+- "speed":  the maximum speed, in bytes per second (json-int, optional)
+- "on-error": the action to take on an error (default 'report').  'stop' and
+              'enospc' can only be used if the block device supports io-status.
+              (json-string, optional) (Since 2.1)
+
+Example:
+
+-> { "execute": "block-stream", "arguments": { "device": "virtio0",
+                                               "base": "/tmp/master.qcow2" } }
+<- { "return": {} }
+
+EQMP
+
     {
         .name       = "block-commit",
         .args_type  = "device:B,base:s?,top:s?,backing-file:s?,speed:o?",
@@ -1074,7 +1110,7 @@ EQMP
     {
         .name       = "drive-backup",
         .args_type  = "sync:s,device:B,target:s,speed:i?,mode:s?,format:s?,"
-                      "on-source-error:s?,on-target-error:s?",
+                      "bitmap:s?,on-source-error:s?,on-target-error:s?",
         .mhandler.cmd_new = qmp_marshal_input_drive_backup,
     },
 
@@ -1101,8 +1137,10 @@ Arguments:
             (json-string, optional)
 - "sync": what parts of the disk image should be copied to the destination;
   possibilities include "full" for all the disk, "top" for only the sectors
-  allocated in the topmost image, or "none" to only replicate new I/O
-  (MirrorSyncMode).
+  allocated in the topmost image, "dirty-bitmap" for only the dirty sectors in
+  the bitmap, or "none" to only replicate new I/O (MirrorSyncMode).
+- "bitmap": dirty bitmap name for sync==dirty-bitmap. Must be present if sync
+            is "dirty-bitmap", must NOT be present otherwise.
 - "mode": whether and how QEMU should create a new image
           (NewImageMode, optional, default 'absolute-paths')
 - "speed": the maximum speed, in bytes per second (json-int, optional)
@@ -1265,6 +1303,91 @@ Example:
          { "type": "blockdev-snapshot-internal-sync", "data" : {
                                          "device": "ide-hd2",
                                          "name": "snapshot0" } } ] } }
+<- { "return": {} }
+
+EQMP
+
+    {
+        .name       = "block-dirty-bitmap-add",
+        .args_type  = "node:B,name:s,granularity:i?",
+        .mhandler.cmd_new = qmp_marshal_input_block_dirty_bitmap_add,
+    },
+
+SQMP
+
+block-dirty-bitmap-add
+----------------------
+Since 2.4
+
+Create a dirty bitmap with a name on the device, and start tracking the writes.
+
+Arguments:
+
+- "node": device/node on which to create dirty bitmap (json-string)
+- "name": name of the new dirty bitmap (json-string)
+- "granularity": granularity to track writes with (int, optional)
+
+Example:
+
+-> { "execute": "block-dirty-bitmap-add", "arguments": { "node": "drive0",
+                                                   "name": "bitmap0" } }
+<- { "return": {} }
+
+EQMP
+
+    {
+        .name       = "block-dirty-bitmap-remove",
+        .args_type  = "node:B,name:s",
+        .mhandler.cmd_new = qmp_marshal_input_block_dirty_bitmap_remove,
+    },
+
+SQMP
+
+block-dirty-bitmap-remove
+-------------------------
+Since 2.4
+
+Stop write tracking and remove the dirty bitmap that was created with
+block-dirty-bitmap-add.
+
+Arguments:
+
+- "node": device/node on which to remove dirty bitmap (json-string)
+- "name": name of the dirty bitmap to remove (json-string)
+
+Example:
+
+-> { "execute": "block-dirty-bitmap-remove", "arguments": { "node": "drive0",
+                                                      "name": "bitmap0" } }
+<- { "return": {} }
+
+EQMP
+
+    {
+        .name       = "block-dirty-bitmap-clear",
+        .args_type  = "node:B,name:s",
+        .mhandler.cmd_new = qmp_marshal_input_block_dirty_bitmap_clear,
+    },
+
+SQMP
+
+block-dirty-bitmap-clear
+------------------------
+Since 2.4
+
+Reset the dirty bitmap associated with a node so that an incremental backup
+from this point in time forward will only backup clusters modified after this
+clear operation.
+
+Arguments:
+
+- "node": device/node on which to remove dirty bitmap (json-string)
+- "name": name of the dirty bitmap to remove (json-string)
+
+Example:
+
+-> { "execute": "block-dirty-bitmap-clear", "arguments": { "node": "drive0",
+                                                           "name": "bitmap0" } }
 <- { "return": {} }
 
 EQMP
@@ -2257,7 +2380,7 @@ Example:
                   "virtual-size":2048000,
                   "backing_file":"base.qcow2",
                   "full-backing-filename":"disks/base.qcow2",
-                  "backing-filename-format:"qcow2",
+                  "backing-filename-format":"qcow2",
                   "snapshots":[
                      {
                         "id": "1",
@@ -3288,7 +3411,7 @@ EQMP
 
     {
         .name       = "migrate-set-capabilities",
-        .args_type  = "capabilities:O",
+        .args_type  = "capabilities:q",
         .params     = "capability:s,state:b",
 	.mhandler.cmd_new = qmp_marshal_input_migrate_set_capabilities,
     },
@@ -3317,6 +3440,63 @@ EQMP
         .name       = "query-migrate-capabilities",
         .args_type  = "",
         .mhandler.cmd_new = qmp_marshal_input_query_migrate_capabilities,
+    },
+
+SQMP
+migrate-set-parameters
+----------------------
+
+Set migration parameters
+
+- "compress-level": set compression level during migration (json-int)
+- "compress-threads": set compression thread count for migration (json-int)
+- "decompress-threads": set decompression thread count for migration (json-int)
+
+Arguments:
+
+Example:
+
+-> { "execute": "migrate-set-parameters" , "arguments":
+      { "compress-level": 1 } }
+
+EQMP
+
+    {
+        .name       = "migrate-set-parameters",
+        .args_type  =
+            "compress-level:i?,compress-threads:i?,decompress-threads:i?",
+	.mhandler.cmd_new = qmp_marshal_input_migrate_set_parameters,
+    },
+SQMP
+query-migrate-parameters
+------------------------
+
+Query current migration parameters
+
+- "parameters": migration parameters value
+         - "compress-level" : compression level value (json-int)
+         - "compress-threads" : compression thread count value (json-int)
+         - "decompress-threads" : decompression thread count value (json-int)
+
+Arguments:
+
+Example:
+
+-> { "execute": "query-migrate-parameters" }
+<- {
+      "return": {
+         "decompress-threads", 2,
+         "compress-threads", 8,
+         "compress-level", 1
+      }
+   }
+
+EQMP
+
+    {
+        .name       = "query-migrate-parameters",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_migrate_parameters,
     },
 
 SQMP
@@ -3724,7 +3904,7 @@ Example:
                       "virtual-size":2048000,
                       "backing_file":"base.qcow2",
                       "full-backing-filename":"disks/base.qcow2",
-                      "backing-filename-format:"qcow2",
+                      "backing-filename-format":"qcow2",
                       "snapshots":[
                          {
                             "id": "1",

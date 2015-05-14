@@ -3,10 +3,8 @@
 #include "qemu/option.h"
 #include "qemu/config-file.h"
 #include "qapi/qmp/qerror.h"
-#include "hw/qdev.h"
 #include "qapi/error.h"
 #include "qmp-commands.h"
-#include "hw/i386/pc.h"
 
 static QemuOptsList *vm_config_groups[32];
 static QemuOptsList *drive_config_groups[4];
@@ -413,7 +411,9 @@ int qemu_config_parse(FILE *fp, QemuOptsList **lists, const char *fname)
             opts = qemu_opts_create(list, NULL, 0, &error_abort);
             continue;
         }
-        if (sscanf(line, " %63s = \"%1023[^\"]\"", arg, value) == 2) {
+        value[0] = '\0';
+        if (sscanf(line, " %63s = \"%1023[^\"]\"", arg, value) == 2 ||
+            sscanf(line, " %63s = \"\"", arg) == 1) {
             /* arg = value */
             if (opts == NULL) {
                 error_report("no group defined");

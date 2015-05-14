@@ -417,20 +417,19 @@ static inline TCGCond tcg_high_cond(TCGCond c)
     }
 }
 
-#define TEMP_VAL_DEAD  0
-#define TEMP_VAL_REG   1
-#define TEMP_VAL_MEM   2
-#define TEMP_VAL_CONST 3
+typedef enum TCGTempVal {
+    TEMP_VAL_DEAD,
+    TEMP_VAL_REG,
+    TEMP_VAL_MEM,
+    TEMP_VAL_CONST,
+} TCGTempVal;
 
-/* XXX: optimize memory layout */
 typedef struct TCGTemp {
-    TCGType base_type;
-    TCGType type;
-    int val_type;
-    int reg;
-    tcg_target_long val;
-    int mem_reg;
-    intptr_t mem_offset;
+    unsigned int reg:8;
+    unsigned int mem_reg:8;
+    TCGTempVal val_type:8;
+    TCGType base_type:8;
+    TCGType type:8;
     unsigned int fixed_reg:1;
     unsigned int mem_coherent:1;
     unsigned int mem_allocated:1;
@@ -438,6 +437,9 @@ typedef struct TCGTemp {
                                   basic blocks. Otherwise, it is not
                                   preserved across basic blocks. */
     unsigned int temp_allocated:1; /* never used for code gen */
+
+    tcg_target_long val;
+    intptr_t mem_offset;
     const char *name;
 } TCGTemp;
 
@@ -859,8 +861,10 @@ static inline size_t tcg_current_code_size(TCGContext *s)
  * state is correctly synchronised and ready for execution of the next
  * TB (and in particular the guest PC is the address to execute next).
  * Otherwise, we gave up on execution of this TB before it started, and
- * the caller must fix up the CPU state by calling cpu_pc_from_tb()
- * with the next-TB pointer we return.
+ * the caller must fix up the CPU state by calling the CPU's
+ * synchronize_from_tb() method with the next-TB pointer we return (falling
+ * back to calling the CPU's set_pc method with tb->pb if no
+ * synchronize_from_tb() method exists).
  *
  * Note that TCG targets may use a different definition of tcg_qemu_tb_exec
  * to this default (which just calls the prologue.code emitted by
