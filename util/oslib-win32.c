@@ -265,18 +265,6 @@ char *qemu_get_exec_dir(void)
 }
 
 /*
- * ffs is a GCC builtin function. Builds without optimization used to get it from
- * libiberty.a which is not available in recent versions of MinGW or MinGW-w64,
- * so we need a local implementation.
- */
-
-int ffs(int i)
-{
-    /* Use gcc's builtin ffs. */
-    return __builtin_ffs(i);
-}
-
-/*
  * The original implementation of g_poll from glib has a problem on Windows
  * when using timeouts < 10 ms.
  *
@@ -497,4 +485,28 @@ void os_mem_prealloc(int fd, char *area, size_t memory)
     for (i = 0; i < memory / pagesize; i++) {
         memset(area + pagesize * i, 0, 1);
     }
+}
+
+
+/* XXX: put correct support for win32 */
+int qemu_read_password(char *buf, int buf_size)
+{
+    int c, i;
+
+    printf("Password: ");
+    fflush(stdout);
+    i = 0;
+    for (;;) {
+        c = getchar();
+        if (c < 0) {
+            buf[i] = '\0';
+            return -1;
+        } else if (c == '\n') {
+            break;
+        } else if (i < (buf_size - 1)) {
+            buf[i++] = c;
+        }
+    }
+    buf[i] = '\0';
+    return 0;
 }

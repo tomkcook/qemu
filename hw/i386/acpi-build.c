@@ -41,6 +41,7 @@
 #include "hw/acpi/memory_hotplug.h"
 #include "sysemu/tpm.h"
 #include "hw/acpi/tpm.h"
+#include "sysemu/tpm_backend.h"
 
 /* Supported chipsets: */
 #include "hw/acpi/piix4.h"
@@ -106,7 +107,7 @@ typedef struct AcpiPmInfo {
 
 typedef struct AcpiMiscInfo {
     bool has_hpet;
-    bool has_tpm;
+    TPMVersion tpm_version;
     const unsigned char *dsdt_code;
     unsigned dsdt_size;
     uint16_t pvpanic_port;
@@ -235,7 +236,7 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
 static void acpi_get_misc_info(AcpiMiscInfo *info)
 {
     info->has_hpet = hpet_find();
-    info->has_tpm = tpm_find();
+    info->tpm_version = tpm_get_version();
     info->pvpanic_port = pvpanic_port();
     info->applesmc_io_base = applesmc_port();
 }
@@ -415,6 +416,7 @@ build_madt(GArray *table_data, GArray *linker, AcpiCpuInfo *cpu,
 }
 
 #include "hw/i386/ssdt-tpm.hex"
+#include "hw/i386/ssdt-tpm2.hex"
 
 /* Assign BSEL property to all buses.  In the future, this can be changed
  * to only assign to buses that support hotplug.
@@ -595,6 +597,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
         }
     }
     aml_append(parent_scope, method);
+    qobject_decref(bsel);
 }
 
 static void
@@ -621,31 +624,31 @@ build_ssdt(GArray *table_data, GArray *linker,
     /* build PCI0._CRS */
     crs = aml_resource_template();
     aml_append(crs,
-        aml_word_bus_number(aml_min_fixed, aml_max_fixed, aml_pos_decode,
+        aml_word_bus_number(AML_MIN_FIXED, AML_MAX_FIXED, AML_POS_DECODE,
                             0x0000, 0x0000, 0x00FF, 0x0000, 0x0100));
-    aml_append(crs, aml_io(aml_decode16, 0x0CF8, 0x0CF8, 0x01, 0x08));
+    aml_append(crs, aml_io(AML_DECODE16, 0x0CF8, 0x0CF8, 0x01, 0x08));
 
     aml_append(crs,
-        aml_word_io(aml_min_fixed, aml_max_fixed,
-                    aml_pos_decode, aml_entire_range,
+        aml_word_io(AML_MIN_FIXED, AML_MAX_FIXED,
+                    AML_POS_DECODE, AML_ENTIRE_RANGE,
                     0x0000, 0x0000, 0x0CF7, 0x0000, 0x0CF8));
     aml_append(crs,
-        aml_word_io(aml_min_fixed, aml_max_fixed,
-                    aml_pos_decode, aml_entire_range,
+        aml_word_io(AML_MIN_FIXED, AML_MAX_FIXED,
+                    AML_POS_DECODE, AML_ENTIRE_RANGE,
                     0x0000, 0x0D00, 0xFFFF, 0x0000, 0xF300));
     aml_append(crs,
-        aml_dword_memory(aml_pos_decode, aml_min_fixed, aml_max_fixed,
-                         aml_cacheable, aml_ReadWrite,
+        aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED, AML_MAX_FIXED,
+                         AML_CACHEABLE, AML_READ_WRITE,
                          0, 0x000A0000, 0x000BFFFF, 0, 0x00020000));
     aml_append(crs,
-        aml_dword_memory(aml_pos_decode, aml_min_fixed, aml_max_fixed,
-                         aml_non_cacheable, aml_ReadWrite,
+        aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED, AML_MAX_FIXED,
+                         AML_NON_CACHEABLE, AML_READ_WRITE,
                          0, pci->w32.begin, pci->w32.end - 1, 0,
                          pci->w32.end - pci->w32.begin));
     if (pci->w64.begin) {
         aml_append(crs,
-            aml_qword_memory(aml_pos_decode, aml_min_fixed, aml_max_fixed,
-                             aml_cacheable, aml_ReadWrite,
+            aml_qword_memory(AML_POS_DECODE, AML_MIN_FIXED, AML_MAX_FIXED,
+                             AML_CACHEABLE, AML_READ_WRITE,
                              0, pci->w64.begin, pci->w64.end - 1, 0,
                              pci->w64.end - pci->w64.begin));
     }
@@ -659,7 +662,7 @@ build_ssdt(GArray *table_data, GArray *linker,
     aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
     crs = aml_resource_template();
     aml_append(crs,
-        aml_io(aml_decode16, pm->gpe0_blk, pm->gpe0_blk, 1, pm->gpe0_blk_len)
+        aml_io(AML_DECODE16, pm->gpe0_blk, pm->gpe0_blk, 1, pm->gpe0_blk_len)
     );
     aml_append(dev, aml_name_decl("_CRS", crs));
     aml_append(scope, dev);
@@ -674,7 +677,7 @@ build_ssdt(GArray *table_data, GArray *linker,
         aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
         crs = aml_resource_template();
         aml_append(crs,
-            aml_io(aml_decode16, pm->pcihp_io_base, pm->pcihp_io_base, 1,
+            aml_io(AML_DECODE16, pm->pcihp_io_base, pm->pcihp_io_base, 1,
                    pm->pcihp_io_len)
         );
         aml_append(dev, aml_name_decl("_CRS", crs));
@@ -721,7 +724,7 @@ build_ssdt(GArray *table_data, GArray *linker,
 
         crs = aml_resource_template();
         aml_append(crs,
-            aml_io(aml_decode16, misc->applesmc_io_base, misc->applesmc_io_base,
+            aml_io(AML_DECODE16, misc->applesmc_io_base, misc->applesmc_io_base,
                    0x01, APPLESMC_MAX_DATA_LENGTH)
         );
         aml_append(crs, aml_irq_no_flags(6));
@@ -734,20 +737,23 @@ build_ssdt(GArray *table_data, GArray *linker,
     if (misc->pvpanic_port) {
         scope = aml_scope("\\_SB.PCI0.ISA");
 
-        dev = aml_device("PEVR");
+        dev = aml_device("PEVT");
         aml_append(dev, aml_name_decl("_HID", aml_string("QEMU0001")));
 
         crs = aml_resource_template();
         aml_append(crs,
-            aml_io(aml_decode16, misc->pvpanic_port, misc->pvpanic_port, 1, 1)
+            aml_io(AML_DECODE16, misc->pvpanic_port, misc->pvpanic_port, 1, 1)
         );
         aml_append(dev, aml_name_decl("_CRS", crs));
 
-        aml_append(dev, aml_operation_region("PEOR", aml_system_io,
+        aml_append(dev, aml_operation_region("PEOR", AML_SYSTEM_IO,
                                               misc->pvpanic_port, 1));
-        field = aml_field("PEOR", aml_byte_acc, aml_preserve);
+        field = aml_field("PEOR", AML_BYTE_ACC, AML_PRESERVE);
         aml_append(field, aml_named_field("PEPT", 8));
         aml_append(dev, field);
+
+        /* device present, functioning, decoding, not shown in UI */
+        aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
 
         method = aml_method("RDPT", 0);
         aml_append(method, aml_store(aml_name("PEPT"), aml_local(0)));
@@ -774,15 +780,15 @@ build_ssdt(GArray *table_data, GArray *linker,
         aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
         crs = aml_resource_template();
         aml_append(crs,
-            aml_io(aml_decode16, pm->cpu_hp_io_base, pm->cpu_hp_io_base, 1,
+            aml_io(AML_DECODE16, pm->cpu_hp_io_base, pm->cpu_hp_io_base, 1,
                    pm->cpu_hp_io_len)
         );
         aml_append(dev, aml_name_decl("_CRS", crs));
         aml_append(sb_scope, dev);
         /* declare CPU hotplug MMIO region and PRS field to access it */
         aml_append(sb_scope, aml_operation_region(
-            "PRST", aml_system_io, pm->cpu_hp_io_base, pm->cpu_hp_io_len));
-        field = aml_field("PRST", aml_byte_acc, aml_preserve);
+            "PRST", AML_SYSTEM_IO, pm->cpu_hp_io_base, pm->cpu_hp_io_len));
+        field = aml_field("PRST", AML_BYTE_ACC, AML_PRESERVE);
         aml_append(field, aml_named_field("PRS", 256));
         aml_append(sb_scope, field);
 
@@ -846,18 +852,18 @@ build_ssdt(GArray *table_data, GArray *linker,
 
         crs = aml_resource_template();
         aml_append(crs,
-            aml_io(aml_decode16, pm->mem_hp_io_base, pm->mem_hp_io_base, 0,
+            aml_io(AML_DECODE16, pm->mem_hp_io_base, pm->mem_hp_io_base, 0,
                    pm->mem_hp_io_len)
         );
         aml_append(scope, aml_name_decl("_CRS", crs));
 
         aml_append(scope, aml_operation_region(
-            stringify(MEMORY_HOTPLUG_IO_REGION), aml_system_io,
+            stringify(MEMORY_HOTPLUG_IO_REGION), AML_SYSTEM_IO,
             pm->mem_hp_io_base, pm->mem_hp_io_len)
         );
 
-        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), aml_dword_acc,
-                          aml_preserve);
+        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_DWORD_ACC,
+                          AML_PRESERVE);
         aml_append(field, /* read only */
             aml_named_field(stringify(MEMORY_SLOT_ADDR_LOW), 32));
         aml_append(field, /* read only */
@@ -870,8 +876,8 @@ build_ssdt(GArray *table_data, GArray *linker,
             aml_named_field(stringify(MEMORY_SLOT_PROXIMITY), 32));
         aml_append(scope, field);
 
-        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), aml_byte_acc,
-                          aml_write_as_zeros);
+        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_BYTE_ACC,
+                          AML_WRITE_AS_ZEROS);
         aml_append(field, aml_reserved_field(160 /* bits, Offset(20) */));
         aml_append(field, /* 1 if enabled, read only */
             aml_named_field(stringify(MEMORY_SLOT_ENABLED), 1));
@@ -886,8 +892,8 @@ build_ssdt(GArray *table_data, GArray *linker,
             aml_named_field(stringify(MEMORY_SLOT_EJECT), 1));
         aml_append(scope, field);
 
-        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), aml_dword_acc,
-                          aml_preserve);
+        field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_DWORD_ACC,
+                          AML_PRESERVE);
         aml_append(field, /* DIMM selector, write only */
             aml_named_field(stringify(MEMORY_SLOT_SLECTOR), 32));
         aml_append(field, /* _OST event code, write only */
@@ -1025,6 +1031,25 @@ build_tpm_ssdt(GArray *table_data, GArray *linker)
 
     tpm_ptr = acpi_data_push(table_data, sizeof(ssdt_tpm_aml));
     memcpy(tpm_ptr, ssdt_tpm_aml, sizeof(ssdt_tpm_aml));
+}
+
+static void
+build_tpm2(GArray *table_data, GArray *linker)
+{
+    Acpi20TPM2 *tpm2_ptr;
+    void *tpm_ptr;
+
+    tpm_ptr = acpi_data_push(table_data, sizeof(ssdt_tpm2_aml));
+    memcpy(tpm_ptr, ssdt_tpm2_aml, sizeof(ssdt_tpm2_aml));
+
+    tpm2_ptr = acpi_data_push(table_data, sizeof *tpm2_ptr);
+
+    tpm2_ptr->platform_class = cpu_to_le16(TPM2_ACPI_CLASS_CLIENT);
+    tpm2_ptr->control_area_address = cpu_to_le64(0);
+    tpm2_ptr->start_method = cpu_to_le32(TPM2_START_METHOD_MMIO);
+
+    build_header(linker, table_data,
+                 (void *)tpm2_ptr, "TPM2", sizeof(*tpm2_ptr), 4);
 }
 
 typedef enum {
@@ -1209,30 +1234,6 @@ build_dsdt(GArray *table_data, GArray *linker, AcpiMiscInfo *misc)
                  misc->dsdt_size, 1);
 }
 
-/* Build final rsdt table */
-static void
-build_rsdt(GArray *table_data, GArray *linker, GArray *table_offsets)
-{
-    AcpiRsdtDescriptorRev1 *rsdt;
-    size_t rsdt_len;
-    int i;
-
-    rsdt_len = sizeof(*rsdt) + sizeof(uint32_t) * table_offsets->len;
-    rsdt = acpi_data_push(table_data, rsdt_len);
-    memcpy(rsdt->table_offset_entry, table_offsets->data,
-           sizeof(uint32_t) * table_offsets->len);
-    for (i = 0; i < table_offsets->len; ++i) {
-        /* rsdt->table_offset_entry to be filled by Guest linker */
-        bios_linker_loader_add_pointer(linker,
-                                       ACPI_BUILD_TABLE_FILE,
-                                       ACPI_BUILD_TABLE_FILE,
-                                       table_data, &rsdt->table_offset_entry[i],
-                                       sizeof(uint32_t));
-    }
-    build_header(linker, table_data,
-                 (void *)rsdt, "RSDT", rsdt_len, 1);
-}
-
 static GArray *
 build_rsdp(GArray *rsdp_table, GArray *linker, unsigned rsdt)
 {
@@ -1365,12 +1366,21 @@ void acpi_build(PcGuestInfo *guest_info, AcpiBuildTables *tables)
         acpi_add_table(table_offsets, tables_blob);
         build_hpet(tables_blob, tables->linker);
     }
-    if (misc.has_tpm) {
+    if (misc.tpm_version != TPM_VERSION_UNSPEC) {
         acpi_add_table(table_offsets, tables_blob);
         build_tpm_tcpa(tables_blob, tables->linker, tables->tcpalog);
 
         acpi_add_table(table_offsets, tables_blob);
-        build_tpm_ssdt(tables_blob, tables->linker);
+        switch (misc.tpm_version) {
+        case TPM_VERSION_1_2:
+            build_tpm_ssdt(tables_blob, tables->linker);
+            break;
+        case TPM_VERSION_2_0:
+            build_tpm2(tables_blob, tables->linker);
+            break;
+        default:
+            assert(false);
+        }
     }
     if (guest_info->numa_nodes) {
         acpi_add_table(table_offsets, tables_blob);

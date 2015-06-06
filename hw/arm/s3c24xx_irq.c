@@ -50,7 +50,7 @@ static void
 s3c24xx_percolate_interrupt(struct s3c24xx_irq_state_s *s)
 {
     uint32_t ints = (s->irq_reg[S3C_IRQ_SRCPND] & ~s->irq_reg[S3C_IRQ_INTMSK]);
-    int fsb = ffs(ints);
+    int fsb = ctz32(ints) + 1;
 
     /* TODO: Priority encoder could go here */
     if (ints & s->irq_reg[S3C_IRQ_INTMOD]) {

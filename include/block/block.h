@@ -440,6 +440,8 @@ void bdrv_img_create(const char *filename, const char *fmt,
 
 /* Returns the alignment in bytes that is required so that no bounce buffer
  * is required throughout the stack */
+size_t bdrv_min_mem_align(BlockDriverState *bs);
+/* Returns optimal alignment in bytes for bounce buffer */
 size_t bdrv_opt_mem_align(BlockDriverState *bs);
 void bdrv_set_guest_block_size(BlockDriverState *bs, int align);
 void *qemu_blockalign(BlockDriverState *bs, size_t size);
@@ -474,6 +476,7 @@ uint32_t bdrv_get_default_bitmap_granularity(BlockDriverState *bs);
 uint32_t bdrv_dirty_bitmap_granularity(BdrvDirtyBitmap *bitmap);
 bool bdrv_dirty_bitmap_enabled(BdrvDirtyBitmap *bitmap);
 bool bdrv_dirty_bitmap_frozen(BdrvDirtyBitmap *bitmap);
+DirtyBitmapStatus bdrv_dirty_bitmap_status(BdrvDirtyBitmap *bitmap);
 int bdrv_get_dirty(BlockDriverState *bs, BdrvDirtyBitmap *bitmap, int64_t sector);
 void bdrv_set_dirty_bitmap(BdrvDirtyBitmap *bitmap,
                            int64_t cur_sector, int nr_sectors);

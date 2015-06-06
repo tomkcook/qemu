@@ -486,7 +486,8 @@ F: hw/ppc/prep.c
 F: hw/pci-host/prep.[hc]
 F: hw/isa/pc87312.[hc]
 
-sPAPR
+sPAPR (pseries)
+M: David Gibson <david@gibson.dropbear.id.au>
 M: Alexander Graf <agraf@suse.de>
 L: qemu-ppc@nongnu.org
 S: Supported
@@ -785,6 +786,7 @@ S: Supported
 F: block*
 F: block/
 F: hw/block/
+F: include/block/
 F: qemu-img*
 F: qemu-io*
 F: tests/qemu-iotests/
@@ -811,6 +813,14 @@ F: block/commit.c
 F: block/stream.h
 F: block/mirror.c
 T: git git://github.com/codyprime/qemu-kvm-jtc.git block
+
+Block QAPI, monitor, command line
+M: Markus Armbruster <armbru@redhat.com>
+S: Supported
+F: blockdev.c
+F: block/qapi.c
+F: qapi/block*.json
+T: git git://repo.or.cz/qemu/armbru.git block-next
 
 Character Devices
 M: Paolo Bonzini <pbonzini@redhat.com>

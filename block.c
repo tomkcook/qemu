@@ -106,11 +106,21 @@ int is_windows_drive(const char *filename)
 size_t bdrv_opt_mem_align(BlockDriverState *bs)
 {
     if (!bs || !bs->drv) {
-        /* 4k should be on the safe side */
-        return 4096;
+        /* page size or 4k (hdd sector size) should be on the safe side */
+        return MAX(4096, getpagesize());
     }
 
     return bs->bl.opt_mem_alignment;
+}
+
+size_t bdrv_min_mem_align(BlockDriverState *bs)
+{
+    if (!bs || !bs->drv) {
+        /* page size or 4k (hdd sector size) should be on the safe side */
+        return MAX(4096, getpagesize());
+    }
+
+    return bs->bl.min_mem_alignment;
 }
 
 /* check if the path starts with "<protocol>:" */
@@ -890,6 +900,7 @@ static int bdrv_open_common(BlockDriverState *bs, BlockDriverState *file,
     }
 
     assert(bdrv_opt_mem_align(bs) != 0);
+    assert(bdrv_min_mem_align(bs) != 0);
     assert((bs->request_alignment != 0) || bs->sg);
     return 0;
 
@@ -2330,6 +2341,7 @@ int64_t bdrv_getlength(BlockDriverState *bs)
 {
     int64_t ret = bdrv_nb_sectors(bs);
 
+    ret = ret > INT64_MAX / BDRV_SECTOR_SIZE ? -EFBIG : ret;
     return ret < 0 ? ret : ret * BDRV_SECTOR_SIZE;
 }
 
@@ -3104,6 +3116,17 @@ bool bdrv_dirty_bitmap_enabled(BdrvDirtyBitmap *bitmap)
     return !(bitmap->disabled || bitmap->successor);
 }
 
+DirtyBitmapStatus bdrv_dirty_bitmap_status(BdrvDirtyBitmap *bitmap)
+{
+    if (bdrv_dirty_bitmap_frozen(bitmap)) {
+        return DIRTY_BITMAP_STATUS_FROZEN;
+    } else if (!bdrv_dirty_bitmap_enabled(bitmap)) {
+        return DIRTY_BITMAP_STATUS_DISABLED;
+    } else {
+        return DIRTY_BITMAP_STATUS_ACTIVE;
+    }
+}
+
 /**
  * Create a successor bitmap destined to replace this bitmap after an operation.
  * Requires that the bitmap is not frozen and has no successor.
@@ -3244,7 +3267,7 @@ BlockDirtyInfoList *bdrv_query_dirty_bitmaps(BlockDriverState *bs)
         info->granularity = bdrv_dirty_bitmap_granularity(bm);
         info->has_name = !!bm->name;
         info->name = g_strdup(bm->name);
-        info->frozen = bdrv_dirty_bitmap_frozen(bm);
+        info->status = bdrv_dirty_bitmap_status(bm);
         entry->value = info;
         *plist = entry;
         plist = &entry->next;

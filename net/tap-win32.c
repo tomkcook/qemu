@@ -750,8 +750,9 @@ static int tap_win32_init(NetClientState *peer, const char *model,
 }
 
 int net_init_tap(const NetClientOptions *opts, const char *name,
-                 NetClientState *peer)
+                 NetClientState *peer, Error **errp)
 {
+    /* FIXME error_setg(errp, ...) on failure */
     const NetdevTapOptions *tap;
 
     assert(opts->kind == NET_CLIENT_OPTIONS_KIND_TAP);

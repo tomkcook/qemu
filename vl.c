@@ -120,8 +120,6 @@ int main(int argc, char **argv)
 #include "qom/object_interfaces.h"
 #include "qapi-event.h"
 
-#define DEFAULT_RAM_SIZE 128
-
 #define MAX_VIRTIO_CONSOLES 1
 #define MAX_SCLP_CONSOLES 1
 
@@ -1313,36 +1311,25 @@ void hmp_usb_del(Monitor *mon, const QDict *qdict)
 
 MachineState *current_machine;
 
-static void machine_class_init(ObjectClass *oc, void *data)
+/*
+ * Transitional class registration/init used for converting from
+ * legacy QEMUMachine to MachineClass.
+ */
+static void qemu_machine_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     QEMUMachine *qm = data;
-
-    mc->family = qm->family;
     mc->name = qm->name;
-    mc->alias = qm->alias;
     mc->desc = qm->desc;
     mc->init = qm->init;
-    mc->reset = qm->reset;
-    mc->hot_add_cpu = qm->hot_add_cpu;
     mc->kvm_type = qm->kvm_type;
     mc->block_default_type = qm->block_default_type;
-    mc->units_per_default_bus = qm->units_per_default_bus;
     mc->max_cpus = qm->max_cpus;
-    mc->no_serial = qm->no_serial;
-    mc->no_parallel = qm->no_parallel;
-    mc->use_virtcon = qm->use_virtcon;
-    mc->use_sclp = qm->use_sclp;
-    mc->no_floppy = qm->no_floppy;
-    mc->no_cdrom = qm->no_cdrom;
     mc->no_sdcard = qm->no_sdcard;
     mc->has_dynamic_sysbus = qm->has_dynamic_sysbus;
     mc->is_default = qm->is_default;
     mc->default_machine_opts = qm->default_machine_opts;
     mc->default_boot_order = qm->default_boot_order;
-    mc->default_display = qm->default_display;
-    mc->compat_props = qm->compat_props;
-    mc->hw_version = qm->hw_version;
 }
 
 int qemu_register_machine(QEMUMachine *m)
@@ -1351,7 +1338,7 @@ int qemu_register_machine(QEMUMachine *m)
     TypeInfo ti = {
         .name       = name,
         .parent     = TYPE_MACHINE,
-        .class_init = machine_class_init,
+        .class_init = qemu_machine_class_init,
         .class_data = (void *)m,
     };
 
@@ -2050,6 +2037,15 @@ static DisplayType select_display(const char *p)
                 } else {
                     goto invalid_gtk_args;
                 }
+            } else if (strstart(opts, ",gl=", &nextopt)) {
+                opts = nextopt;
+                if (strstart(opts, "on", &nextopt)) {
+                    request_opengl = 1;
+                } else if (strstart(opts, "off", &nextopt)) {
+                    request_opengl = 0;
+                } else {
+                    goto invalid_gtk_args;
+                }
             } else {
             invalid_gtk_args:
                 fprintf(stderr, "Invalid GTK option string: %s\n", p);
@@ -2692,13 +2688,13 @@ out:
     return 0;
 }
 
-static void set_memory_options(uint64_t *ram_slots, ram_addr_t *maxram_size)
+static void set_memory_options(uint64_t *ram_slots, ram_addr_t *maxram_size,
+                               MachineClass *mc)
 {
     uint64_t sz;
     const char *mem_str;
     const char *maxmem_str, *slots_str;
-    const ram_addr_t default_ram_size = (ram_addr_t)DEFAULT_RAM_SIZE *
-                                        1024 * 1024;
+    const ram_addr_t default_ram_size = mc->default_ram_size;
     QemuOpts *opts = qemu_find_opts_singleton("memory");
 
     sz = 0;
@@ -3824,7 +3820,13 @@ int main(int argc, char **argv)
         machine_class = machine_parse(optarg);
     }
 
-    set_memory_options(&ram_slots, &maxram_size);
+    if (machine_class == NULL) {
+        fprintf(stderr, "No machine specified, and there is no default.\n"
+                "Use -machine help to list supported machines!\n");
+        exit(1);
+    }
+
+    set_memory_options(&ram_slots, &maxram_size, machine_class);
 
     loc_set_none();
 
@@ -3852,12 +3854,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 #endif
-
-    if (machine_class == NULL) {
-        fprintf(stderr, "No machine specified, and there is no default.\n"
-                "Use -machine help to list supported machines!\n");
-        exit(1);
-    }
 
     current_machine = MACHINE(object_new(object_class_get_name(
                           OBJECT_CLASS(machine_class))));
@@ -4061,7 +4057,7 @@ int main(int argc, char **argv)
 
 #if defined(CONFIG_GTK)
     if (display_type == DT_GTK) {
-        early_gtk_display_init();
+        early_gtk_display_init(request_opengl);
     }
 #endif
 #if defined(CONFIG_SDL)
@@ -4367,8 +4363,9 @@ int main(int argc, char **argv)
     /* init remote displays */
     qemu_opts_foreach(qemu_find_opts("vnc"), vnc_init_func, NULL, 0);
     if (show_vnc_port) {
-        printf("VNC server running on `%s'\n",
-               vnc_display_local_addr("default"));
+        char *ret = vnc_display_local_addr("default");
+        printf("VNC server running on `%s'\n", ret);
+        g_free(ret);
     }
 #endif
 #ifdef CONFIG_SPICE
