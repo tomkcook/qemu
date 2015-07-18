@@ -197,6 +197,38 @@ enum {
 };
 
 /*
+ * Serial Port Console Redirection Table (SPCR), Rev. 1.02
+ *
+ * For .interface_type see Debug Port Table 2 (DBG2) serial port
+ * subtypes in Table 3, Rev. May 22, 2012
+ */
+struct AcpiSerialPortConsoleRedirection {
+    ACPI_TABLE_HEADER_DEF
+    uint8_t  interface_type;
+    uint8_t  reserved1[3];
+    struct AcpiGenericAddress base_address;
+    uint8_t  interrupt_types;
+    uint8_t  irq;
+    uint32_t gsi;
+    uint8_t  baud;
+    uint8_t  parity;
+    uint8_t  stopbits;
+    uint8_t  flowctrl;
+    uint8_t  term_type;
+    uint8_t  reserved2;
+    uint16_t pci_device_id;
+    uint16_t pci_vendor_id;
+    uint8_t  pci_bus;
+    uint8_t  pci_slot;
+    uint8_t  pci_func;
+    uint32_t pci_flags;
+    uint8_t  pci_seg;
+    uint32_t reserved3;
+} QEMU_PACKED;
+typedef struct AcpiSerialPortConsoleRedirection
+               AcpiSerialPortConsoleRedirection;
+
+/*
  * ACPI 1.0 Root System Description Table (RSDT)
  */
 struct AcpiRsdtDescriptorRev1
@@ -339,6 +371,18 @@ struct AcpiMadtGenericDistributor {
 } QEMU_PACKED;
 
 typedef struct AcpiMadtGenericDistributor AcpiMadtGenericDistributor;
+
+struct AcpiMadtGenericMsiFrame {
+    ACPI_SUB_HEADER_DEF
+    uint16_t reserved;
+    uint32_t gic_msi_frame_id;
+    uint64_t base_address;
+    uint32_t flags;
+    uint16_t spi_count;
+    uint16_t spi_base;
+} QEMU_PACKED;
+
+typedef struct AcpiMadtGenericMsiFrame AcpiMadtGenericMsiFrame;
 
 /*
  * Generic Timer Description Table (GTDT)

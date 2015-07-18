@@ -47,20 +47,10 @@
 #include "hw/arm/virt-acpi-build.h"
 #include "hw/arm/sysbus-fdt.h"
 #include "hw/platform-bus.h"
+#include "hw/arm/fdt.h"
 
 /* Number of external interrupt lines to configure the GIC with */
 #define NUM_IRQS 256
-
-#define GIC_FDT_IRQ_TYPE_SPI 0
-#define GIC_FDT_IRQ_TYPE_PPI 1
-
-#define GIC_FDT_IRQ_FLAGS_EDGE_LO_HI 1
-#define GIC_FDT_IRQ_FLAGS_EDGE_HI_LO 2
-#define GIC_FDT_IRQ_FLAGS_LEVEL_HI 4
-#define GIC_FDT_IRQ_FLAGS_LEVEL_LO 8
-
-#define GIC_FDT_IRQ_PPI_CPU_START 8
-#define GIC_FDT_IRQ_PPI_CPU_WIDTH 8
 
 #define PLATFORM_BUS_NUM_IRQS 64
 
@@ -141,6 +131,11 @@ static const int a15irqmap[] = {
 static VirtBoardInfo machines[] = {
     {
         .cpu_model = "cortex-a15",
+        .memmap = a15memmap,
+        .irqmap = a15irqmap,
+    },
+    {
+        .cpu_model = "cortex-a53",
         .memmap = a15memmap,
         .irqmap = a15irqmap,
     },
@@ -306,7 +301,7 @@ static void fdt_add_cpu_nodes(const VirtBoardInfo *vbi)
                                         "enable-method", "psci");
         }
 
-        qemu_fdt_setprop_cell(vbi->fdt, nodename, "reg", cpu);
+        qemu_fdt_setprop_cell(vbi->fdt, nodename, "reg", armcpu->mp_affinity);
         g_free(nodename);
     }
 }
@@ -555,7 +550,7 @@ static void create_one_flash(const char *name, hwaddr flashbase,
     qdev_prop_set_uint64(dev, "sector-length", sectorlength);
     qdev_prop_set_uint8(dev, "width", 4);
     qdev_prop_set_uint8(dev, "device-width", 2);
-    qdev_prop_set_uint8(dev, "big-endian", 0);
+    qdev_prop_set_bit(dev, "big-endian", false);
     qdev_prop_set_uint16(dev, "id0", 0x89);
     qdev_prop_set_uint16(dev, "id1", 0x18);
     qdev_prop_set_uint16(dev, "id2", 0x00);
@@ -961,6 +956,8 @@ static void virt_class_init(ObjectClass *oc, void *data)
     mc->init = machvirt_init;
     mc->max_cpus = 8;
     mc->has_dynamic_sysbus = true;
+    mc->block_default_type = IF_VIRTIO;
+    mc->no_cdrom = 1;
 }
 
 static const TypeInfo machvirt_info = {

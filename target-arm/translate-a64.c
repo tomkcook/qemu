@@ -1199,6 +1199,8 @@ static void handle_hint(DisasContext *s, uint32_t insn,
         s->is_jmp = DISAS_WFI;
         return;
     case 1: /* YIELD */
+        s->is_jmp = DISAS_YIELD;
+        return;
     case 2: /* WFE */
         s->is_jmp = DISAS_WFE;
         return;
@@ -11107,6 +11109,10 @@ void gen_intermediate_code_internal_a64(ARMCPU *cpu,
             gen_a64_set_pc_im(dc->pc);
             gen_helper_wfe(cpu_env);
             break;
+        case DISAS_YIELD:
+            gen_a64_set_pc_im(dc->pc);
+            gen_helper_yield(cpu_env);
+            break;
         case DISAS_WFI:
             /* This is a special case because we don't want to just halt the CPU
              * if trying to debug across a WFI.
@@ -11128,7 +11134,7 @@ done_generating:
     if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
         qemu_log("----------------\n");
         qemu_log("IN: %s\n", lookup_symbol(pc_start));
-        log_target_disas(env, pc_start, dc->pc - pc_start,
+        log_target_disas(cs, pc_start, dc->pc - pc_start,
                          4 | (dc->bswap_code << 1));
         qemu_log("\n");
     }
