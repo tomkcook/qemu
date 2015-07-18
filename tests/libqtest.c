@@ -243,7 +243,7 @@ static void socket_send(int fd, const char *buf, size_t size)
     }
 }
 
-static void socket_sendf(int fd, const char *fmt, va_list ap)
+static void GCC_FMT_ATTR(2, 0) socket_sendf(int fd, const char *fmt, va_list ap)
 {
     gchar *str = g_strdup_vprintf(fmt, ap);
     size_t size = strlen(str);

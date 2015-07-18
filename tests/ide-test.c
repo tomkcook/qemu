@@ -109,7 +109,7 @@ static QGuestAllocator *guest_malloc;
 static char tmp_path[] = "/tmp/qtest.XXXXXX";
 static char debug_path[] = "/tmp/qtest-blkdebug.XXXXXX";
 
-static void ide_test_start(const char *cmdline_fmt, ...)
+static void GCC_FMT_ATTR(1, 2) ide_test_start(const char *cmdline_fmt, ...)
 {
     va_list ap;
     char *cmdline;
@@ -539,7 +539,7 @@ static void test_retry_flush(const char *machine)
 
 static void test_flush_nodev(void)
 {
-    ide_test_start("");
+    ide_test_start(" ");
 
     /* FLUSH CACHE command on device 0*/
     outb(IDE_BASE + reg_device, 0);

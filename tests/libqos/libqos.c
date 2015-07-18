@@ -16,6 +16,7 @@
  * Launch QEMU with the given command line,
  * and then set up interrupts and our guest malloc interface.
  */
+GCC_FMT_ATTR(2, 0)
 QOSState *qtest_vboot(QOSOps *ops, const char *cmdline_fmt, va_list ap)
 {
     char *cmdline;
@@ -38,6 +39,7 @@ QOSState *qtest_vboot(QOSOps *ops, const char *cmdline_fmt, va_list ap)
  * Launch QEMU with the given command line,
  * and then set up interrupts and our guest malloc interface.
  */
+GCC_FMT_ATTR(2, 3)
 QOSState *qtest_boot(QOSOps *ops, const char *cmdline_fmt, ...)
 {
     QOSState *qs;

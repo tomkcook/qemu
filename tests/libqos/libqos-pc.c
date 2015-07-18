@@ -6,11 +6,13 @@ static QOSOps qos_ops = {
     .uninit_allocator = pc_alloc_uninit
 };
 
+GCC_FMT_ATTR(1, 0)
 QOSState *qtest_pc_vboot(const char *cmdline_fmt, va_list ap)
 {
     return qtest_vboot(&qos_ops, cmdline_fmt, ap);
 }
 
+GCC_FMT_ATTR(1, 2)
 QOSState *qtest_pc_boot(const char *cmdline_fmt, ...)
 {
     QOSState *qs;

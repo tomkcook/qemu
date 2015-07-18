@@ -16,7 +16,9 @@ typedef struct QOSState {
     QOSOps *ops;
 } QOSState;
 
+GCC_FMT_ATTR(2, 0)
 QOSState *qtest_vboot(QOSOps *ops, const char *cmdline_fmt, va_list ap);
+GCC_FMT_ATTR(2, 3)
 QOSState *qtest_boot(QOSOps *ops, const char *cmdline_fmt, ...);
 void qtest_shutdown(QOSState *qs);
 void mkimg(const char *file, const char *fmt, unsigned size_mb);
