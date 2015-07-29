@@ -57,10 +57,10 @@
 QEMU is a FAST! processor emulator using dynamic translation to
 achieve good emulation speed.
 
+@cindex operating modes
 QEMU has two operating modes:
 
 @itemize
-@cindex operating modes
 
 @item
 @cindex system emulation
