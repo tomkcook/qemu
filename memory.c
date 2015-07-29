@@ -1119,8 +1119,9 @@ bool memory_region_access_valid(MemoryRegion *mr,
     int access_size, i;
 
     if (!mr->ops->valid.unaligned && (addr & (size - 1))) {
-        fprintf(stderr, "Misaligned i/o with size %u for memory region %s\n",
-                size, mr->name);
+        fprintf(stderr, "Misaligned i/o to address %08" HWADDR_PRIx
+                        " with size %u for memory region %s\n",
+                addr, size, mr->name);
         return false;
     }
 
