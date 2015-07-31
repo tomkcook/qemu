@@ -44,7 +44,7 @@ bcm2835_fb_type bcm2835_fb;
 typedef struct {
     SysBusDevice busdev;
     MemoryRegion iomem;
-
+    MemoryRegionSection fbsection;
     int pending;
     qemu_irq mbox_irq;
 } bcm2835_fb_state;
@@ -186,18 +186,25 @@ static void fb_update_display(void *opaque)
 
     fn = draw_line_src16;
 
-    framebuffer_update_display(surface,
-        sysbus_address_space(&s->busdev),
-        bcm2835_fb.base,
-        bcm2835_fb.xres,
-        bcm2835_fb.yres,
-        src_width,
-        dest_width,
-        0,
-        bcm2835_fb.invalidate,
-        fn,
-        NULL,
-        &first, &last);
+    if (bcm2835_fb.invalidate) {
+        framebuffer_update_memory_section(&s->fbsection,
+                                          sysbus_address_space(&s->busdev),
+                                          bcm2835_fb.base,
+                                          bcm2835_fb.yres,
+                                          src_width);
+    }
+
+    framebuffer_update_display(surface, &s->fbsection,
+                              bcm2835_fb.xres,
+                              bcm2835_fb.yres,
+                              src_width,
+                              dest_width,
+                              0,
+                              bcm2835_fb.invalidate,
+                              fn,
+                              NULL,
+                              &first, &last);
+
     if (first >= 0) {
         dpy_gfx_update(bcm2835_fb.con, 0, first,
             bcm2835_fb.xres, last - first + 1);

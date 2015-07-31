@@ -1898,6 +1898,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
             ts->mem_coherent = 1;
         } else if (ts->val_type == TEMP_VAL_CONST) {
             tcg_out_movi(s, itype, ts->reg, ts->val);
+            ts->mem_coherent = 0;
         }
         s->reg_to_temp[ts->reg] = args[1];
         ts->val_type = TEMP_VAL_REG;
@@ -1924,6 +1925,9 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
         }
         ots->val_type = TEMP_VAL_CONST;
         ots->val = ts->val;
+        if (IS_DEAD_ARG(1)) {
+            temp_dead(s, args[1]);
+        }
     } else {
         /* The code in the first if block should have moved the
            temp to a register. */

@@ -2064,7 +2064,6 @@ static void select_vgahw (const char *p)
 
 static DisplayType select_display(const char *p)
 {
-    Error *err = NULL;
     const char *opts;
     DisplayType display = DT_DEFAULT;
 
@@ -2133,6 +2132,7 @@ static DisplayType select_display(const char *p)
     } else if (strstart(p, "vnc", &opts)) {
 #ifdef CONFIG_VNC
         if (*opts == '=') {
+            Error *err = NULL;
             if (vnc_parse(opts + 1, &err) == NULL) {
                 error_report_err(err);
                 exit(1);
