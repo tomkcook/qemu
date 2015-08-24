@@ -22,52 +22,53 @@
 #include "hw/arm/arm.h"
 #include "sysemu/sysemu.h"
 #include "exec/address-spaces.h"
-#include "hw/arm/bcm2835_platform.h"
+#include "hw/arm/bcm2836_platform.h"
 #include "hw/arm/bcm2835_common.h"
 
 #define BUS_ADDR(x) (((x) - BCM2708_PERI_BASE) + 0x7e000000)
 
 /* Globals */
-hwaddr bcm2835_vcram_base;
+//hwaddr bcm2835_vcram_base;
 
 static const uint32_t bootloader_0[] = {
-    0xea000006,
-    0xe1a00000,
-    0xe1a00000,
-    0xe1a00000,
-    0xe1a00000,
-    0xe1a00000,
-    0xe1a00000,
-    0xe1a00000,
+    0xea000006, // b 0x20 ; branch over the nops
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
+    0xe1a00000, // nop ; (mov r0, r0)
 
-    0xe3a00000,
-    0xe3a01042,
-    0xe3811c0c,
-    0xe59f2000,
-    0xe59ff000,
-    0x00000100,
-    0x00008000
+    0xe3a00000, // mov r0, #0
+    0xe3a01043, // mov r1, #67 ; r1 = 0x43
+    0xe3811c0c, // orr r1, r1, #12, 24 ; r1 |= 0xc00 (Linux machine type MACH_BCM2709 = 0xc43)
+    0xe59f2000, // ldr r2, [pc] ; 0x100 from below
+    0xe59ff000, // ldr pc, [pc] ; jump to 0x8000, from below
+    0x00000100, // (Phys addr of tag list in RAM)
+    0x00008000  // (Phys addr of kernel image entry, i.e. where we jump)
 };
 
-static uint32_t bootloader_100[] = {
-    0x00000005,
-    0x54410001,
-    0x00000001,
-    0x00001000,
-    0x00000000,
-    0x00000004,
-    0x54410002,
+static uint32_t bootloader_100[] = { // this is the "tag list" in RAM at 0x100
+    // ref: http://www.simtec.co.uk/products/SWLINUX/files/booting_article.html
+    0x00000005, // length of core tag (words)
+    0x54410001, // ATAG_CORE
+    0x00000001, // flags
+    0x00001000, // page size (4k)
+    0x00000000, // root device
+    0x00000004, // length of mem tag (words)
+    0x54410002, // ATAG_MEM
     /* It will be overwritten by dynamically calculated memory size */
-    0x08000000,
-    0x00000000,
-    0x00000000,
-    0x00000000
+    0x08000000, // RAM size (to be overwritten)
+    0x00000000, // start of RAM
+    0x00000000, // "length" of none tag (magic)
+    0x00000000  // ATAG_NONE
 };
 
 
 static struct arm_boot_info raspi_binfo;
 
-static void raspi_init(MachineState *machine)
+static void raspi2_init(MachineState *machine)
 {
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
@@ -80,7 +81,8 @@ static void raspi_init(MachineState *machine)
 
     MemoryRegion *per_todo_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_ic_bus = g_new(MemoryRegion, 1);
-    MemoryRegion *per_uart_bus = g_new(MemoryRegion, 1);
+    MemoryRegion *per_uart0_bus = g_new(MemoryRegion, 1);
+    MemoryRegion *per_uart1_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_st_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_sbm_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_power_bus = g_new(MemoryRegion, 1);
@@ -104,7 +106,11 @@ static void raspi_init(MachineState *machine)
 
     int n;
 
-    cpu = cpu_arm_init("arm1176");
+    if (!machine->cpu_model) {
+        machine->cpu_model = "cortex-a15"; /* Closest architecturally to the A7 */
+    }
+
+    cpu = cpu_arm_init(machine->cpu_model);
     if (!cpu) {
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
@@ -158,15 +164,23 @@ static void raspi_init(MachineState *machine)
         pic[n] = qdev_get_gpio_in(dev, n);
     }
 
-    /* UART */
+    /* UART0 */
     dev = sysbus_create_simple("pl011", UART0_BASE, pic[INTERRUPT_VC_UART]);
     s = SYS_BUS_DEVICE(dev);
     mr = sysbus_mmio_get_region(s, 0);
-    memory_region_init_alias(per_uart_bus, NULL, NULL, mr,
+    memory_region_init_alias(per_uart0_bus, NULL, NULL, mr,
         0, memory_region_size(mr));
     memory_region_add_subregion(sysmem, BUS_ADDR(UART0_BASE),
-        per_uart_bus);
+        per_uart0_bus);
 
+    /* UART1 */
+    dev = sysbus_create_simple("bcm2835_aux", UART1_BASE, NULL);
+    s = SYS_BUS_DEVICE(dev);
+    mr = sysbus_mmio_get_region(s, 0);
+    memory_region_init_alias(per_uart1_bus, NULL, NULL, mr,
+        0, memory_region_size(mr));
+    memory_region_add_subregion(sysmem, BUS_ADDR(UART1_BASE),
+        per_uart1_bus);
 
     /* System timer */
     dev = sysbus_create_varargs("bcm2835_st", ST_BASE,
@@ -323,7 +337,7 @@ static void raspi_init(MachineState *machine)
     raspi_binfo.kernel_filename = machine->kernel_filename;
     raspi_binfo.kernel_cmdline = machine->kernel_cmdline;
     raspi_binfo.initrd_filename = machine->initrd_filename;
-    raspi_binfo.board_id = 0xc42;
+    raspi_binfo.board_id = 0xc43; // Linux MACH_BCM2709
 
     /* Quick and dirty "selector" */
     if (machine->initrd_filename
@@ -344,15 +358,15 @@ static void raspi_init(MachineState *machine)
     }
 }
 
-static QEMUMachine raspi_machine = {
-    .name = "raspi",
-    .desc = "Raspberry Pi",
-    .init = raspi_init
+static QEMUMachine raspi2_machine = {
+    .name = "raspi2",
+    .desc = "Raspberry Pi 2",
+    .init = raspi2_init
 };
 
-static void raspi_machine_init(void)
+static void raspi2_machine_init(void)
 {
-    qemu_register_machine(&raspi_machine);
+    qemu_register_machine(&raspi2_machine);
 }
 
-machine_init(raspi_machine_init);
+machine_init(raspi2_machine_init);
