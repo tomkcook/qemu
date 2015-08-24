@@ -902,6 +902,11 @@ static int gd_map_keycode(GtkDisplayState *s, GdkDisplay *dpy, int gdk_keycode)
     int qemu_keycode;
 
 #ifdef GDK_WINDOWING_WIN32
+
+#ifndef MAPVK_VK_TO_VSC
+#define MAPVK_VK_TO_VSC     (0)
+#endif
+
     if (GDK_IS_WIN32_DISPLAY(dpy)) {
         qemu_keycode = MapVirtualKey(gdk_keycode, MAPVK_VK_TO_VSC);
         switch (qemu_keycode) {

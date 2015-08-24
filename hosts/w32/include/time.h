@@ -15,7 +15,8 @@
 
 #if !defined(WIN64)
 
-#if !defined(HAVE_STRUCT_TIMESPEC) && !defined(_TIMESPEC_DEFINED)
+struct timespec;
+#if 0 /* !defined(HAVE_STRUCT_TIMESPEC) && !defined(_TIMESPEC_DEFINED) */
 #define HAVE_STRUCT_TIMESPEC 1  /* MinGW */
 #define _TIMESPEC_DEFINED       /* MinGW-64 */
 struct timespec {
