@@ -49,6 +49,16 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
     uint32_t offset, length, color;
 
     value &= ~0xf;
+
+    /* XXX: According to the doc link above, the physical address
+       should be used. However, the Windows UEFI loader is observed
+       talking to us using the uncached mapping address (of
+       0xc0000000), and evidently that is expected to work as well.
+     */
+    if (value > 0xc0000000) {
+        value -= 0xc0000000;
+    }
+    
     s->addr = value;
 
     /* @(s->addr + 4) : Buffer response code */
