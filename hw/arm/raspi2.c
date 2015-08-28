@@ -116,6 +116,9 @@ static void raspi2_init(MachineState *machine)
         exit(1);
     }
 
+    // bcm2836 has clusterid set to 0xf, so this is the first core
+    cpu->mp_affinity = 0xF00;
+    
     bcm2835_vcram_base = machine->ram_size - VCRAM_SIZE;
 
     /* Write real RAM size in ATAG structure */
