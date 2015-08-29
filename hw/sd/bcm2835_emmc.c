@@ -759,7 +759,7 @@ static int bcm2835_emmc_init(SysBusDevice *sbd)
     s->status = (0x1ff << 16);
     s->control0 = 0;
     s->control1 = SDHCI_CLOCK_INT_STABLE;
-    s->interrupt = 0;
+    s->interrupt = SDHCI_INT_CARD_INSERT; // card inserted. Windows UEFI relies on this
     s->irpt_mask = 0;
     s->irpt_en = 0;
     s->control2 = 0;
