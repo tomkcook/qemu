@@ -177,7 +177,7 @@ static void raspi2_init(MachineState *machine)
         per_uart0_bus);
 
     /* UART1 */
-    dev = sysbus_create_simple("bcm2835_aux", UART1_BASE, NULL);
+    dev = sysbus_create_simple("bcm2835_aux", UART1_BASE, pic[INTERRUPT_AUX]);
     s = SYS_BUS_DEVICE(dev);
     mr = sysbus_mmio_get_region(s, 0);
     memory_region_init_alias(per_uart1_bus, NULL, NULL, mr,

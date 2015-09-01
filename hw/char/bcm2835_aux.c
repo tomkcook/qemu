@@ -22,19 +22,29 @@ typedef struct BCM2835_AUXState {
 
     MemoryRegion iomem;
     uint32_t read_fifo[8];
+    bool rx_int_enable, tx_int_enable;
     int read_pos;
     int read_count;
     CharDriverState *chr;
+    qemu_irq irq;
     const unsigned char *id;
 } BCM2835_AUXState;
+
+static void bcm2835_aux_update(BCM2835_AUXState *s)
+{
+    qemu_set_irq(s->irq, (s->rx_int_enable && s->read_count != 0) || s->tx_int_enable);
+}
 
 static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
                            unsigned size)
 {
     BCM2835_AUXState *s = (BCM2835_AUXState *)opaque;
-    uint32_t c;
+    uint32_t c, res;
 
     switch (offset >> 2) {
+    case 1: /* AUXENB */
+        return 1; /* mini UART enabled */        
+        
     case 16: /* AUX_MU_IO_REG */
         c = s->read_fifo[s->read_pos];
         if (s->read_count > 0) {
@@ -45,9 +55,44 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         if (s->chr) {
             qemu_chr_accept_input(s->chr);
         }
+        bcm2835_aux_update(s);
         return c;
+
+    case 17: /* AUX_MU_IIR_REG */
+        res = 0;
+        if (s->rx_int_enable) {
+            res |= 0x2;
+        }
+        if (s->tx_int_enable) {
+            res |= 0x1;
+        }
+        return res;
+        
+    case 18: /* AUX_MU_IER_REG */
+        res = 0xc0;
+        if (s->tx_int_enable) {
+            res |= 0x1;
+        } else if (s->rx_int_enable && s->read_count != 0) {
+            res |= 0x2;
+        }
+        return res;
+
+    case 21: /* AUX_MU_LSR_REG */
+        res = 0x60; /* tx idle, empty */
+        if (s->read_count != 0) {
+            res |= 0x1;
+        }
+        return res;
+
     case 25: /* AUX_MU_STAT_REG */
-        return 0x02; /* space in the output buffer, but nothing to read */
+        res = 0x302; /* space in the output buffer, empty tx fifo */
+        if (s->read_count > 0) {
+            res |= 0x1; /* data in input buffer */
+            assert(s->read_count < 8);
+            res |= ((uint32_t)s->read_count) << 16; /* receive fifo fill level */
+        }
+        return res;
+        
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "bcm2835_aux_read: Bad offset %x\n", (int)offset);
@@ -62,15 +107,36 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
     unsigned char ch;
 
     switch (offset >> 2) {
+    case 1: /* AUXENB */
+        if (value != 1) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "bcm2835_aux_write: Trying to enable SPI or disable UART. Not supported!\n");
+        }
+        break;
+        
     case 16: /* AUX_MU_IO_REG */
         ch = value;
         if (s->chr)
             qemu_chr_fe_write(s->chr, &ch, 1);
         break;
+        
+    case 17: /* AUX_MU_IIR_REG */
+        s->rx_int_enable = (value & 0x2) != 0;
+        s->tx_int_enable = (value & 0x1) != 0;
+        break;
+
+    case 18: /* AUX_MU_IER_REG */
+        if (value & 0x1) {
+            s->read_count = 0;
+        }
+        break;
+       
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "bcm2835_aux_write: Bad offset %x\n", (int)offset);
     }
+    
+    bcm2835_aux_update(s);
 }
 
 static int bcm2835_aux_can_receive(void *opaque)
@@ -93,6 +159,7 @@ static void bcm2835_aux_put_fifo(void *opaque, uint32_t value)
     if (s->read_count == 8) {
         // buffer full
     }
+    bcm2835_aux_update(s);
 }
 
 static void bcm2835_aux_receive(void *opaque, const uint8_t *buf, int size)
@@ -131,6 +198,7 @@ static void bcm2835_aux_init(Object *obj)
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_aux_ops, s, "bcm2835_aux", 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
+    sysbus_init_irq(sbd, &s->irq);
 }
 
 static void bcm2835_aux_realize(DeviceState *dev, Error **errp)
