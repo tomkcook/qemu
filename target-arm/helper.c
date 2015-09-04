@@ -2846,6 +2846,12 @@ static const ARMCPRegInfo debug_cp_reginfo[] = {
     { .name = "DBGVCR",
       .cp = 14, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 0,
       .access = PL1_RW, .type = ARM_CP_NOP },
+    /* Dummy DBGOSLSR: Windows wants to read this on startup, but is
+     * happy with seeing zero.
+     */
+    { .name = "DBGOSLSR",
+      .cp = 14, .opc1 = 0, .crn = 1, .crm = 1, .opc2 = 4,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
     REGINFO_SENTINEL
 };
 
