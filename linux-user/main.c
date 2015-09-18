@@ -41,7 +41,6 @@ int gdbstub_port;
 envlist_t *envlist;
 static const char *cpu_model;
 unsigned long mmap_min_addr;
-#if defined(CONFIG_USE_GUEST_BASE)
 uintptr_t guest_base;
 int have_guest_base;
 #if (TARGET_LONG_BITS == 32) && (HOST_LONG_BITS == 64)
@@ -60,7 +59,6 @@ uintptr_t reserved_va = 0xf7000000;
 # endif
 #else
 uintptr_t reserved_va;
-#endif
 #endif
 
 static void usage(void);
@@ -3629,7 +3627,6 @@ static void handle_arg_cpu(const char *arg)
     }
 }
 
-#if defined(CONFIG_USE_GUEST_BASE)
 static void handle_arg_guest_base(const char *arg)
 {
     guest_base = strtol(arg, NULL, 0);
@@ -3671,7 +3668,6 @@ static void handle_arg_reserved_va(const char *arg)
         exit(1);
     }
 }
-#endif
 
 static void handle_arg_singlestep(const char *arg)
 {
@@ -3718,12 +3714,10 @@ static const struct qemu_argument arg_table[] = {
      "argv0",      "forces target process argv[0] to be 'argv0'"},
     {"r",          "QEMU_UNAME",       true,  handle_arg_uname,
      "uname",      "set qemu uname release string to 'uname'"},
-#if defined(CONFIG_USE_GUEST_BASE)
     {"B",          "QEMU_GUEST_BASE",  true,  handle_arg_guest_base,
      "address",    "set guest_base address to 'address'"},
     {"R",          "QEMU_RESERVED_VA", true,  handle_arg_reserved_va,
      "size",       "reserve 'size' bytes for guest virtual address space"},
-#endif
     {"d",          "QEMU_LOG",         true,  handle_arg_log,
      "item[,...]", "enable logging of specified items "
      "(use '-d help' for a list of items)"},
@@ -3999,7 +3993,6 @@ int main(int argc, char **argv)
     target_environ = envlist_to_environ(envlist, NULL);
     envlist_free(envlist);
 
-#if defined(CONFIG_USE_GUEST_BASE)
     /*
      * Now that page sizes are configured in cpu_init() we can do
      * proper page alignment for guest_base.
@@ -4021,7 +4014,6 @@ int main(int argc, char **argv)
             mmap_next_start = reserved_va;
         }
     }
-#endif /* CONFIG_USE_GUEST_BASE */
 
     /*
      * Read in mmap_min_addr kernel parameter.  This value is used
@@ -4095,9 +4087,7 @@ int main(int argc, char **argv)
     free(target_environ);
 
     if (qemu_log_enabled()) {
-#if defined(CONFIG_USE_GUEST_BASE)
         qemu_log("guest_base  0x%" PRIxPTR "\n", guest_base);
-#endif
         log_page_dump();
 
         qemu_log("start_brk   0x" TARGET_ABI_FMT_lx "\n", info->start_brk);
@@ -4117,12 +4107,10 @@ int main(int argc, char **argv)
     syscall_init();
     signal_init();
 
-#if defined(CONFIG_USE_GUEST_BASE)
     /* Now that we've loaded the binary, GUEST_BASE is fixed.  Delay
        generating the prologue until now so that the prologue can take
        the real value of GUEST_BASE into account.  */
     tcg_prologue_init(&tcg_ctx);
-#endif
 
 #if defined(TARGET_I386)
     env->cr[0] = CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK;

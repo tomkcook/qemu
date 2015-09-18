@@ -1629,7 +1629,7 @@ static void gen_load_fpr32(DisasContext *ctx, TCGv_i32 t, int reg)
     if (ctx->hflags & MIPS_HFLAG_FRE) {
         generate_exception(ctx, EXCP_RI);
     }
-    tcg_gen_trunc_i64_i32(t, fpu_f64[reg]);
+    tcg_gen_extrl_i64_i32(t, fpu_f64[reg]);
 }
 
 static void gen_store_fpr32(DisasContext *ctx, TCGv_i32 t, int reg)
@@ -1649,7 +1649,7 @@ static void gen_load_fpr32h(DisasContext *ctx, TCGv_i32 t, int reg)
     if (ctx->hflags & MIPS_HFLAG_F64) {
         TCGv_i64 t64 = tcg_temp_new_i64();
         tcg_gen_shri_i64(t64, fpu_f64[reg], 32);
-        tcg_gen_trunc_i64_i32(t, t64);
+        tcg_gen_extrl_i64_i32(t, t64);
         tcg_temp_free_i64(t64);
     } else {
         gen_load_fpr32(ctx, t, reg | 1);
@@ -2153,11 +2153,10 @@ static void gen_ld(DisasContext *ctx, uint32_t opc,
         tcg_gen_andi_tl(t0, t0, ~7);
         tcg_gen_qemu_ld_tl(t0, t0, ctx->mem_idx, MO_TEQ);
         tcg_gen_shl_tl(t0, t0, t1);
-        tcg_gen_xori_tl(t1, t1, 63);
-        t2 = tcg_const_tl(0x7fffffffffffffffull);
-        tcg_gen_shr_tl(t2, t2, t1);
+        t2 = tcg_const_tl(-1);
+        tcg_gen_shl_tl(t2, t2, t1);
         gen_load_gpr(t1, rt);
-        tcg_gen_and_tl(t1, t1, t2);
+        tcg_gen_andc_tl(t1, t1, t2);
         tcg_temp_free(t2);
         tcg_gen_or_tl(t0, t0, t1);
         tcg_temp_free(t1);
@@ -2246,11 +2245,10 @@ static void gen_ld(DisasContext *ctx, uint32_t opc,
         tcg_gen_andi_tl(t0, t0, ~3);
         tcg_gen_qemu_ld_tl(t0, t0, ctx->mem_idx, MO_TEUL);
         tcg_gen_shl_tl(t0, t0, t1);
-        tcg_gen_xori_tl(t1, t1, 31);
-        t2 = tcg_const_tl(0x7fffffffull);
-        tcg_gen_shr_tl(t2, t2, t1);
+        t2 = tcg_const_tl(-1);
+        tcg_gen_shl_tl(t2, t2, t1);
         gen_load_gpr(t1, rt);
-        tcg_gen_and_tl(t1, t1, t2);
+        tcg_gen_andc_tl(t1, t1, t2);
         tcg_temp_free(t2);
         tcg_gen_or_tl(t0, t0, t1);
         tcg_temp_free(t1);

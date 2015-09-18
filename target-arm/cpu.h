@@ -113,7 +113,9 @@ typedef struct ARMGenericTimer {
 
 #define GTIMER_PHYS 0
 #define GTIMER_VIRT 1
-#define NUM_GTIMERS 2
+#define GTIMER_HYP  2
+#define GTIMER_SEC  3
+#define NUM_GTIMERS 4
 
 typedef struct {
     uint64_t raw_tcr;
@@ -358,6 +360,8 @@ typedef struct CPUARMState {
         };
         uint64_t c14_cntfrq; /* Counter Frequency register */
         uint64_t c14_cntkctl; /* Timer Control register */
+        uint32_t cnthctl_el2; /* Counter/Timer Hyp Control register */
+        uint64_t cntvoff_el2; /* Counter Virtual Offset register */
         ARMGenericTimer c14_timer[NUM_GTIMERS];
         uint32_t c15_cpar; /* XScale Coprocessor Access Register */
         uint32_t c15_ticonfig; /* TI925T configuration byte.  */
@@ -1286,6 +1290,9 @@ typedef enum CPAccessResult {
     /* As CP_ACCESS_TRAP, but for traps directly to EL2 or EL3 */
     CP_ACCESS_TRAP_EL2 = 3,
     CP_ACCESS_TRAP_EL3 = 4,
+    /* As CP_ACCESS_UNCATEGORIZED, but for traps directly to EL2 or EL3 */
+    CP_ACCESS_TRAP_UNCATEGORIZED_EL2 = 5,
+    CP_ACCESS_TRAP_UNCATEGORIZED_EL3 = 6,
 } CPAccessResult;
 
 /* Access functions for coprocessor registers. These cannot fail and
@@ -1450,6 +1457,9 @@ static inline bool cp_access_ok(int current_el,
 {
     return (ri->access >> ((current_el * 2) + isread)) & 1;
 }
+
+/* Raw read of a coprocessor register (as needed for migration, etc) */
+uint64_t read_raw_cp_reg(CPUARMState *env, const ARMCPRegInfo *ri);
 
 /**
  * write_list_to_cpustate

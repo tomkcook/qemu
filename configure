@@ -295,7 +295,6 @@ cocoa="no"
 softmmu="yes"
 linux_user="no"
 bsd_user="no"
-guest_base="yes"
 aix="no"
 blobs="yes"
 pkgversion=""
@@ -984,7 +983,6 @@ for opt do
   ;;
   --enable-cocoa)
       cocoa="yes" ;
-      sdl="no" ;
       audio_drv_list="coreaudio `echo $audio_drv_list | sed s,coreaudio,,g`"
   ;;
   --disable-system) softmmu="no"
@@ -1003,10 +1001,6 @@ for opt do
   --disable-bsd-user) bsd_user="no"
   ;;
   --enable-bsd-user) bsd_user="yes"
-  ;;
-  --enable-guest-base) guest_base="yes"
-  ;;
-  --disable-guest-base) guest_base="no"
   ;;
   --enable-pie) pie="yes"
   ;;
@@ -1343,7 +1337,6 @@ disabled with --disable-FEATURE, default is enabled if available:
   user            supported user emulation targets
   linux-user      all linux usermode emulation targets
   bsd-user        all BSD usermode emulation targets
-  guest-base      GUEST_BASE support for usermode emulation targets
   docs            build documentation
   guest-agent     build the QEMU Guest Agent
   guest-agent-msi build guest agent Windows MSI installation package
@@ -1740,6 +1733,21 @@ if compile_object ; then
     fi
 else
     echo big/little test failed
+fi
+
+##########################################
+# cocoa implies not SDL or GTK
+# (the cocoa UI code currently assumes it is always the active UI
+# and doesn't interact well with other UI frontend code)
+if test "$cocoa" = "yes"; then
+    if test "$sdl" = "yes"; then
+        error_exit "Cocoa and SDL UIs cannot both be enabled at once"
+    fi
+    if test "$gtk" = "yes"; then
+        error_exit "Cocoa and GTK UIs cannot both be enabled at once"
+    fi
+    gtk=no
+    sdl=no
 fi
 
 ##########################################
@@ -2319,9 +2327,7 @@ EOF
     if test "$_sdlversion" -lt 121 ; then
       sdl_too_old=yes
     else
-      if test "$cocoa" = "no" ; then
-        sdl=yes
-      fi
+      sdl=yes
     fi
 
     # static link with sdl ? (note: sdl.pc's --static --libs is broken)
@@ -4578,7 +4584,6 @@ echo "brlapi support    $brlapi"
 echo "bluez  support    $bluez"
 echo "Documentation     $docs"
 echo "Tools             $tools"
-echo "GUEST_BASE        $guest_base"
 echo "PIE               $pie"
 echo "vde support       $vde"
 echo "netmap support    $netmap"
@@ -5519,9 +5524,6 @@ fi
 if test "$target_user_only" = "yes" -a "$bflt" = "yes"; then
   echo "TARGET_HAS_BFLT=y" >> $config_target_mak
 fi
-if test "$target_user_only" = "yes" -a "$guest_base" = "yes"; then
-  echo "CONFIG_USE_GUEST_BASE=y" >> $config_target_mak
-fi
 if test "$target_bsd_user" = "yes" ; then
   echo "CONFIG_BSD_USER=y" >> $config_target_mak
 fi
@@ -5648,10 +5650,6 @@ done # for target in $targets
 
 if [ "$pixman" = "internal" ]; then
   echo "config-host.h: subdir-pixman" >> $config_host_mak
-fi
-
-if test "$rdma" = "yes" ; then
-echo "CONFIG_RDMA=y" >> $config_host_mak
 fi
 
 if [ "$dtc_internal" = "yes" ]; then
