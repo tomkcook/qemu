@@ -1562,7 +1562,12 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
             break;
         case 0x0F:
             /* CMPBGE */
-            gen_helper_cmpbge(vc, va, vb);
+            if (ra == 31) {
+                /* Special case 0 >= X as X == 0.  */
+                gen_helper_cmpbe0(vc, vb);
+            } else {
+                gen_helper_cmpbge(vc, va, vb);
+            }
             break;
         case 0x12:
             /* S8ADDL */
@@ -2873,7 +2878,7 @@ static inline void gen_intermediate_code_internal(AlphaCPU *cpu,
 
     ctx.tb = tb;
     ctx.pc = pc_start;
-    ctx.mem_idx = cpu_mmu_index(env);
+    ctx.mem_idx = cpu_mmu_index(env, false);
     ctx.implver = env->implver;
     ctx.singlestep_enabled = cs->singlestep_enabled;
 

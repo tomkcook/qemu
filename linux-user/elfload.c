@@ -1212,6 +1212,29 @@ static inline void init_thread(struct target_pt_regs *regs, struct image_info *i
 
 #endif /* TARGET_S390X */
 
+#ifdef TARGET_TILEGX
+
+/* 42 bits real used address, a half for user mode */
+#define ELF_START_MMAP (0x00000020000000000ULL)
+
+#define elf_check_arch(x) ((x) == EM_TILEGX)
+
+#define ELF_CLASS   ELFCLASS64
+#define ELF_DATA    ELFDATA2LSB
+#define ELF_ARCH    EM_TILEGX
+
+static inline void init_thread(struct target_pt_regs *regs,
+                               struct image_info *infop)
+{
+    regs->pc = infop->entry;
+    regs->sp = infop->start_stack;
+
+}
+
+#define ELF_EXEC_PAGESIZE        65536 /* TILE-Gx page size is 64KB */
+
+#endif /* TARGET_TILEGX */
+
 #ifndef ELF_PLATFORM
 #define ELF_PLATFORM (NULL)
 #endif
@@ -3008,7 +3031,7 @@ static int elf_core_dump(int signr, const CPUArchState *env)
     if (dump_write(fd, &elf, sizeof (elf)) != 0)
         goto out;
 
-    /* fill in in-memory version of notes */
+    /* fill in the in-memory version of notes */
     if (fill_note_info(&info, signr, env) < 0)
         goto out;
 

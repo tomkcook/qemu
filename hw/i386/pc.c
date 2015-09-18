@@ -1400,7 +1400,7 @@ FWCfgState *pc_memory_init(PCMachineState *pcms,
 
     option_rom_mr = g_malloc(sizeof(*option_rom_mr));
     memory_region_init_ram(option_rom_mr, NULL, "pc.rom", PC_ROM_SIZE,
-                           &error_abort);
+                           &error_fatal);
     vmstate_register_ram_global(option_rom_mr);
     memory_region_add_subregion_overlap(rom_memory,
                                         PC_ROM_MIN_VGA,
@@ -1412,7 +1412,13 @@ FWCfgState *pc_memory_init(PCMachineState *pcms,
 
     if (guest_info->has_reserved_memory && pcms->hotplug_memory.base) {
         uint64_t *val = g_malloc(sizeof(*val));
-        *val = cpu_to_le64(ROUND_UP(pcms->hotplug_memory.base, 0x1ULL << 30));
+        PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
+        uint64_t res_mem_end = pcms->hotplug_memory.base;
+
+        if (!pcmc->broken_reserved_end) {
+            res_mem_end += memory_region_size(&pcms->hotplug_memory.mr);
+        }
+        *val = cpu_to_le64(ROUND_UP(res_mem_end, 0x1ULL << 30));
         fw_cfg_add_file(fw_cfg, "etc/reserved-memory-end", val, sizeof(*val));
     }
 
@@ -1444,15 +1450,6 @@ DeviceState *pc_vga_init(ISABus *isa_bus, PCIBus *pci_bus)
         dev = isadev ? DEVICE(isadev) : NULL;
     }
     return dev;
-}
-
-static void cpu_request_exit(void *opaque, int irq, int level)
-{
-    CPUState *cpu = current_cpu;
-
-    if (cpu && level) {
-        cpu_exit(cpu);
-    }
 }
 
 static const MemoryRegionOps ioport80_io_ops = {
@@ -1489,7 +1486,6 @@ void pc_basic_device_init(ISABus *isa_bus, qemu_irq *gsi,
     qemu_irq rtc_irq = NULL;
     qemu_irq *a20_line;
     ISADevice *i8042, *port92, *vmmouse, *pit = NULL;
-    qemu_irq *cpu_exit_irq;
     MemoryRegion *ioport80_io = g_new(MemoryRegion, 1);
     MemoryRegion *ioportF0_io = g_new(MemoryRegion, 1);
 
@@ -1566,8 +1562,7 @@ void pc_basic_device_init(ISABus *isa_bus, qemu_irq *gsi,
     port92 = isa_create_simple(isa_bus, "port92");
     port92_init(port92, &a20_line[1]);
 
-    cpu_exit_irq = qemu_allocate_irqs(cpu_request_exit, NULL, 1);
-    DMA_init(0, cpu_exit_irq);
+    DMA_init(0);
 
     for(i = 0; i < MAX_FD; i++) {
         fd[i] = drive_get(IF_FLOPPY, 0, i);

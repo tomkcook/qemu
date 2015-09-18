@@ -569,6 +569,7 @@ F: hw/s390x/css.[hc]
 F: hw/s390x/sclp*.[hc]
 F: hw/s390x/ipl*.[hc]
 F: hw/s390x/*pci*.[hc]
+F: hw/s390x/s390-skeys*.c
 F: include/hw/s390x/
 F: pc-bios/s390-ccw/
 T: git git://github.com/cohuck/qemu virtio-ccw-upstr
@@ -902,6 +903,14 @@ M: Alexander Graf <agraf@suse.de>
 S: Maintained
 F: device_tree.[ch]
 
+Error reporting
+M: Markus Armbruster <armbru@redhat.com>
+S: Supported
+F: include/qapi/error.h
+F: include/qemu/error-report.h
+F: util/error.c
+F: util/qemu-error.c
+
 GDB stub
 L: qemu-devel@nongnu.org
 S: Odd Fixes
@@ -954,11 +963,10 @@ F: hmp-commands.hx
 T: git git://repo.or.cz/qemu/qmp-unstable.git queue/qmp
 
 Network device layer
-M: Stefan Hajnoczi <stefanha@redhat.com>
 M: Jason Wang <jasowang@redhat.com>
 S: Maintained
 F: net/
-T: git git://github.com/stefanha/qemu.git net
+T: git git://github.com/jasowang/qemu.git net
 
 Netmap network backend
 M: Luigi Rizzo <rizzo@iet.unipi.it>
@@ -1307,6 +1315,7 @@ F: block/dmg.c
 
 parallels
 M: Stefan Hajnoczi <stefanha@redhat.com>
+M: Denis V. Lunev <den@openvz.org>
 L: qemu-block@nongnu.org
 S: Supported
 F: block/parallels.c

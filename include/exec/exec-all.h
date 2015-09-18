@@ -93,6 +93,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
                               int cflags);
 void cpu_exec_init(CPUState *cpu, Error **errp);
 void QEMU_NORETURN cpu_loop_exit(CPUState *cpu);
+void QEMU_NORETURN cpu_loop_exit_restore(CPUState *cpu, uintptr_t pc);
 
 #if !defined(CONFIG_USER_ONLY)
 bool qemu_in_vcpu_thread(void);
@@ -228,7 +229,7 @@ struct TranslationBlock {
     struct TranslationBlock *jmp_first;
 };
 
-#include "exec/spinlock.h"
+#include "qemu/thread.h"
 
 typedef struct TBContext TBContext;
 
@@ -238,7 +239,7 @@ struct TBContext {
     TranslationBlock *tb_phys_hash[CODE_GEN_PHYS_HASH_SIZE];
     int nb_tbs;
     /* any access to the tbs or the page table must use this lock */
-    spinlock_t tb_lock;
+    QemuMutex tb_lock;
 
     /* statistics */
     int tb_flush_count;
@@ -377,20 +378,45 @@ void tlb_fill(CPUState *cpu, target_ulong addr, int is_write, int mmu_idx,
 #endif
 
 #if defined(CONFIG_USER_ONLY)
+void mmap_lock(void);
+void mmap_unlock(void);
+
 static inline tb_page_addr_t get_page_addr_code(CPUArchState *env1, target_ulong addr)
 {
     return addr;
 }
 #else
+static inline void mmap_lock(void) {}
+static inline void mmap_unlock(void) {}
+
 /* cputlb.c */
 tb_page_addr_t get_page_addr_code(CPUArchState *env1, target_ulong addr);
+
+void tlb_reset_dirty(CPUState *cpu, ram_addr_t start1, ram_addr_t length);
+void tlb_set_dirty(CPUState *cpu, target_ulong vaddr);
+
+/* exec.c */
+void tb_flush_jmp_cache(CPUState *cpu, target_ulong addr);
+
+MemoryRegionSection *
+address_space_translate_for_iotlb(CPUState *cpu, hwaddr addr, hwaddr *xlat,
+                                  hwaddr *plen);
+hwaddr memory_region_section_get_iotlb(CPUState *cpu,
+                                       MemoryRegionSection *section,
+                                       target_ulong vaddr,
+                                       hwaddr paddr, hwaddr xlat,
+                                       int prot,
+                                       target_ulong *address);
+bool memory_region_is_unassigned(MemoryRegion *mr);
+
 #endif
 
 /* vl.c */
 extern int singlestep;
 
-/* cpu-exec.c */
-extern volatile sig_atomic_t exit_request;
+/* cpu-exec.c, accessed with atomic_mb_read/atomic_mb_set */
+extern CPUState *tcg_current_cpu;
+extern bool exit_request;
 
 #if !defined(CONFIG_USER_ONLY)
 void migration_bitmap_extend(ram_addr_t old, ram_addr_t new);

@@ -17,8 +17,6 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <signal.h>
-
 #include "qemu-common.h"
 #include "cpu.h"
 #include "sysemu/kvm.h"
@@ -708,7 +706,7 @@ void mips_cpu_do_interrupt(CPUState *cs)
         goto set_EPC;
     case EXCP_DWATCH:
         cause = 23;
-        /* XXX: TODO: manage defered watch exceptions */
+        /* XXX: TODO: manage deferred watch exceptions */
         goto set_EPC;
     case EXCP_MCHECK:
         cause = 24;
