@@ -81,6 +81,7 @@ static void raspi2_init(MachineState *machine)
 
     MemoryRegion *per_todo_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_ic_bus = g_new(MemoryRegion, 1);
+    MemoryRegion *per_control_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_uart0_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_uart1_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_st_bus = g_new(MemoryRegion, 1);
@@ -101,7 +102,7 @@ static void raspi2_init(MachineState *machine)
     qemu_irq pic[72];
     qemu_irq mbox_irq[MBOX_CHAN_COUNT];
 
-    DeviceState *dev;
+    DeviceState *dev, *icdev;
     SysBusDevice *s;
 
     int n;
@@ -152,10 +153,30 @@ static void raspi2_init(MachineState *machine)
     memory_region_add_subregion(sysmem, BUS_ADDR(BCM2708_PERI_BASE),
         per_todo_bus);
 
-    /* Interrupt Controller */
+    /* Interrupt Controllers: BCM2835 chains to the new 2836 interrupt controller */
+    icdev = dev = sysbus_create_varargs("bcm2836_control", 0x40000000, NULL);
+
+    s = SYS_BUS_DEVICE(dev);
+    mr = sysbus_mmio_get_region(s, 0);
+    memory_region_init_alias(per_control_bus, NULL, NULL, mr,
+        0, memory_region_size(mr));
+    memory_region_add_subregion(sysmem, BUS_ADDR(0x40000000),
+        per_control_bus);
+
+    /* Connect outputs from the interrupt controller.
+     * (For now we're only emulating a single CPU.) */
+    qdev_connect_gpio_out_named(icdev, "irq", 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
+    qdev_connect_gpio_out_named(icdev, "fiq", 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
+    
+    /* Hook up timers from the CPU */
+    cpu->gt_timer_outputs[GTIMER_PHYS] = qdev_get_gpio_in_named(icdev, "cntpsirq", 0);
+    cpu->gt_timer_outputs[GTIMER_VIRT] = qdev_get_gpio_in_named(icdev, "cntvirq", 0);
+
+    /* Create the child controller */
     dev = sysbus_create_varargs("bcm2835_ic", ARMCTRL_IC_BASE,
-        qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ),
-        qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ), NULL);
+                                qdev_get_gpio_in_named(icdev, "gpu_irq", 0),
+                                qdev_get_gpio_in_named(icdev, "gpu_fiq", 0),
+                                NULL);
 
     s = SYS_BUS_DEVICE(dev);
     mr = sysbus_mmio_get_region(s, 0);
@@ -163,10 +184,11 @@ static void raspi2_init(MachineState *machine)
         0, memory_region_size(mr));
     memory_region_add_subregion(sysmem, BUS_ADDR(ARMCTRL_IC_BASE),
         per_ic_bus);
+    
     for (n = 0; n < 72; n++) {
         pic[n] = qdev_get_gpio_in(dev, n);
     }
-
+    
     /* UART0 */
     dev = sysbus_create_simple("pl011", UART0_BASE, pic[INTERRUPT_VC_UART]);
     s = SYS_BUS_DEVICE(dev);
