@@ -219,6 +219,7 @@ static void pl011_put_fifo(void *opaque, uint32_t value)
     if (slot >= 16)
         slot -= 16;
     s->read_fifo[slot] = value;
+    assert(s->read_count < 16);
     s->read_count++;
     s->flags &= ~PL011_FLAG_RXFE;
     if (!(s->lcr & 0x10) || s->read_count == 16) {
@@ -232,6 +233,7 @@ static void pl011_put_fifo(void *opaque, uint32_t value)
 
 static void pl011_receive(void *opaque, const uint8_t *buf, int size)
 {
+    assert(size == 1);
     pl011_put_fifo(opaque, *buf);
 }
 
