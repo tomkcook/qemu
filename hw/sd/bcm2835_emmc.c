@@ -344,6 +344,11 @@ static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
     if (s->status & SDHCI_DATA_AVAILABLE) {
         s->interrupt |= SDHCI_INT_DATA_AVAIL;
     }
+
+    // the error bit must be set iff there are any other errors
+    assert(((s->interrupt & SDHCI_INT_ERROR) == 0)
+           == ((s->interrupt & SDHCI_INT_ERROR_MASK & ~SDHCI_INT_ERROR) == 0));
+
     if (s->irpt_en & s->irpt_mask & s->interrupt & ~BCM2835_DISABLED_INTERRUPTS) {
         qemu_set_irq(s->irq, 1);
     } else {
@@ -698,6 +703,10 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
         break;
     case SDHCI_INT_STATUS:      /* INTERRUPT */
         s->interrupt &= ~value;
+        // clearing all error sources also clears the overall error status
+        if ((s->interrupt & SDHCI_INT_ERROR_MASK) == SDHCI_INT_ERROR) {
+            s->interrupt &= ~SDHCI_INT_ERROR_MASK;
+        }
         bcm2835_emmc_set_irq(s);
         break;
 
