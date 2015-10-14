@@ -137,6 +137,9 @@
         SDHCI_INT_DATA_END_BIT | SDHCI_INT_ADMA_ERROR)
 #define SDHCI_INT_ALL_MASK  ((unsigned int)-1)
 
+/* Per the BCM2835 ARM peripherals document (p76), some interrupts are not implemented (reserved) */
+#define BCM2835_DISABLED_INTERRUPTS (SDHCI_INT_DMA_END | SDHCI_INT_CARD_INSERT | SDHCI_INT_CARD_REMOVE)
+
 #define SDHCI_ACMD12_ERR    0x3C
 
 #define SDHCI_HOST_CONTROL2     0x3E
@@ -341,7 +344,7 @@ static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
     if (s->status & SDHCI_DATA_AVAILABLE) {
         s->interrupt |= SDHCI_INT_DATA_AVAIL;
     }
-    if (s->irpt_en & s->irpt_mask & s->interrupt) {
+    if (s->irpt_en & s->irpt_mask & s->interrupt & ~BCM2835_DISABLED_INTERRUPTS) {
         qemu_set_irq(s->irq, 1);
     } else {
         qemu_set_irq(s->irq, 0);
@@ -488,8 +491,7 @@ static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
         res = s->control1;
         break;
     case SDHCI_INT_STATUS:      /* INTERRUPT */
-        res = s->interrupt;
-        res |= SDHCI_INT_CARD_INSERT; // card inserted. UEFI relies on this
+        res = s->interrupt & s->irpt_mask;
         break;
     case SDHCI_INT_ENABLE:      /* IRPT_MASK */
         res = s->irpt_mask;
