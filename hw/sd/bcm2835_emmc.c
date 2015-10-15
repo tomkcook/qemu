@@ -609,7 +609,7 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                     | (response[3+12-1] << 0);
             }
 
-            s->interrupt |= SDHCI_INT_RESPONSE;
+            s->interrupt |= SDHCI_INT_RESPONSE | SDHCI_INT_DATA_END;
 
             if (!s->acmd && (cmd == 12)) {
                 /* Stop transmission */
