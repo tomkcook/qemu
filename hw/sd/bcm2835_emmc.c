@@ -338,13 +338,6 @@ typedef struct {
 
 static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
 {
-    if (s->status & SDHCI_SPACE_AVAILABLE) {
-        s->interrupt |= SDHCI_INT_SPACE_AVAIL;
-    }
-    if (s->status & SDHCI_DATA_AVAILABLE) {
-        s->interrupt |= SDHCI_INT_DATA_AVAIL;
-    }
-
     // the error bit must be set iff there are any other errors
     assert(((s->interrupt & SDHCI_INT_ERROR) == 0)
            == ((s->interrupt & SDHCI_INT_ERROR_MASK & ~SDHCI_INT_ERROR) == 0));
@@ -483,6 +476,11 @@ static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
 
             s->interrupt |= SDHCI_INT_DATA_END;
         }
+
+        if (s->status & SDHCI_DATA_AVAILABLE) {
+            s->interrupt |= SDHCI_INT_DATA_AVAIL;
+        }
+
         set_irq = 1;
         res = s->data;
         break;
@@ -586,6 +584,7 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                     | (response[3] << 0);
                 if (!s->acmd && ((cmd == 24) || (cmd == 25))) {
                     s->status |= SDHCI_SPACE_AVAILABLE;
+                    s->interrupt |= SDHCI_INT_SPACE_AVAIL;
                 }
             } else if (resplen == 16) {
                 s->resp3 = 0
@@ -609,7 +608,7 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                     | (response[3+12-1] << 0);
             }
 
-            s->interrupt |= SDHCI_INT_RESPONSE | SDHCI_INT_DATA_END;
+            s->interrupt |= SDHCI_INT_RESPONSE;
 
             if (!s->acmd && (cmd == 12)) {
                 /* Stop transmission */
@@ -618,6 +617,9 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
             } else {
                 if (sd_data_ready(s->card)) {
                     s->status |= SDHCI_DATA_AVAILABLE;
+                    s->interrupt |= SDHCI_INT_DATA_AVAIL;
+                } else {
+                    s->interrupt |= SDHCI_INT_DATA_END;
                 }
             }
             bcm2835_emmc_set_irq(s);
@@ -681,6 +683,11 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                 s->interrupt |= SDHCI_INT_DATA_END;
             }
         }
+
+        if (s->status & SDHCI_SPACE_AVAILABLE) {
+            s->interrupt |= SDHCI_INT_SPACE_AVAIL;
+        }
+
         bcm2835_emmc_set_irq(s);
         break;
     case SDHCI_HOST_CONTROL:    /* CONTROL0 */
@@ -712,9 +719,11 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
 
     case SDHCI_INT_ENABLE:      /* IRPT_MASK */
         s->irpt_mask = value;
+        bcm2835_emmc_set_irq(s);
         break;
     case SDHCI_SIGNAL_ENABLE:   /* IRPT_EN */
         s->irpt_en = value;
+        bcm2835_emmc_set_irq(s);
         break;
     case SDHCI_ACMD12_ERR:      /* CONTROL2 */
         s->control2 &= ~0x00e7009f;
