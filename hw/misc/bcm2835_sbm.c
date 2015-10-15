@@ -124,8 +124,11 @@ static void bcm2835_sbm_update(bcm2835_sbm_state *s)
 
     /* Update ARM IRQ status */
     set = 0;
-    if (s->mbox[0].config & ARM_MC_IHAVEDATAIRQEN) {
-        if (!(s->mbox[0].status & ARM_MS_EMPTY)) {
+    if (s->mbox[0].status & ARM_MS_EMPTY) {
+        s->mbox[0].config &= ~ARM_MC_IHAVEDATAIRQPEND;
+    } else {
+        s->mbox[0].config |= ARM_MC_IHAVEDATAIRQPEND;
+        if (s->mbox[0].config & ARM_MC_IHAVEDATAIRQEN) {
             set = 1;
         }
     }
@@ -195,7 +198,8 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
     case 0x94:  /* MAIL0_SENDER */
         break;
     case 0x9c:  /* MAIL0_CONFIG */
-        s->mbox[0].config = value & ARM_MC_IHAVEDATAIRQEN;
+        s->mbox[0].config &= ~ARM_MC_IHAVEDATAIRQEN;
+        s->mbox[0].config |= value & ARM_MC_IHAVEDATAIRQEN;
         break;
     case 0xa0:
     case 0xa4:

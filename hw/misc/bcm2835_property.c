@@ -44,6 +44,7 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
 {
     uint32_t tag;
     uint32_t bufsize;
+    uint32_t tot_len;
     int n;
     int resplen;
     uint32_t offset, length, color;
@@ -61,9 +62,11 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
     
     s->addr = value;
 
+    tot_len = ldl_phys(&address_space_memory, value);
+    
     /* @(s->addr + 4) : Buffer response code */
     value = s->addr + 8;
-    do {
+    while (value + 8 <= s->addr + tot_len) {
         tag = ldl_phys(&address_space_memory, value);
         bufsize = ldl_phys(&address_space_memory, value + 4);
         /* @(value + 8) : Request/response indicator */
@@ -84,7 +87,9 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
             break;
         case 0x00010003: /* Get board MAC address */
             stl_phys(&address_space_memory, value + 12, 0xB827EBD0);
-            stl_phys(&address_space_memory, value + 16, 0xEEDF0000);
+            // write the last two bytes, avoid a writing past the end of buffer
+            stb_phys(&address_space_memory, value + 16, 0xEE);
+            stb_phys(&address_space_memory, value + 17, 0xDF);
             resplen = 6;
             break;
         case 0x00010004: /* Get board serial */
@@ -271,12 +276,14 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
                 "bcm2835_property: unhandled tag %08x\n", tag);
             break;
         }
-        if (tag != 0) {
-            stl_phys(&address_space_memory, value + 8, (1 << 31) | resplen);
+
+        if (tag == 0) {
+            break;
         }
 
+        stl_phys(&address_space_memory, value + 8, (1 << 31) | resplen);
         value += bufsize + 12;
-    } while (tag != 0);
+    }
 
     /* Buffer response code */
     stl_phys(&address_space_memory, s->addr + 4, (1 << 31));
