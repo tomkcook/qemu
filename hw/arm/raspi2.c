@@ -368,6 +368,9 @@ static void raspi2_init(MachineState *machine)
     if (machine->initrd_filename
         && !strcmp(machine->kernel_filename, machine->initrd_filename)) {
 
+        // kludge for Windows support: BGR framebuffer
+        bcm2835_fb.pixo = 0;
+        
         for (n = 0; n < ARRAY_SIZE(bootloader_0); n++) {
             stl_phys(&address_space_memory, (n << 2), bootloader_0[n]);
         }
