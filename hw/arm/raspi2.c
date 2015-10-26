@@ -24,6 +24,7 @@
 #include "exec/address-spaces.h"
 #include "hw/arm/bcm2836_platform.h"
 #include "hw/arm/bcm2835_common.h"
+#include "net/net.h"
 
 #define BUS_ADDR(x) (((x) - BCM2708_PERI_BASE) + 0x7e000000)
 
@@ -357,6 +358,11 @@ static void raspi2_init(MachineState *machine)
     sysbus_connect_irq(s, 11, pic[INTERRUPT_DMA11]);
     sysbus_connect_irq(s, 12, pic[INTERRUPT_DMA12]);
 
+    /* XXX: this is not present on a real pi, it's a kludge for Windows NIC/debug */
+    if (nd_table[0].used) {
+        lan9118_init(&nd_table[0], 0x3F900000, NULL); // no interrupt (yet)
+    }
+    
     /* Finally, the board itself */
     raspi_binfo.ram_size = bcm2835_vcram_base;
     raspi_binfo.kernel_filename = machine->kernel_filename;
