@@ -77,6 +77,7 @@ struct bcm2835_usb_state_struct {
     uint32_t gnptxsts;
     uint32_t hfnum;
     uint32_t hptxsts;
+    uint32_t guid;
 
     bcm2835_usb_hc_state hchan[NB_HCHANS];
 
@@ -320,6 +321,9 @@ static uint64_t bcm2835_usb_read(void *opaque, hwaddr offset,
     case 0x2c:
         res = s->gnptxsts;
         break;
+    case 0x3c:
+        res = s->guid;
+        break;
     case 0x40:
         res = 0x4f54280a;
         break;
@@ -432,6 +436,9 @@ static void bcm2835_usb_write(void *opaque, hwaddr offset,
         break;
     case 0x28:
         s->gnptxfsiz = value;
+        break;
+    case 0x3c:
+        s->guid = value;
         break;
     case 0x5c:
         s->gdfifocfg = value;
@@ -590,6 +597,7 @@ static int bcm2835_usb_init(SysBusDevice *sbd)
     s->gnptxsts = 0x080100;
     s->hfnum = 0;
     s->hptxsts = 0x080200;
+    s->guid = 0x2708A000;
 
     for (n = 0; n < NB_HCHANS; n++) {
         s->hchan[n].parent = s;
