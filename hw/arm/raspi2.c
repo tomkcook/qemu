@@ -29,7 +29,7 @@
 #define BUS_ADDR(x) (((x) - BCM2708_PERI_BASE) + 0x7e000000)
 
 static const uint32_t bootloader_0[] = {
-    0xea000006, // b 0x20 ; branch over the nops
+    0xea000006, // b 0x20 ; reset vector: branch to the bootloader below
     0xe1a00000, // nop ; (mov r0, r0)
     0xe1a00000, // nop ; (mov r0, r0)
     0xe1a00000, // nop ; (mov r0, r0)
@@ -38,13 +38,31 @@ static const uint32_t bootloader_0[] = {
     0xe1a00000, // nop ; (mov r0, r0)
     0xe1a00000, // nop ; (mov r0, r0)
 
-    0xe3a00000, // mov r0, #0
-    0xe3a01043, // mov r1, #67 ; r1 = 0x43
-    0xe3811c0c, // orr r1, r1, #12, 24 ; r1 |= 0xc00 (Linux machine type MACH_BCM2709 = 0xc43)
-    0xe59f2000, // ldr r2, [pc] ; 0x100 from below
-    0xe59ff000, // ldr pc, [pc] ; jump to 0x8000, from below
-    0x00000100, // (Phys addr of tag list in RAM)
-    0x00008000  // (Phys addr of kernel image entry, i.e. where we jump)
+    /* start of bootloader */
+    0xE3A03902, //    mov   r3, #0x8000            ; entry point for primary core
+
+    /* retrieve core ID */
+    0xEE100FB0, //    mrc   p15, 0, r0, c0, c0, 5  ; get core ID
+    0xE7E10050, //    ubfx  r0, r0, #0, #2         ; extract LSB
+    0xE3500000, //    cmp   r0, #0                 ; if zero, we're the primary
+    0x0A000004, //    beq   2f
+
+    /* busy-wait for mailbox set on secondary cores */
+    0xE59F501C, //    ldr     r4, =0x400000CC      ; mailbox 3 read/clear base
+    0xE7953200, // 1: ldr     r3, [r4, r0, lsl #4] ; read mailbox for our core
+    0xE3530000, //    cmp     r3, #0               ; spin while zero
+    0x0AFFFFFC, //    beq     1b
+    0xE7853200, //    str     r3, [r4, r0, lsl #4] ; clear mailbox
+
+    /* enter image at [r3] */
+    0xE3A00000, // 2: mov     r0, #0
+    0xE59F1008, //    ldr     r1, =0xc43           ; Linux machine type MACH_BCM2709 = 0xc43
+    0xE3A02C01, //    ldr     r2, =0x100           ; Address of ATAGS
+    0xE12FFF13, //    bx      r3
+
+    /* constants */
+    0x400000CC,
+    0x00000C43,
 };
 
 static uint32_t bootloader_100[] = { // this is the "tag list" in RAM at 0x100
@@ -394,7 +412,7 @@ static void raspi2_init(MachineState *machine)
         /* XXX: Kludge for Windows support: put framebuffer in BGR
          * mode. We need a config switch somewhere to enable this. It
          * should ultimately be emulated by looking in config.txt (as
-         * the real Pi does) for the relevant options */
+         * the real firmware does) for the relevant options */
         bcm2835_fb.pixo = 0;
 
         /* load the firmware image (typically kernel.img) at 0x8000 */
@@ -412,7 +430,7 @@ static void raspi2_init(MachineState *machine)
 
         /* set variables so arm_load_kernel does the right thing */
         raspi_binfo.is_linux = false;
-        raspi_binfo.entry = 0;
+        raspi_binfo.entry = 0x20;
         raspi_binfo.firmware_loaded = true;
     } else {
         /* Just let arm_load_kernel do everything for us... */
@@ -427,7 +445,9 @@ static void raspi2_init(MachineState *machine)
 static QEMUMachine raspi2_machine = {
     .name = "raspi2",
     .desc = "Raspberry Pi 2",
-    .init = raspi2_init
+    .init = raspi2_init,
+    .block_default_type = IF_SD,
+    .max_cpus = 4,
 };
 
 static void raspi2_machine_init(void)

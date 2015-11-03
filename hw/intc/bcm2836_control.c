@@ -1,6 +1,8 @@
 /*
- * Rasperry Pi 2 emulation ARM control logic module. At present, only
- * implements interrupt routing (not local timer or mailboxes).
+ * Rasperry Pi 2 emulation ARM control logic module.
+ *
+ * At present, only implements interrupt routing, and mailboxes (i.e.,
+ * not local timer, PMU interrupt, or AXI counters).
  *
  * Ref: https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2836/QA7_rev3.4.pdf
  *
@@ -25,7 +27,9 @@
 
 #include "hw/sysbus.h"
 
+// 4 mailboxes per core, for 16 total
 #define NCORES 4
+#define MBPERCORE 4
 
 #define ROUTE_CORE(x) ((x) & 0x3)
 #define ROUTE_FIQ(x)  (((x) & 0x4) != 0)
@@ -59,6 +63,9 @@ typedef struct bcm2836_control_state {
     bool gpu_irq, gpu_fiq;
     uint32_t localirqs[NCORES];
 
+    // mailboxes
+    uint32_t mailboxes[NCORES * MBPERCORE];
+
     // interrupt routing/control registers
     uint8_t route_gpu_irq, route_gpu_fiq;
     uint32_t timercontrol[NCORES];
@@ -78,13 +85,16 @@ static void bcm2836_control_update(bcm2836_control_state *s)
 {
     int i, j;
 
+    //
     // reset pending IRQs/FIQs
+    //
+    
     for (i = 0; i < NCORES; i++) {
         s->irqsrc[i] = s->fiqsrc[i] = 0;
     }
 
     //
-    // step 1: apply routing logic, update status regs
+    // apply routing logic, update status regs
     //
     
     if (s->gpu_irq) {
@@ -98,6 +108,7 @@ static void bcm2836_control_update(bcm2836_control_state *s)
     }
 
     for (i = 0; i < NCORES; i++) {
+        // handle local interrupts for this core
         if (s->localirqs[i]) {
             assert(s->localirqs[i] < (1 << IRQ_MAILBOX0));
             for (j = 0; j < IRQ_MAILBOX0; j++) {
@@ -115,10 +126,26 @@ static void bcm2836_control_update(bcm2836_control_state *s)
                 }
             }
         }
+
+        // handle mailboxes for this core
+        for (j = 0; j < MBPERCORE; j++) {
+            if (s->mailboxes[i * MBPERCORE + j] != 0) {
+                // mailbox j is set
+                if (FIQ_BIT(s->mailboxcontrol[i], j)) {
+                    // deliver a FIQ
+                    s->fiqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
+                } else if (IRQ_BIT(s->mailboxcontrol[i], j)) {
+                    // deliver an IRQ
+                    s->irqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
+                } else {
+                    // the interrupt is masked
+                }
+            }
+        }
     }
 
     //
-    // step 2: call set_irq appropriately for each output
+    // call set_irq appropriately for each output
     //
     
     for (i = 0; i < NCORES; i++) {
@@ -186,78 +213,31 @@ static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
     unsigned size)
 {
     bcm2836_control_state *s = (bcm2836_control_state *)opaque;
-    uint32_t res = 0;
 
-    switch (offset) {
+    if (offset == 0xc) {
         /* GPU interrupt routing */
-    case 0xc:
         assert(s->route_gpu_fiq < NCORES && s->route_gpu_irq < NCORES);
-        res = ((uint32_t)s->route_gpu_fiq << 2) | s->route_gpu_irq;
-        break;
-        
+        return ((uint32_t)s->route_gpu_fiq << 2) | s->route_gpu_irq;
+    } else if (offset >= 0x40 && offset < 0x50) {
         /* Timer interrupt control registers */
-    case 0x40:
-        res = s->timercontrol[0];
-        break;
-    case 0x44:
-        res = s->timercontrol[1];
-        break;
-    case 0x48:
-        res = s->timercontrol[2];
-        break;
-    case 0x4c:
-        res = s->timercontrol[3];
-        break;
-
+        return s->timercontrol[(offset - 0x40) >> 2];
+    } else if (offset >= 0x50 && offset < 0x60) {
         /* Mailbox interrupt control registers */
-    case 0x50:
-        res = s->mailboxcontrol[0];
-        break;
-    case 0x54:
-        res = s->mailboxcontrol[1];
-        break;
-    case 0x58:
-        res = s->mailboxcontrol[2];
-        break;
-    case 0x5c:
-        res = s->mailboxcontrol[3];
-        break;
-
+        return s->mailboxcontrol[(offset - 0x50) >> 2];
+    } else if (offset >= 0x60 && offset < 0x70) {
         /* IRQ source registers */
-    case 0x60:
-        res = s->irqsrc[0];
-        break;
-    case 0x64:
-        res = s->irqsrc[1];
-        break;
-    case 0x68:
-        res = s->irqsrc[2];
-        break;
-    case 0x6c:
-        res = s->irqsrc[3];
-        break;
-
+        return s->irqsrc[(offset - 0x60) >> 2];
+    } else if (offset >= 0x70 && offset < 0x80) {
         /* FIQ source registers */
-    case 0x70:
-        res = s->fiqsrc[0];
-        break;
-    case 0x74:
-        res = s->fiqsrc[1];
-        break;
-    case 0x78:
-        res = s->fiqsrc[2];
-        break;
-    case 0x7c:
-        res = s->fiqsrc[3];
-        break;
-
-    default:
+        return s->fiqsrc[(offset - 0x70) >> 2];
+    } else if (offset >= 0xc0 && offset < 0x100) {
+        /* Mailboxes */
+        return s->mailboxes[(offset - 0xc0) >> 2];
+    } else {
         qemu_log_mask(LOG_GUEST_ERROR,
             "bcm2836_control_read: Bad offset %x\n", (int)offset);
         return 0;
     }
-
-    return res;
 }
 
 static void bcm2836_control_write(void *opaque, hwaddr offset,
@@ -265,46 +245,28 @@ static void bcm2836_control_write(void *opaque, hwaddr offset,
 {
     bcm2836_control_state *s = (bcm2836_control_state *)opaque;
 
-    switch (offset) {
+    if (offset == 0xc) {
         /* GPU interrupt routing */
-    case 0xc:
         s->route_gpu_irq = val & 0x3;
         s->route_gpu_fiq = (val >> 2) & 0x3;
-        break;
-
+    } else if (offset >= 0x40 && offset < 0x50) {
         /* Timer interrupt control registers */
-    case 0x40:
-        s->timercontrol[0] = val & 0xff;
-        break;
-    case 0x44:
-        s->timercontrol[1] = val & 0xff;
-        break;
-    case 0x48:
-        s->timercontrol[2] = val & 0xff;
-        break;
-    case 0x4c:
-        s->timercontrol[3] = val & 0xff;
-        break;
-
+        s->timercontrol[(offset - 0x40) >> 2] = val & 0xff;
+    } else if (offset >= 0x50 && offset < 0x60) {
         /* Mailbox interrupt control registers */
-    case 0x50:
-        s->mailboxcontrol[0] = val & 0xff;
-        break;
-    case 0x54:
-        s->mailboxcontrol[0] = val & 0xff;
-        break;
-    case 0x58:
-        s->mailboxcontrol[0] = val & 0xff;
-        break;
-    case 0x5c:
-        s->mailboxcontrol[0] = val & 0xff;
-        break;
-
-    default:
+        s->mailboxcontrol[(offset - 0x50) >> 2] = val & 0xff;
+    } else if (offset >= 0x80 && offset < 0xc0) {
+        /* Mailbox set registers */
+        s->mailboxes[(offset - 0x80) >> 2] |= val;
+    } else if (offset >= 0xc0 && offset < 0x100) {
+        /* Mailbox clear registers */
+        s->mailboxes[(offset - 0xc0) >> 2] &= ~val;
+    } else {
         qemu_log_mask(LOG_GUEST_ERROR,
             "bcm2836_control_write: Bad offset %x\n", (int)offset);
         return;
     }
+
     bcm2836_control_update(s);
 }
 
@@ -324,6 +286,10 @@ static void bcm2836_control_reset(DeviceState *d)
     for (i = 0; i < NCORES; i++) {
         s->timercontrol[i] = 0;
         s->mailboxcontrol[i] = 0;
+    }
+
+    for (i = 0; i < NCORES * MBPERCORE; i++) {
+        s->mailboxes[i] = 0;
     }
 }
 
