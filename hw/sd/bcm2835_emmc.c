@@ -702,6 +702,12 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
             | SDHCI_RESET_CMD
             | SDHCI_RESET_DATA) << 24)) {
             /* Reset */
+            /* TODO: implement proper reset logic. In the meantime,
+             * one observed side-effect of reset is clearing the card
+             * inserted bit. */
+            if (value & (SDHCI_RESET_ALL << 24)) {
+                s->interrupt &= ~SDHCI_INT_CARD_INSERT;
+            }
             value &= ~((SDHCI_RESET_ALL
                 | SDHCI_RESET_CMD
                 | SDHCI_RESET_DATA) << 24);
@@ -780,7 +786,14 @@ static int bcm2835_emmc_init(SysBusDevice *sbd)
     s->status = (0x1ff << 16);
     s->control0 = 0;
     s->control1 = SDHCI_CLOCK_INT_STABLE;
-    s->interrupt = 0;
+    
+    /* Although the Broadcom doc says it is unimplemented/reserved, on
+     * real hardware the card inserted interrupt is actually set at
+     * boot, and is later cleared by a reset command (as observed on a
+     * Raspberry Pi 2). Moreover, EDK2/UEFI depend on seeing this bit
+     * set, so we set it here and later clear it in the reset. */
+    s->interrupt = SDHCI_INT_CARD_INSERT;
+    
     s->irpt_mask = 0;
     s->irpt_en = 0;
     s->control2 = 0;
