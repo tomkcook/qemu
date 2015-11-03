@@ -28,9 +28,6 @@
 
 #define BUS_ADDR(x) (((x) - BCM2708_PERI_BASE) + 0x7e000000)
 
-/* Globals */
-//hwaddr bcm2835_vcram_base;
-
 static const uint32_t bootloader_0[] = {
     0xea000006, // b 0x20 ; branch over the nops
     0xe1a00000, // nop ; (mov r0, r0)
@@ -66,12 +63,51 @@ static uint32_t bootloader_100[] = { // this is the "tag list" in RAM at 0x100
     0x00000000  // ATAG_NONE
 };
 
-
 static struct arm_boot_info raspi_binfo;
+
+static void init_cpus(const char *cpu_model, DeviceState *icdev)
+{
+    ObjectClass *cpu_oc = cpu_class_by_name(TYPE_ARM_CPU, cpu_model);
+    int n;
+
+    if (!cpu_oc) {
+        fprintf(stderr, "Unable to find CPU definition\n");
+        exit(1);
+    }
+
+    for (n = 0; n < smp_cpus; n++) {
+        Object *cpu = object_new(object_class_get_name(cpu_oc));
+        Error *err = NULL;
+
+        /* Mirror bcm2836, which has clusterid set to 0xf */
+        ARM_CPU(cpu)->mp_affinity = 0xF00 | n;
+
+        /* set periphbase/CBAR value for CPU-local registers */
+        object_property_set_int(cpu, MCORE_BASE,
+                                "reset-cbar", &error_abort);
+
+        object_property_set_bool(cpu, true, "realized", &err);
+        if (err) {
+            error_report_err(err);
+            exit(1);
+        }
+        
+        /* Connect irq/fiq outputs from the interrupt controller. */
+        qdev_connect_gpio_out_named(icdev, "irq", n,
+                                    qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
+        qdev_connect_gpio_out_named(icdev, "fiq", n,
+                                    qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
+    
+        /* Connect timers from the CPU to the interrupt controller */
+        ARM_CPU(cpu)->gt_timer_outputs[GTIMER_PHYS]
+            = qdev_get_gpio_in_named(icdev, "cntpsirq", 0);
+        ARM_CPU(cpu)->gt_timer_outputs[GTIMER_VIRT]
+            = qdev_get_gpio_in_named(icdev, "cntvirq", 0);
+    }
+}
 
 static void raspi2_init(MachineState *machine)
 {
-    ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
 
     MemoryRegion *bcm2835_ram = g_new(MemoryRegion, 1);
@@ -108,19 +144,6 @@ static void raspi2_init(MachineState *machine)
 
     int n;
 
-    if (!machine->cpu_model) {
-        machine->cpu_model = "cortex-a15"; /* Closest architecturally to the A7 */
-    }
-
-    cpu = cpu_arm_init(machine->cpu_model);
-    if (!cpu) {
-        fprintf(stderr, "Unable to find CPU definition\n");
-        exit(1);
-    }
-
-    // bcm2836 has clusterid set to 0xf, so this is the first core
-    cpu->mp_affinity = 0xF00;
-    
     bcm2835_vcram_base = machine->ram_size - VCRAM_SIZE;
 
     /* Write real RAM size in ATAG structure */
@@ -154,7 +177,7 @@ static void raspi2_init(MachineState *machine)
     memory_region_add_subregion(sysmem, BUS_ADDR(BCM2708_PERI_BASE),
         per_todo_bus);
 
-    /* Interrupt Controllers: BCM2835 chains to the new 2836 interrupt controller */
+    /* Interrupt Controllers: BCM2835 chains to the new 2836 controller */
     icdev = dev = sysbus_create_varargs("bcm2836_control", 0x40000000, NULL);
 
     s = SYS_BUS_DEVICE(dev);
@@ -164,16 +187,7 @@ static void raspi2_init(MachineState *machine)
     memory_region_add_subregion(sysmem, BUS_ADDR(0x40000000),
         per_control_bus);
 
-    /* Connect outputs from the interrupt controller.
-     * (For now we're only emulating a single CPU.) */
-    qdev_connect_gpio_out_named(icdev, "irq", 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
-    qdev_connect_gpio_out_named(icdev, "fiq", 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
-    
-    /* Hook up timers from the CPU */
-    cpu->gt_timer_outputs[GTIMER_PHYS] = qdev_get_gpio_in_named(icdev, "cntpsirq", 0);
-    cpu->gt_timer_outputs[GTIMER_VIRT] = qdev_get_gpio_in_named(icdev, "cntvirq", 0);
-
-    /* Create the child controller */
+    /* Create the child controller, which handles all the devices */
     dev = sysbus_create_varargs("bcm2835_ic", ARMCTRL_IC_BASE,
                                 qdev_get_gpio_in_named(icdev, "gpu_irq", 0),
                                 qdev_get_gpio_in_named(icdev, "gpu_fiq", 0),
@@ -189,6 +203,13 @@ static void raspi2_init(MachineState *machine)
     for (n = 0; n < 72; n++) {
         pic[n] = qdev_get_gpio_in(dev, n);
     }
+
+    /* Create the CPUs, and wire them up to the interrupt controller */
+    if (!machine->cpu_model) {
+        machine->cpu_model = "cortex-a15"; /* Closest architecturally to the A7 */
+    }
+
+    init_cpus(machine->cpu_model, icdev);
     
     /* UART0 */
     dev = sysbus_create_simple("pl011", UART0_BASE, pic[INTERRUPT_VC_UART]);
@@ -365,31 +386,42 @@ static void raspi2_init(MachineState *machine)
     
     /* Finally, the board itself */
     raspi_binfo.ram_size = bcm2835_vcram_base;
-    raspi_binfo.kernel_filename = machine->kernel_filename;
-    raspi_binfo.kernel_cmdline = machine->kernel_cmdline;
-    raspi_binfo.initrd_filename = machine->initrd_filename;
     raspi_binfo.board_id = 0xc43; // Linux MACH_BCM2709
 
-    /* Quick and dirty "selector" */
-    if (machine->initrd_filename
-        && !strcmp(machine->kernel_filename, machine->initrd_filename)) {
-
-        // kludge for Windows support: BGR framebuffer
+    /* If the user specified a "firmware" image (e.g. UEFI), we bypass
+       the normal Linux boot process */
+    if (machine->firmware) {
+        /* XXX: Kludge for Windows support: put framebuffer in BGR
+         * mode. We need a config switch somewhere to enable this. It
+         * should ultimately be emulated by looking in config.txt (as
+         * the real Pi does) for the relevant options */
         bcm2835_fb.pixo = 0;
-        
+
+        /* load the firmware image (typically kernel.img) at 0x8000 */
+        load_image_targphys(machine->firmware,
+                            0x8000,
+                            bcm2835_vcram_base - 0x8000);
+
+        /* copy over the bootloader */
         for (n = 0; n < ARRAY_SIZE(bootloader_0); n++) {
             stl_phys(&address_space_memory, (n << 2), bootloader_0[n]);
         }
         for (n = 0; n < ARRAY_SIZE(bootloader_100); n++) {
             stl_phys(&address_space_memory, 0x100 + (n << 2), bootloader_100[n]);
         }
-        load_image_targphys(machine->initrd_filename,
-                            0x8000,
-                            bcm2835_vcram_base - 0x8000);
-        cpu_reset(CPU(cpu));
+
+        /* set variables so arm_load_kernel does the right thing */
+        raspi_binfo.is_linux = false;
+        raspi_binfo.entry = 0;
+        raspi_binfo.firmware_loaded = true;
     } else {
-        arm_load_kernel(cpu, &raspi_binfo);
+        /* Just let arm_load_kernel do everything for us... */
+        raspi_binfo.kernel_filename = machine->kernel_filename;
+        raspi_binfo.kernel_cmdline = machine->kernel_cmdline;
+        raspi_binfo.initrd_filename = machine->initrd_filename;
     }
+
+    arm_load_kernel(ARM_CPU(first_cpu), &raspi_binfo);
 }
 
 static QEMUMachine raspi2_machine = {
