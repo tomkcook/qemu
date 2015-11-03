@@ -391,4 +391,7 @@ void arm_handle_psci_call(ARMCPU *cpu);
 bool arm_tlb_fill(CPUState *cpu, vaddr address, int rw, int mmu_idx,
                   uint32_t *fsr);
 
+/* Return true if the translation regime is using LPAE format page tables */
+bool arm_regime_using_lpae_format(CPUARMState *env, ARMMMUIdx mmu_idx);
+
 #endif

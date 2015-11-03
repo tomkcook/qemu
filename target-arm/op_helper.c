@@ -371,6 +371,28 @@ HELPER(exception_with_syndrome)(CPUARMState *env, uint32_t excp,
     raise_exception(env, excp, syndrome, target_el);
 }
 
+/* Raise a data fault alignment exception for the specified virtual address */
+void QEMU_NORETURN
+HELPER(alignment_exception)(CPUARMState *env, target_ulong vaddr)
+{
+    int target_el = exception_target_el(env);
+    bool same_el = (arm_current_el(env) != target_el);
+
+    env->exception.vaddress = vaddr;
+
+    /* the DFSR for an alignment fault depends on whether we're using
+     * the LPAE long descriptor format, or the short descriptor format */
+    if (arm_regime_using_lpae_format(env, cpu_mmu_index(env))) {
+        env->exception.fsr = 0x21;
+    } else {
+        env->exception.fsr = 0x1;
+    }
+
+    raise_exception(env, EXCP_DATA_ABORT,
+                    syn_data_abort(same_el, 0, 0, 0, 0, 0x21),
+                    target_el);
+}
+
 uint32_t HELPER(cpsr_read)(CPUARMState *env)
 {
     return cpsr_read(env) & ~(CPSR_EXEC | CPSR_RESERVED);
