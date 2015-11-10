@@ -1,5 +1,9 @@
-/* BCM2835 (Raspberry Pi / Pi 2) Aux block (mini UART and SPI).
- * Very hacky. Based on gutted code for pl011 driver (copyright below).
+/*
+ * BCM2835 (Raspberry Pi / Pi 2) Aux block (mini UART and SPI).
+ * Copyright (c) 2015, Microsoft
+ * Written by Andrew Baumann
+ *
+ * Fairly hacky. Based on gutted code for pl011 emulation (copyright below).
  */
 
 /*

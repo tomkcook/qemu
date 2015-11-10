@@ -1,12 +1,15 @@
 /*
+ * Rasperry Pi 2 emulation
+ * Copyright (c) 2015, Microsoft
+ * Written by Andrew Baumann
+ *
+ * Based on raspi.c (Raspberry Pi 1 emulation), copyright terms below:
+ *
  * Raspberry Pi emulation (c) 2012 Gregory Estrade
  * Upstreaming code cleanup [including bcm2835_*] (c) 2013 Jan Petrous
  * This code is licensed under the GNU GPLv2 and later.
- */
-
-/* Based on versatilepb.c, copyright terms below. */
-
-/*
+ * Based on versatilepb.c, copyright terms below.
+ *
  * ARM Versatile Platform/Application Baseboard System emulation.
  *
  * Copyright (c) 2005-2007 CodeSourcery.

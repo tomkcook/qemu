@@ -1,5 +1,7 @@
 /*
  * Rasperry Pi 2 emulation ARM control logic module.
+ * Copyright (c) 2015, Microsoft
+ * Written by Andrew Baumann
  *
  * At present, only implements interrupt routing, and mailboxes (i.e.,
  * not local timer, PMU interrupt, or AXI counters).
