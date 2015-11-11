@@ -43,6 +43,45 @@ static const int dma_irqs[8] = {
     46, 47, 48, 49, 72, 73, 74, 75
 };
 
+#define BOARD_SETUP_ADDR        0x100
+
+#define SLCR_LOCK_OFFSET        0x004
+#define SLCR_UNLOCK_OFFSET      0x008
+#define SLCR_ARM_PLL_OFFSET     0x100
+
+#define SLCR_XILINX_UNLOCK_KEY  0xdf0d
+#define SLCR_XILINX_LOCK_KEY    0x767b
+
+#define ARMV7_IMM16(x) (extract32((x),  0, 12) | \
+                        extract32((x), 12,  4) << 16)
+
+/* Write immediate val to address r0 + addr. r0 should contain base offset
+ * of the SLCR block. Clobbers r1.
+ */
+
+#define SLCR_WRITE(addr, val) \
+    0xe3001000 + ARMV7_IMM16(extract32((val),  0, 16)), /* movw r1 ... */ \
+    0xe3401000 + ARMV7_IMM16(extract32((val), 16, 16)), /* movt r1 ... */ \
+    0xe5801000 + (addr)
+
+static void zynq_write_board_setup(ARMCPU *cpu,
+                                   const struct arm_boot_info *info)
+{
+    int n;
+    uint32_t board_setup_blob[] = {
+        0xe3a004f8, /* mov r0, #0xf8000000 */
+        SLCR_WRITE(SLCR_UNLOCK_OFFSET, SLCR_XILINX_UNLOCK_KEY),
+        SLCR_WRITE(SLCR_ARM_PLL_OFFSET, 0x00014008),
+        SLCR_WRITE(SLCR_LOCK_OFFSET, SLCR_XILINX_LOCK_KEY),
+        0xe12fff1e, /* bx lr */
+    };
+    for (n = 0; n < ARRAY_SIZE(board_setup_blob); n++) {
+        board_setup_blob[n] = tswap32(board_setup_blob[n]);
+    }
+    rom_add_blob_fixed("board-setup", board_setup_blob,
+                       sizeof(board_setup_blob), BOARD_SETUP_ADDR);
+}
+
 static struct arm_boot_info zynq_binfo = {};
 
 static void gem_init(NICInfo *nd, uint32_t base, qemu_irq irq)
@@ -167,7 +206,7 @@ static void zynq_init(MachineState *machine)
 
     /* 256K of on-chip memory */
     memory_region_init_ram(ocm_ram, NULL, "zynq.ocm_ram", 256 << 10,
-                           &error_abort);
+                           &error_fatal);
     vmstate_register_ram_global(ocm_ram);
     memory_region_add_subregion(address_space_mem, 0xFFFC0000, ocm_ram);
 
@@ -252,21 +291,19 @@ static void zynq_init(MachineState *machine)
     zynq_binfo.nb_cpus = 1;
     zynq_binfo.board_id = 0xd32;
     zynq_binfo.loader_start = 0;
+    zynq_binfo.board_setup_addr = BOARD_SETUP_ADDR;
+    zynq_binfo.write_board_setup = zynq_write_board_setup;
+
     arm_load_kernel(ARM_CPU(first_cpu), &zynq_binfo);
 }
 
-static QEMUMachine zynq_machine = {
-    .name = "xilinx-zynq-a9",
-    .desc = "Xilinx Zynq Platform Baseboard for Cortex-A9",
-    .init = zynq_init,
-    .block_default_type = IF_SCSI,
-    .max_cpus = 1,
-    .no_sdcard = 1,
-};
-
-static void zynq_machine_init(void)
+static void zynq_machine_init(MachineClass *mc)
 {
-    qemu_register_machine(&zynq_machine);
+    mc->desc = "Xilinx Zynq Platform Baseboard for Cortex-A9";
+    mc->init = zynq_init;
+    mc->block_default_type = IF_SCSI;
+    mc->max_cpus = 1;
+    mc->no_sdcard = 1;
 }
 
-machine_init(zynq_machine_init);
+DEFINE_MACHINE("xilinx-zynq-a9", zynq_machine_init)

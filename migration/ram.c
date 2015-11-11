@@ -47,9 +47,7 @@
     do { } while (0)
 #endif
 
-static bool mig_throttle_on;
 static int dirty_rate_high_cnt;
-static void check_guest_throttling(void);
 
 static uint64_t bitmap_sync_count;
 
@@ -221,11 +219,26 @@ static RAMBlock *last_seen_block;
 /* This is the last block from where we have sent data */
 static RAMBlock *last_sent_block;
 static ram_addr_t last_offset;
-static unsigned long *migration_bitmap;
 static QemuMutex migration_bitmap_mutex;
 static uint64_t migration_dirty_pages;
 static uint32_t last_version;
 static bool ram_bulk_stage;
+
+/* used by the search for pages to send */
+struct PageSearchStatus {
+    /* Current block being searched */
+    RAMBlock    *block;
+    /* Current offset to search from */
+    ram_addr_t   offset;
+    /* Set once we wrap around */
+    bool         complete_round;
+};
+typedef struct PageSearchStatus PageSearchStatus;
+
+static struct BitmapRcu {
+    struct rcu_head rcu;
+    unsigned long *bmap;
+} *migration_bitmap_rcu;
 
 struct CompressParam {
     bool start;
@@ -396,6 +409,29 @@ static size_t save_page_header(QEMUFile *f, RAMBlock *block, ram_addr_t offset)
     return size;
 }
 
+/* Reduce amount of guest cpu execution to hopefully slow down memory writes.
+ * If guest dirty memory rate is reduced below the rate at which we can
+ * transfer pages to the destination then we should be able to complete
+ * migration. Some workloads dirty memory way too fast and will not effectively
+ * converge, even with auto-converge.
+ */
+static void mig_throttle_guest_down(void)
+{
+    MigrationState *s = migrate_get_current();
+    uint64_t pct_initial =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL];
+    uint64_t pct_icrement =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT];
+
+    /* We have not started throttling yet. Let's start it. */
+    if (!cpu_throttle_active()) {
+        cpu_throttle_set(pct_initial);
+    } else {
+        /* Throttling already on, just increase the rate */
+        cpu_throttle_set(cpu_throttle_get_percentage() + pct_icrement);
+    }
+}
+
 /* Update the xbzrle cache to reflect a page that's been sent as all 0.
  * The important thing is that a stale (not-yet-0'd) page be replaced
  * by the new data.
@@ -497,18 +533,18 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
 
 /* Called with rcu_read_lock() to protect migration_bitmap */
 static inline
-ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
+ram_addr_t migration_bitmap_find_and_reset_dirty(RAMBlock *rb,
                                                  ram_addr_t start)
 {
-    unsigned long base = mr->ram_addr >> TARGET_PAGE_BITS;
+    unsigned long base = rb->offset >> TARGET_PAGE_BITS;
     unsigned long nr = base + (start >> TARGET_PAGE_BITS);
-    uint64_t mr_size = TARGET_PAGE_ALIGN(memory_region_size(mr));
-    unsigned long size = base + (mr_size >> TARGET_PAGE_BITS);
+    uint64_t rb_size = rb->used_length;
+    unsigned long size = base + (rb_size >> TARGET_PAGE_BITS);
     unsigned long *bitmap;
 
     unsigned long next;
 
-    bitmap = atomic_rcu_read(&migration_bitmap);
+    bitmap = atomic_rcu_read(&migration_bitmap_rcu)->bmap;
     if (ram_bulk_stage && nr > base) {
         next = nr + 1;
     } else {
@@ -526,11 +562,10 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
 static void migration_bitmap_sync_range(ram_addr_t start, ram_addr_t length)
 {
     unsigned long *bitmap;
-    bitmap = atomic_rcu_read(&migration_bitmap);
+    bitmap = atomic_rcu_read(&migration_bitmap_rcu)->bmap;
     migration_dirty_pages +=
         cpu_physical_memory_sync_dirty_bitmap(bitmap, start, length);
 }
-
 
 /* Fix me: there are too many global variables used in migration process. */
 static int64_t start_time;
@@ -573,7 +608,7 @@ static void migration_bitmap_sync(void)
     qemu_mutex_lock(&migration_bitmap_mutex);
     rcu_read_lock();
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
-        migration_bitmap_sync_range(block->mr->ram_addr, block->used_length);
+        migration_bitmap_sync_range(block->offset, block->used_length);
     }
     rcu_read_unlock();
     qemu_mutex_unlock(&migration_bitmap_mutex);
@@ -589,21 +624,21 @@ static void migration_bitmap_sync(void)
             /* The following detection logic can be refined later. For now:
                Check to see if the dirtied bytes is 50% more than the approx.
                amount of bytes that just got transferred since the last time we
-               were in this routine. If that happens >N times (for now N==4)
-               we turn on the throttle down logic */
+               were in this routine. If that happens twice, start or increase
+               throttling */
             bytes_xfer_now = ram_bytes_transferred();
+
             if (s->dirty_pages_rate &&
                (num_dirty_pages_period * TARGET_PAGE_SIZE >
                    (bytes_xfer_now - bytes_xfer_prev)/2) &&
-               (dirty_rate_high_cnt++ > 4)) {
+               (dirty_rate_high_cnt++ >= 2)) {
                     trace_migration_throttle();
-                    mig_throttle_on = true;
                     dirty_rate_high_cnt = 0;
+                    mig_throttle_guest_down();
              }
              bytes_xfer_prev = bytes_xfer_now;
-        } else {
-             mig_throttle_on = false;
         }
+
         if (migrate_use_xbzrle()) {
             if (iterations_prev != acct_info.iterations) {
                 acct_info.xbzrle_cache_miss_rate =
@@ -668,12 +703,11 @@ static int ram_save_page(QEMUFile *f, RAMBlock* block, ram_addr_t offset,
     int pages = -1;
     uint64_t bytes_xmit;
     ram_addr_t current_addr;
-    MemoryRegion *mr = block->mr;
     uint8_t *p;
     int ret;
     bool send_async = true;
 
-    p = memory_region_get_ram_ptr(mr) + offset;
+    p = block->host + offset;
 
     /* In doubt sent page as normal */
     bytes_xmit = 0;
@@ -744,7 +778,7 @@ static int do_compress_ram_page(CompressParam *param)
     RAMBlock *block = param->block;
     ram_addr_t offset = param->offset;
 
-    p = memory_region_get_ram_ptr(block->mr) + (offset & TARGET_PAGE_MASK);
+    p = block->host + (offset & TARGET_PAGE_MASK);
 
     bytes_sent = save_page_header(param->file, block, offset |
                                   RAM_SAVE_FLAG_COMPRESS_PAGE);
@@ -852,11 +886,10 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
 {
     int pages = -1;
     uint64_t bytes_xmit;
-    MemoryRegion *mr = block->mr;
     uint8_t *p;
     int ret;
 
-    p = memory_region_get_ram_ptr(mr) + offset;
+    p = block->host + offset;
 
     bytes_xmit = 0;
     ret = ram_control_save_page(f, block->offset,
@@ -909,6 +942,59 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
     return pages;
 }
 
+/*
+ * Find the next dirty page and update any state associated with
+ * the search process.
+ *
+ * Returns: True if a page is found
+ *
+ * @f: Current migration stream.
+ * @pss: Data about the state of the current dirty page scan.
+ * @*again: Set to false if the search has scanned the whole of RAM
+ */
+static bool find_dirty_block(QEMUFile *f, PageSearchStatus *pss,
+                             bool *again)
+{
+    pss->offset = migration_bitmap_find_and_reset_dirty(pss->block,
+                                                       pss->offset);
+    if (pss->complete_round && pss->block == last_seen_block &&
+        pss->offset >= last_offset) {
+        /*
+         * We've been once around the RAM and haven't found anything.
+         * Give up.
+         */
+        *again = false;
+        return false;
+    }
+    if (pss->offset >= pss->block->used_length) {
+        /* Didn't find anything in this RAM Block */
+        pss->offset = 0;
+        pss->block = QLIST_NEXT_RCU(pss->block, next);
+        if (!pss->block) {
+            /* Hit the end of the list */
+            pss->block = QLIST_FIRST_RCU(&ram_list.blocks);
+            /* Flag that we've looped */
+            pss->complete_round = true;
+            ram_bulk_stage = false;
+            if (migrate_use_xbzrle()) {
+                /* If xbzrle is on, stop using the data compression at this
+                 * point. In theory, xbzrle can do better than compression.
+                 */
+                flush_compressed_data(f);
+                compression_switch = false;
+            }
+        }
+        /* Didn't find anything this time, but try again on the new block */
+        *again = true;
+        return false;
+    } else {
+        /* Can go around again, but... */
+        *again = true;
+        /* We've found something so probably don't need to */
+        return true;
+    }
+}
+
 /**
  * ram_find_and_save_block: Finds a dirty page and sends it to f
  *
@@ -925,56 +1011,40 @@ static int ram_save_compressed_page(QEMUFile *f, RAMBlock *block,
 static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
                                    uint64_t *bytes_transferred)
 {
-    RAMBlock *block = last_seen_block;
-    ram_addr_t offset = last_offset;
-    bool complete_round = false;
+    PageSearchStatus pss;
     int pages = 0;
-    MemoryRegion *mr;
+    bool again, found;
 
-    if (!block)
-        block = QLIST_FIRST_RCU(&ram_list.blocks);
+    pss.block = last_seen_block;
+    pss.offset = last_offset;
+    pss.complete_round = false;
 
-    while (true) {
-        mr = block->mr;
-        offset = migration_bitmap_find_and_reset_dirty(mr, offset);
-        if (complete_round && block == last_seen_block &&
-            offset >= last_offset) {
-            break;
-        }
-        if (offset >= block->used_length) {
-            offset = 0;
-            block = QLIST_NEXT_RCU(block, next);
-            if (!block) {
-                block = QLIST_FIRST_RCU(&ram_list.blocks);
-                complete_round = true;
-                ram_bulk_stage = false;
-                if (migrate_use_xbzrle()) {
-                    /* If xbzrle is on, stop using the data compression at this
-                     * point. In theory, xbzrle can do better than compression.
-                     */
-                    flush_compressed_data(f);
-                    compression_switch = false;
-                }
-            }
-        } else {
+    if (!pss.block) {
+        pss.block = QLIST_FIRST_RCU(&ram_list.blocks);
+    }
+
+    do {
+        found = find_dirty_block(f, &pss, &again);
+
+        if (found) {
             if (compression_switch && migrate_use_compression()) {
-                pages = ram_save_compressed_page(f, block, offset, last_stage,
+                pages = ram_save_compressed_page(f, pss.block, pss.offset,
+                                                 last_stage,
                                                  bytes_transferred);
             } else {
-                pages = ram_save_page(f, block, offset, last_stage,
+                pages = ram_save_page(f, pss.block, pss.offset, last_stage,
                                       bytes_transferred);
             }
 
             /* if page is unmodified, continue to the next */
             if (pages > 0) {
-                last_sent_block = block;
-                break;
+                last_sent_block = pss.block;
             }
         }
-    }
+    } while (!pages && again);
 
-    last_seen_block = block;
-    last_offset = offset;
+    last_seen_block = pss.block;
+    last_offset = pss.offset;
 
     return pages;
 }
@@ -1024,17 +1094,22 @@ void free_xbzrle_decoded_buf(void)
     xbzrle_decoded_buf = NULL;
 }
 
-static void migration_end(void)
+static void migration_bitmap_free(struct BitmapRcu *bmap)
+{
+    g_free(bmap->bmap);
+    g_free(bmap);
+}
+
+static void ram_migration_cleanup(void *opaque)
 {
     /* caller have hold iothread lock or is in a bh, so there is
      * no writing race against this migration_bitmap
      */
-    unsigned long *bitmap = migration_bitmap;
-    atomic_rcu_set(&migration_bitmap, NULL);
+    struct BitmapRcu *bitmap = migration_bitmap_rcu;
+    atomic_rcu_set(&migration_bitmap_rcu, NULL);
     if (bitmap) {
         memory_global_dirty_log_stop();
-        synchronize_rcu();
-        g_free(bitmap);
+        call_rcu(bitmap, migration_bitmap_free, rcu);
     }
 
     XBZRLE_cache_lock();
@@ -1047,11 +1122,6 @@ static void migration_end(void)
         XBZRLE.current_buf = NULL;
     }
     XBZRLE_cache_unlock();
-}
-
-static void ram_migration_cancel(void *opaque)
-{
-    migration_end();
 }
 
 static void reset_ram_globals(void)
@@ -1070,9 +1140,10 @@ void migration_bitmap_extend(ram_addr_t old, ram_addr_t new)
     /* called in qemu main thread, so there is
      * no writing race against this migration_bitmap
      */
-    if (migration_bitmap) {
-        unsigned long *old_bitmap = migration_bitmap, *bitmap;
-        bitmap = bitmap_new(new);
+    if (migration_bitmap_rcu) {
+        struct BitmapRcu *old_bitmap = migration_bitmap_rcu, *bitmap;
+        bitmap = g_new(struct BitmapRcu, 1);
+        bitmap->bmap = bitmap_new(new);
 
         /* prevent migration_bitmap content from being set bit
          * by migration_bitmap_sync_range() at the same time.
@@ -1080,13 +1151,12 @@ void migration_bitmap_extend(ram_addr_t old, ram_addr_t new)
          * at the same time.
          */
         qemu_mutex_lock(&migration_bitmap_mutex);
-        bitmap_copy(bitmap, old_bitmap, old);
-        bitmap_set(bitmap, old, new - old);
-        atomic_rcu_set(&migration_bitmap, bitmap);
+        bitmap_copy(bitmap->bmap, old_bitmap->bmap, old);
+        bitmap_set(bitmap->bmap, old, new - old);
+        atomic_rcu_set(&migration_bitmap_rcu, bitmap);
         qemu_mutex_unlock(&migration_bitmap_mutex);
         migration_dirty_pages += new - old;
-        synchronize_rcu();
-        g_free(old_bitmap);
+        call_rcu(old_bitmap, migration_bitmap_free, rcu);
     }
 }
 
@@ -1101,7 +1171,6 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     RAMBlock *block;
     int64_t ram_bitmap_pages; /* Size of bitmap in pages, including gaps */
 
-    mig_throttle_on = false;
     dirty_rate_high_cnt = 0;
     bitmap_sync_count = 0;
     migration_bitmap_sync_init();
@@ -1145,8 +1214,9 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     reset_ram_globals();
 
     ram_bitmap_pages = last_ram_offset() >> TARGET_PAGE_BITS;
-    migration_bitmap = bitmap_new(ram_bitmap_pages);
-    bitmap_set(migration_bitmap, 0, ram_bitmap_pages);
+    migration_bitmap_rcu = g_new(struct BitmapRcu, 1);
+    migration_bitmap_rcu->bmap = bitmap_new(ram_bitmap_pages);
+    bitmap_set(migration_bitmap_rcu->bmap, 0, ram_bitmap_pages);
 
     /*
      * Count the total number of pages used by ram blocks not including any
@@ -1206,7 +1276,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
         }
         pages_sent += pages;
         acct_info.iterations++;
-        check_guest_throttling();
+
         /* we want to check in the 1st loop, just in case it was the 1st time
            and we had to sync the dirty bitmap.
            qemu_get_clock_ns() is a bit expensive, so we only check each some
@@ -1269,7 +1339,6 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     rcu_read_unlock();
 
-    migration_end();
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
 
     return 0;
@@ -1344,7 +1413,7 @@ static inline void *host_from_stream_offset(QEMUFile *f,
             return NULL;
         }
 
-        return memory_region_get_ram_ptr(block->mr) + offset;
+        return block->host + offset;
     }
 
     len = qemu_get_byte(f);
@@ -1354,7 +1423,7 @@ static inline void *host_from_stream_offset(QEMUFile *f,
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
         if (!strncmp(id, block->idstr, sizeof(id)) &&
             block->max_length > offset) {
-            return memory_region_get_ram_ptr(block->mr) + offset;
+            return block->host + offset;
         }
     }
 
@@ -1611,60 +1680,11 @@ static SaveVMHandlers savevm_ram_handlers = {
     .save_live_complete = ram_save_complete,
     .save_live_pending = ram_save_pending,
     .load_state = ram_load,
-    .cancel = ram_migration_cancel,
+    .cleanup = ram_migration_cleanup,
 };
 
 void ram_mig_init(void)
 {
     qemu_mutex_init(&XBZRLE.lock);
     register_savevm_live(NULL, "ram", 0, 4, &savevm_ram_handlers, NULL);
-}
-/* Stub function that's gets run on the vcpu when its brought out of the
-   VM to run inside qemu via async_run_on_cpu()*/
-
-static void mig_sleep_cpu(void *opq)
-{
-    qemu_mutex_unlock_iothread();
-    g_usleep(30*1000);
-    qemu_mutex_lock_iothread();
-}
-
-/* To reduce the dirty rate explicitly disallow the VCPUs from spending
-   much time in the VM. The migration thread will try to catchup.
-   Workload will experience a performance drop.
-*/
-static void mig_throttle_guest_down(void)
-{
-    CPUState *cpu;
-
-    qemu_mutex_lock_iothread();
-    CPU_FOREACH(cpu) {
-        async_run_on_cpu(cpu, mig_sleep_cpu, NULL);
-    }
-    qemu_mutex_unlock_iothread();
-}
-
-static void check_guest_throttling(void)
-{
-    static int64_t t0;
-    int64_t        t1;
-
-    if (!mig_throttle_on) {
-        return;
-    }
-
-    if (!t0)  {
-        t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-        return;
-    }
-
-    t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
-
-    /* If it has been more than 40 ms since the last time the guest
-     * was throttled then do it again.
-     */
-    if (40 < (t1-t0)/1000000) {
-        mig_throttle_guest_down();
-        t0 = t1;
-    }
 }

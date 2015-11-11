@@ -89,7 +89,7 @@ static int64_t load_kernel(void)
     kernel_size = load_elf(loaderparams.kernel_filename, cpu_mips_kseg0_to_phys,
                            NULL, (uint64_t *)&entry, NULL,
                            (uint64_t *)&kernel_high, big_endian,
-                           ELF_MACHINE, 1);
+                           EM_MIPS, 1);
     if (kernel_size >= 0) {
         if ((entry & ~0x7fffffffULL) == 0x80000000)
             entry = (int32_t)entry;
@@ -234,7 +234,7 @@ void mips_init(MachineState *machine)
     if ((bios_size > 0) && (bios_size <= BIOS_SIZE)) {
         bios = g_new(MemoryRegion, 1);
         memory_region_init_ram(bios, NULL, "mips_r4k.bios", BIOS_SIZE,
-                               &error_abort);
+                               &error_fatal);
         vmstate_register_ram_global(bios);
         memory_region_set_readonly(bios, true);
         memory_region_add_subregion(get_system_memory(), 0x1fc00000, bios);
@@ -253,9 +253,7 @@ void mips_init(MachineState *machine)
         fprintf(stderr, "qemu: Warning, could not load MIPS bios '%s'\n",
 		bios_name);
     }
-    if (filename) {
-        g_free(filename);
-    }
+    g_free(filename);
 
     if (kernel_filename) {
         loaderparams.ram_size = ram_size;
@@ -317,22 +315,18 @@ void mipsel_r4k_init(MachineState *machine)
     mips_init(machine);
 }
 
-static QEMUMachine mips_machine = {
-    .name = "mips",
-    .desc = "MIPS r4k platform",
-    .init = mips_r4k_init,
-};
-
-static QEMUMachine mipsel_machine = {
-    .name = "mipsel",
-    .desc = "MIPS r4k platform (little endian)",
-    .init = mipsel_r4k_init,
-};
-
-static void mips_machine_init(void)
+static void mips_machine_init(MachineClass *mc)
 {
-    qemu_register_machine(&mips_machine);
-    qemu_register_machine(&mipsel_machine);
+    mc->desc = "mips r4k platform";
+    mc->init = mips_r4k_init;
 }
 
-machine_init(mips_machine_init);
+DEFINE_MACHINE("mips", mips_machine_init)
+
+static void mipsel_machine_init(MachineClass *mc)
+{
+    mc->desc = "misp r4k platform (little endian)";
+    mc->init = mipsel_r4k_init;
+};
+
+DEFINE_MACHINE("mipsel", mipsel_machine_init)

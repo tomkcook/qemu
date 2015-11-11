@@ -740,7 +740,8 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
                 memmove(tp->data, tp->header, tp->hdr_len);
                 tp->size = tp->hdr_len;
             }
-        } while (split_size -= bytes);
+            split_size -= bytes;
+        } while (bytes && split_size);
     } else if (!tp->tse && tp->cptse) {
         // context descriptor TSE is not set, while data descriptor TSE is set
         DBGOUT(TXERR, "TCP segmentation error\n");
@@ -1646,7 +1647,7 @@ static const TypeInfo e1000_base_info = {
 
 static const E1000Info e1000_devices[] = {
     {
-        .name      = "e1000-82540em",
+        .name      = "e1000",
         .device_id = E1000_DEV_ID_82540EM,
         .revision  = 0x03,
         .phy_id2   = E1000_PHY_ID2_8254xx_DEFAULT,
@@ -1663,11 +1664,6 @@ static const E1000Info e1000_devices[] = {
         .revision  = 0x03,
         .phy_id2   = E1000_PHY_ID2_8254xx_DEFAULT,
     },
-};
-
-static const TypeInfo e1000_default_info = {
-    .name          = "e1000",
-    .parent        = "e1000-82540em",
 };
 
 static void e1000_register_types(void)
@@ -1687,7 +1683,6 @@ static void e1000_register_types(void)
 
         type_register(&type_info);
     }
-    type_register_static(&e1000_default_info);
 }
 
 type_init(e1000_register_types)

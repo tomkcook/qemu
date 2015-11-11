@@ -1231,7 +1231,7 @@ void memory_region_init_io(MemoryRegion *mr,
                            uint64_t size)
 {
     memory_region_init(mr, owner, name, size);
-    mr->ops = ops;
+    mr->ops = ops ? ops : &unassigned_mem_ops;
     mr->opaque = opaque;
     mr->terminates = true;
 }
@@ -1300,7 +1300,7 @@ void memory_region_init_ram_ptr(MemoryRegion *mr,
 
     /* qemu_ram_alloc_from_ptr cannot fail with ptr != NULL.  */
     assert(ptr != NULL);
-    mr->ram_addr = qemu_ram_alloc_from_ptr(size, ptr, mr, &error_abort);
+    mr->ram_addr = qemu_ram_alloc_from_ptr(size, ptr, mr, &error_fatal);
 }
 
 void memory_region_set_skip_dump(MemoryRegion *mr)
@@ -1349,19 +1349,26 @@ void memory_region_init_iommu(MemoryRegion *mr,
     notifier_list_init(&mr->iommu_notify);
 }
 
-void memory_region_init_reservation(MemoryRegion *mr,
-                                    Object *owner,
-                                    const char *name,
-                                    uint64_t size)
-{
-    memory_region_init_io(mr, owner, &unassigned_mem_ops, mr, name, size);
-}
-
 static void memory_region_finalize(Object *obj)
 {
     MemoryRegion *mr = MEMORY_REGION(obj);
 
-    assert(QTAILQ_EMPTY(&mr->subregions));
+    assert(!mr->container);
+
+    /* We know the region is not visible in any address space (it
+     * does not have a container and cannot be a root either because
+     * it has no references, so we can blindly clear mr->enabled.
+     * memory_region_set_enabled instead could trigger a transaction
+     * and cause an infinite loop.
+     */
+    mr->enabled = false;
+    memory_region_transaction_begin();
+    while (!QTAILQ_EMPTY(&mr->subregions)) {
+        MemoryRegion *subregion = QTAILQ_FIRST(&mr->subregions);
+        memory_region_del_subregion(mr, subregion);
+    }
+    memory_region_transaction_commit();
+
     mr->destructor(mr);
     memory_region_clear_coalescing(mr);
     g_free((char *)mr->name);
@@ -1458,6 +1465,26 @@ bool memory_region_is_iommu(MemoryRegion *mr)
 void memory_region_register_iommu_notifier(MemoryRegion *mr, Notifier *n)
 {
     notifier_list_add(&mr->iommu_notify, n);
+}
+
+void memory_region_iommu_replay(MemoryRegion *mr, Notifier *n,
+                                hwaddr granularity, bool is_write)
+{
+    hwaddr addr;
+    IOMMUTLBEntry iotlb;
+
+    for (addr = 0; addr < memory_region_size(mr); addr += granularity) {
+        iotlb = mr->iommu_ops->translate(mr, addr, is_write);
+        if (iotlb.perm != IOMMU_NONE) {
+            n->notify(n, &iotlb);
+        }
+
+        /* if (2^64 - MR size) < granularity, it's possible to get an
+         * infinite loop here.  This should catch such a wraparound */
+        if ((addr + granularity) < addr) {
+            break;
+        }
+    }
 }
 
 void memory_region_unregister_iommu_notifier(Notifier *n)
@@ -2058,6 +2085,9 @@ static void listener_add_address_space(MemoryListener *listener,
         return;
     }
 
+    if (listener->begin) {
+        listener->begin(listener);
+    }
     if (global_dirty_log) {
         if (listener->log_global_start) {
             listener->log_global_start(listener);
@@ -2074,9 +2104,15 @@ static void listener_add_address_space(MemoryListener *listener,
             .offset_within_address_space = int128_get64(fr->addr.start),
             .readonly = fr->readonly,
         };
+        if (fr->dirty_log_mask && listener->log_start) {
+            listener->log_start(listener, &section, 0, fr->dirty_log_mask);
+        }
         if (listener->region_add) {
             listener->region_add(listener, &section);
         }
+    }
+    if (listener->commit) {
+        listener->commit(listener);
     }
     flatview_unref(view);
 }

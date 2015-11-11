@@ -17,8 +17,6 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <signal.h>
-
 #include "qemu-common.h"
 #include "cpu.h"
 #include "sysemu/kvm.h"
@@ -130,10 +128,6 @@ static int get_physical_address (CPUMIPSState *env, hwaddr *physical,
     /* effective address (modified for KVM T&E kernel segments) */
     target_ulong address = real_address;
 
-#if 0
-    qemu_log("user mode %d h %08x\n", user_mode, env->hflags);
-#endif
-
 #define USEG_LIMIT      0x7FFFFFFFUL
 #define KSEG0_BASE      0x80000000UL
 #define KSEG1_BASE      0xA0000000UL
@@ -242,11 +236,6 @@ static int get_physical_address (CPUMIPSState *env, hwaddr *physical,
             ret = TLBRET_BADADDR;
         }
     }
-#if 0
-    qemu_log(TARGET_FMT_lx " %d %d => %" HWADDR_PRIx " %d (%d)\n",
-            address, rw, access_type, *physical, *prot, ret);
-#endif
-
     return ret;
 }
 #endif
@@ -318,9 +307,10 @@ static void raise_mmu_exception(CPUMIPSState *env, target_ulong address,
         (env->CP0_EntryHi & 0xFF) | (address & (TARGET_PAGE_MASK << 1));
 #if defined(TARGET_MIPS64)
     env->CP0_EntryHi &= env->SEGMask;
-    env->CP0_XContext = (env->CP0_XContext & ((~0ULL) << (env->SEGBITS - 7))) |
-                        ((address & 0xC00000000000ULL) >> (55 - env->SEGBITS)) |
-                        ((address & ((1ULL << env->SEGBITS) - 1) & 0xFFFFFFFFFFFFE000ULL) >> 9);
+    env->CP0_XContext =
+        /* PTEBase */   (env->CP0_XContext & ((~0ULL) << (env->SEGBITS - 7))) |
+        /* R */         (extract64(address, 62, 2) << (env->SEGBITS - 9)) |
+        /* BadVPN2 */   (extract64(address, 13, env->SEGBITS - 13) << 4);
 #endif
     cs->exception_index = exception;
     env->error_code = error_code;
@@ -502,14 +492,16 @@ void mips_cpu_do_interrupt(CPUState *cs)
     int cause = -1;
     const char *name;
 
-    if (qemu_log_enabled() && cs->exception_index != EXCP_EXT_INTERRUPT) {
+    if (qemu_loglevel_mask(CPU_LOG_INT)
+        && cs->exception_index != EXCP_EXT_INTERRUPT) {
         if (cs->exception_index < 0 || cs->exception_index > EXCP_LAST) {
             name = "unknown";
         } else {
             name = excp_names[cs->exception_index];
         }
 
-        qemu_log("%s enter: PC " TARGET_FMT_lx " EPC " TARGET_FMT_lx " %s exception\n",
+        qemu_log("%s enter: PC " TARGET_FMT_lx " EPC " TARGET_FMT_lx
+                 " %s exception\n",
                  __func__, env->active_tc.PC, env->CP0_EPC, name);
     }
     if (cs->exception_index == EXCP_EXT_INTERRUPT &&
@@ -715,7 +707,7 @@ void mips_cpu_do_interrupt(CPUState *cs)
         goto set_EPC;
     case EXCP_DWATCH:
         cause = 23;
-        /* XXX: TODO: manage defered watch exceptions */
+        /* XXX: TODO: manage deferred watch exceptions */
         goto set_EPC;
     case EXCP_MCHECK:
         cause = 24;
@@ -762,16 +754,15 @@ void mips_cpu_do_interrupt(CPUState *cs)
         env->CP0_Cause = (env->CP0_Cause & ~(0x1f << CP0Ca_EC)) | (cause << CP0Ca_EC);
         break;
     default:
-        qemu_log("Invalid MIPS exception %d. Exiting\n", cs->exception_index);
-        printf("Invalid MIPS exception %d. Exiting\n", cs->exception_index);
-        exit(1);
+        abort();
     }
-    if (qemu_log_enabled() && cs->exception_index != EXCP_EXT_INTERRUPT) {
+    if (qemu_loglevel_mask(CPU_LOG_INT)
+        && cs->exception_index != EXCP_EXT_INTERRUPT) {
         qemu_log("%s: PC " TARGET_FMT_lx " EPC " TARGET_FMT_lx " cause %d\n"
-                "    S %08x C %08x A " TARGET_FMT_lx " D " TARGET_FMT_lx "\n",
-                __func__, env->active_tc.PC, env->CP0_EPC, cause,
-                env->CP0_Status, env->CP0_Cause, env->CP0_BadVAddr,
-                env->CP0_DEPC);
+                 "    S %08x C %08x A " TARGET_FMT_lx " D " TARGET_FMT_lx "\n",
+                 __func__, env->active_tc.PC, env->CP0_EPC, cause,
+                 env->CP0_Status, env->CP0_Cause, env->CP0_BadVAddr,
+                 env->CP0_DEPC);
     }
 #endif
     cs->exception_index = EXCP_NONE;
@@ -783,7 +774,8 @@ bool mips_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
         MIPSCPU *cpu = MIPS_CPU(cs);
         CPUMIPSState *env = &cpu->env;
 
-        if (cpu_mips_hw_interrupts_pending(env)) {
+        if (cpu_mips_hw_interrupts_enabled(env) &&
+            cpu_mips_hw_interrupts_pending(env)) {
             /* Raise it */
             cs->exception_index = EXCP_EXT_INTERRUPT;
             env->error_code = 0;

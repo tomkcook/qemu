@@ -29,8 +29,9 @@
 #include "trace.h"
 #include "qapi/util.h"
 #include "qapi-event.h"
+#include "qom/cpu.h"
 
-#define MAX_THROTTLE  (32 << 20)      /* Migration speed throttling */
+#define MAX_THROTTLE  (32 << 20)      /* Migration transfer speed throttling */
 
 /* Amount of time to allocate to each "chunk" of bandwidth-throttled
  * data. */
@@ -44,6 +45,9 @@
 #define DEFAULT_MIGRATE_DECOMPRESS_THREAD_COUNT 2
 /*0: means nocompress, 1: best speed, ... 9: best compress ratio */
 #define DEFAULT_MIGRATE_COMPRESS_LEVEL 1
+/* Define default autoconverge cpu throttle migration parameters */
+#define DEFAULT_MIGRATE_X_CPU_THROTTLE_INITIAL 20
+#define DEFAULT_MIGRATE_X_CPU_THROTTLE_INCREMENT 10
 
 /* Migration XBZRLE default cache size */
 #define DEFAULT_MIGRATE_CACHE_SIZE (64 * 1024 * 1024)
@@ -71,6 +75,10 @@ MigrationState *migrate_get_current(void)
                 DEFAULT_MIGRATE_COMPRESS_THREAD_COUNT,
         .parameters[MIGRATION_PARAMETER_DECOMPRESS_THREADS] =
                 DEFAULT_MIGRATE_DECOMPRESS_THREAD_COUNT,
+        .parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL] =
+                DEFAULT_MIGRATE_X_CPU_THROTTLE_INITIAL,
+        .parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT] =
+                DEFAULT_MIGRATE_X_CPU_THROTTLE_INCREMENT,
     };
 
     return &current_migration;
@@ -86,7 +94,7 @@ MigrationIncomingState *migration_incoming_get_current(void)
 
 MigrationIncomingState *migration_incoming_state_new(QEMUFile* f)
 {
-    mis_current = g_malloc0(sizeof(MigrationIncomingState));
+    mis_current = g_new0(MigrationIncomingState, 1);
     mis_current->file = f;
     QLIST_INIT(&mis_current->loadvm_handlers);
 
@@ -286,16 +294,21 @@ static void process_incoming_migration_co(void *opaque)
         migrate_decompress_threads_join();
         exit(EXIT_FAILURE);
     }
-    migrate_generate_event(MIGRATION_STATUS_COMPLETED);
-    qemu_announce_self();
 
     /* Make sure all file formats flush their mutable metadata */
     bdrv_invalidate_cache_all(&local_err);
     if (local_err) {
+        migrate_generate_event(MIGRATION_STATUS_FAILED);
         error_report_err(local_err);
         migrate_decompress_threads_join();
         exit(EXIT_FAILURE);
     }
+
+    /*
+     * This must happen after all error conditions are dealt with and
+     * we're sure the VM is going to be running on this host.
+     */
+    qemu_announce_self();
 
     /* If global state section was not received or we are in running
        state, we need to obey autostart. Any other state is set with
@@ -312,6 +325,12 @@ static void process_incoming_migration_co(void *opaque)
         runstate_set(global_state_get_runstate());
     }
     migrate_decompress_threads_join();
+    /*
+     * This must happen after any state changes since as soon as an external
+     * observer sees this event they might start to prod at the VM assuming
+     * it's ready to use.
+     */
+    migrate_generate_event(MIGRATION_STATUS_COMPLETED);
 }
 
 void process_incoming_migration(QEMUFile *f)
@@ -372,6 +391,10 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
             s->parameters[MIGRATION_PARAMETER_COMPRESS_THREADS];
     params->decompress_threads =
             s->parameters[MIGRATION_PARAMETER_DECOMPRESS_THREADS];
+    params->x_cpu_throttle_initial =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL];
+    params->x_cpu_throttle_increment =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT];
 
     return params;
 }
@@ -435,6 +458,11 @@ MigrationInfo *qmp_query_migrate(Error **errp)
             info->disk->total = blk_mig_bytes_total();
         }
 
+        if (cpu_throttle_active()) {
+            info->has_x_cpu_throttle_percentage = true;
+            info->x_cpu_throttle_percentage = cpu_throttle_get_percentage();
+        }
+
         get_xbzrle_cache_stats(info);
         break;
     case MIGRATION_STATUS_COMPLETED:
@@ -494,7 +522,11 @@ void qmp_migrate_set_parameters(bool has_compress_level,
                                 bool has_compress_threads,
                                 int64_t compress_threads,
                                 bool has_decompress_threads,
-                                int64_t decompress_threads, Error **errp)
+                                int64_t decompress_threads,
+                                bool has_x_cpu_throttle_initial,
+                                int64_t x_cpu_throttle_initial,
+                                bool has_x_cpu_throttle_increment,
+                                int64_t x_cpu_throttle_increment, Error **errp)
 {
     MigrationState *s = migrate_get_current();
 
@@ -517,6 +549,18 @@ void qmp_migrate_set_parameters(bool has_compress_level,
                    "is invalid, it should be in the range of 1 to 255");
         return;
     }
+    if (has_x_cpu_throttle_initial &&
+            (x_cpu_throttle_initial < 1 || x_cpu_throttle_initial > 99)) {
+        error_setg(errp, QERR_INVALID_PARAMETER_VALUE,
+                   "x_cpu_throttle_initial",
+                   "an integer in the range of 1 to 99");
+    }
+    if (has_x_cpu_throttle_increment &&
+            (x_cpu_throttle_increment < 1 || x_cpu_throttle_increment > 99)) {
+        error_setg(errp, QERR_INVALID_PARAMETER_VALUE,
+                   "x_cpu_throttle_increment",
+                   "an integer in the range of 1 to 99");
+    }
 
     if (has_compress_level) {
         s->parameters[MIGRATION_PARAMETER_COMPRESS_LEVEL] = compress_level;
@@ -527,6 +571,15 @@ void qmp_migrate_set_parameters(bool has_compress_level,
     if (has_decompress_threads) {
         s->parameters[MIGRATION_PARAMETER_DECOMPRESS_THREADS] =
                                                     decompress_threads;
+    }
+    if (has_x_cpu_throttle_initial) {
+        s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL] =
+                                                    x_cpu_throttle_initial;
+    }
+
+    if (has_x_cpu_throttle_increment) {
+        s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT] =
+                                                    x_cpu_throttle_increment;
     }
 }
 
@@ -560,12 +613,9 @@ static void migrate_fd_cleanup(void *opaque)
 
     assert(s->state != MIGRATION_STATUS_ACTIVE);
 
-    if (s->state != MIGRATION_STATUS_COMPLETED) {
-        qemu_savevm_state_cancel();
-        if (s->state == MIGRATION_STATUS_CANCELLING) {
-            migrate_set_state(s, MIGRATION_STATUS_CANCELLING,
-                              MIGRATION_STATUS_CANCELLED);
-        }
+    if (s->state == MIGRATION_STATUS_CANCELLING) {
+        migrate_set_state(s, MIGRATION_STATUS_CANCELLING,
+                          MIGRATION_STATUS_CANCELLED);
     }
 
     notifier_list_notify(&migration_state_notifiers, s);
@@ -643,6 +693,10 @@ static MigrationState *migrate_init(const MigrationParams *params)
             s->parameters[MIGRATION_PARAMETER_COMPRESS_THREADS];
     int decompress_thread_count =
             s->parameters[MIGRATION_PARAMETER_DECOMPRESS_THREADS];
+    int x_cpu_throttle_initial =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL];
+    int x_cpu_throttle_increment =
+            s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT];
 
     memcpy(enabled_capabilities, s->enabled_capabilities,
            sizeof(enabled_capabilities));
@@ -658,6 +712,10 @@ static MigrationState *migrate_init(const MigrationParams *params)
                compress_thread_count;
     s->parameters[MIGRATION_PARAMETER_DECOMPRESS_THREADS] =
                decompress_thread_count;
+    s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL] =
+                x_cpu_throttle_initial;
+    s->parameters[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT] =
+                x_cpu_throttle_increment;
     s->bandwidth_limit = bandwidth_limit;
     migrate_set_state(s, MIGRATION_STATUS_NONE, MIGRATION_STATUS_SETUP);
 
@@ -913,6 +971,50 @@ int64_t migrate_xbzrle_cache_size(void)
     return s->xbzrle_cache_size;
 }
 
+/**
+ * migration_completion: Used by migration_thread when there's not much left.
+ *   The caller 'breaks' the loop when this returns.
+ *
+ * @s: Current migration state
+ * @*old_vm_running: Pointer to old_vm_running flag
+ * @*start_time: Pointer to time to update
+ */
+static void migration_completion(MigrationState *s, bool *old_vm_running,
+                                 int64_t *start_time)
+{
+    int ret;
+
+    qemu_mutex_lock_iothread();
+    *start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER);
+    *old_vm_running = runstate_is_running();
+
+    ret = global_state_store();
+    if (!ret) {
+        ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+        if (ret >= 0) {
+            qemu_file_set_rate_limit(s->file, INT64_MAX);
+            qemu_savevm_state_complete(s->file);
+        }
+    }
+    qemu_mutex_unlock_iothread();
+
+    if (ret < 0) {
+        goto fail;
+    }
+
+    if (qemu_file_get_error(s->file)) {
+        trace_migration_completion_file_err();
+        goto fail;
+    }
+
+    migrate_set_state(s, MIGRATION_STATUS_ACTIVE, MIGRATION_STATUS_COMPLETED);
+    return;
+
+fail:
+    migrate_set_state(s, MIGRATION_STATUS_ACTIVE, MIGRATION_STATUS_FAILED);
+}
+
 /* migration thread support */
 
 static void *migration_thread(void *opaque)
@@ -923,6 +1025,7 @@ static void *migration_thread(void *opaque)
     int64_t initial_bytes = 0;
     int64_t max_size = 0;
     int64_t start_time = initial_time;
+    int64_t end_time;
     bool old_vm_running = false;
 
     rcu_register_thread();
@@ -943,34 +1046,9 @@ static void *migration_thread(void *opaque)
             if (pending_size && pending_size >= max_size) {
                 qemu_savevm_state_iterate(s->file);
             } else {
-                int ret;
-
-                qemu_mutex_lock_iothread();
-                start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-                qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER);
-                old_vm_running = runstate_is_running();
-
-                ret = global_state_store();
-                if (!ret) {
-                    ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
-                    if (ret >= 0) {
-                        qemu_file_set_rate_limit(s->file, INT64_MAX);
-                        qemu_savevm_state_complete(s->file);
-                    }
-                }
-                qemu_mutex_unlock_iothread();
-
-                if (ret < 0) {
-                    migrate_set_state(s, MIGRATION_STATUS_ACTIVE,
-                                      MIGRATION_STATUS_FAILED);
-                    break;
-                }
-
-                if (!qemu_file_get_error(s->file)) {
-                    migrate_set_state(s, MIGRATION_STATUS_ACTIVE,
-                                      MIGRATION_STATUS_COMPLETED);
-                    break;
-                }
+                trace_migration_thread_low_pending(pending_size);
+                migration_completion(s, &old_vm_running, &start_time);
+                break;
             }
         }
 
@@ -1007,9 +1085,13 @@ static void *migration_thread(void *opaque)
         }
     }
 
+    /* If we enabled cpu throttling for auto-converge, turn it off. */
+    cpu_throttle_stop();
+    end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
     qemu_mutex_lock_iothread();
+    qemu_savevm_state_cleanup();
     if (s->state == MIGRATION_STATUS_COMPLETED) {
-        int64_t end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         uint64_t transferred_bytes = qemu_ftell(s->file);
         s->total_time = end_time - s->total_time;
         s->downtime = end_time - start_time;

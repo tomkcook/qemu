@@ -232,6 +232,11 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
                        info->xbzrle_cache->overflow);
     }
 
+    if (info->has_x_cpu_throttle_percentage) {
+        monitor_printf(mon, "cpu throttle percentage: %" PRIu64 "\n",
+                       info->x_cpu_throttle_percentage);
+    }
+
     qapi_free_MigrationInfo(info);
     qapi_free_MigrationCapabilityStatusList(caps);
 }
@@ -272,6 +277,12 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, " %s: %" PRId64,
             MigrationParameter_lookup[MIGRATION_PARAMETER_DECOMPRESS_THREADS],
             params->decompress_threads);
+        monitor_printf(mon, " %s: %" PRId64,
+            MigrationParameter_lookup[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL],
+            params->x_cpu_throttle_initial);
+        monitor_printf(mon, " %s: %" PRId64,
+            MigrationParameter_lookup[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT],
+            params->x_cpu_throttle_increment);
         monitor_printf(mon, "\n");
     }
 
@@ -558,8 +569,8 @@ void hmp_info_vnc(Monitor *mon, const QDict *qdict)
         for (client = info->clients; client; client = client->next) {
             monitor_printf(mon, "Client:\n");
             monitor_printf(mon, "     address: %s:%s\n",
-                           client->value->base->host,
-                           client->value->base->service);
+                           client->value->host,
+                           client->value->service);
             monitor_printf(mon, "  x509_dname: %s\n",
                            client->value->x509_dname ?
                            client->value->x509_dname : "none");
@@ -627,7 +638,7 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
         for (chan = info->channels; chan; chan = chan->next) {
             monitor_printf(mon, "Channel:\n");
             monitor_printf(mon, "     address: %s:%s%s\n",
-                           chan->value->base->host, chan->value->base->port,
+                           chan->value->host, chan->value->port,
                            chan->value->tls ? " [tls]" : "");
             monitor_printf(mon, "     session: %" PRId64 "\n",
                            chan->value->connection_id);
@@ -830,11 +841,11 @@ void hmp_info_tpm(Monitor *mon, const QDict *qdict)
                        c, TpmModel_lookup[ti->model]);
 
         monitor_printf(mon, "  \\ %s: type=%s",
-                       ti->id, TpmTypeOptionsKind_lookup[ti->options->kind]);
+                       ti->id, TpmTypeOptionsKind_lookup[ti->options->type]);
 
-        switch (ti->options->kind) {
+        switch (ti->options->type) {
         case TPM_TYPE_OPTIONS_KIND_PASSTHROUGH:
-            tpo = ti->options->passthrough;
+            tpo = ti->options->u.passthrough;
             monitor_printf(mon, "%s%s%s%s",
                            tpo->has_path ? ",path=" : "",
                            tpo->has_path ? tpo->path : "",
@@ -1221,6 +1232,8 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     bool has_compress_level = false;
     bool has_compress_threads = false;
     bool has_decompress_threads = false;
+    bool has_x_cpu_throttle_initial = false;
+    bool has_x_cpu_throttle_increment = false;
     int i;
 
     for (i = 0; i < MIGRATION_PARAMETER_MAX; i++) {
@@ -1235,10 +1248,18 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
             case MIGRATION_PARAMETER_DECOMPRESS_THREADS:
                 has_decompress_threads = true;
                 break;
+            case MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL:
+                has_x_cpu_throttle_initial = true;
+                break;
+            case MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT:
+                has_x_cpu_throttle_increment = true;
+                break;
             }
             qmp_migrate_set_parameters(has_compress_level, value,
                                        has_compress_threads, value,
                                        has_decompress_threads, value,
+                                       has_x_cpu_throttle_initial, value,
+                                       has_x_cpu_throttle_increment, value,
                                        &err);
             break;
         }
@@ -1714,15 +1735,15 @@ void hmp_sendkey(Monitor *mon, const QDict *qdict)
             if (*endp != '\0') {
                 goto err_out;
             }
-            keylist->value->kind = KEY_VALUE_KIND_NUMBER;
-            keylist->value->number = value;
+            keylist->value->type = KEY_VALUE_KIND_NUMBER;
+            keylist->value->u.number = value;
         } else {
             int idx = index_from_key(keyname_buf);
             if (idx == Q_KEY_CODE_MAX) {
                 goto err_out;
             }
-            keylist->value->kind = KEY_VALUE_KIND_QCODE;
-            keylist->value->qcode = idx;
+            keylist->value->type = KEY_VALUE_KIND_QCODE;
+            keylist->value->u.qcode = idx;
         }
 
         if (!separator) {
@@ -1937,12 +1958,12 @@ void hmp_info_memory_devices(Monitor *mon, const QDict *qdict)
         value = info->value;
 
         if (value) {
-            switch (value->kind) {
+            switch (value->type) {
             case MEMORY_DEVICE_INFO_KIND_DIMM:
-                di = value->dimm;
+                di = value->u.dimm;
 
                 monitor_printf(mon, "Memory device [%s]: \"%s\"\n",
-                               MemoryDeviceInfoKind_lookup[value->kind],
+                               MemoryDeviceInfoKind_lookup[value->type],
                                di->id ? di->id : "");
                 monitor_printf(mon, "  addr: 0x%" PRIx64 "\n", di->addr);
                 monitor_printf(mon, "  slot: %" PRId64 "\n", di->slot);
@@ -1961,6 +1982,19 @@ void hmp_info_memory_devices(Monitor *mon, const QDict *qdict)
     }
 
     qapi_free_MemoryDeviceInfoList(info_list);
+}
+
+void hmp_info_iothreads(Monitor *mon, const QDict *qdict)
+{
+    IOThreadInfoList *info_list = qmp_query_iothreads(NULL);
+    IOThreadInfoList *info;
+
+    for (info = info_list; info; info = info->next) {
+        monitor_printf(mon, "%s: thread_id=%" PRId64 "\n",
+                       info->value->id, info->value->thread_id);
+    }
+
+    qapi_free_IOThreadInfoList(info_list);
 }
 
 void hmp_qom_list(Monitor *mon, const QDict *qdict)

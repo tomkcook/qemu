@@ -590,7 +590,7 @@ static int kvm_virtio_pci_vq_vector_use(VirtIOPCIProxy *proxy,
     int ret;
 
     if (irqfd->users == 0) {
-        ret = kvm_irqchip_add_msi_route(kvm_state, msg);
+        ret = kvm_irqchip_add_msi_route(kvm_state, msg, &proxy->pci_dev);
         if (ret < 0) {
             return ret;
         }
@@ -726,7 +726,8 @@ static int virtio_pci_vq_vector_unmask(VirtIOPCIProxy *proxy,
     if (proxy->vector_irqfd) {
         irqfd = &proxy->vector_irqfd[vector];
         if (irqfd->msg.data != msg.data || irqfd->msg.address != msg.address) {
-            ret = kvm_irqchip_update_msi_route(kvm_state, irqfd->virq, msg);
+            ret = kvm_irqchip_update_msi_route(kvm_state, irqfd->virq, msg,
+                                               &proxy->pci_dev);
             if (ret < 0) {
                 return ret;
             }
@@ -1491,12 +1492,17 @@ static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
         pci_set_long(cfg_mask->pci_cfg_data, ~0x0);
     }
 
-    if (proxy->nvectors &&
-        msix_init_exclusive_bar(&proxy->pci_dev, proxy->nvectors,
-                                proxy->msix_bar)) {
-        error_report("unable to init msix vectors to %" PRIu32,
-                     proxy->nvectors);
-        proxy->nvectors = 0;
+    if (proxy->nvectors) {
+        int err = msix_init_exclusive_bar(&proxy->pci_dev, proxy->nvectors,
+                                          proxy->msix_bar);
+        if (err) {
+            /* Notice when a system that supports MSIx can't initialize it.  */
+            if (err != -ENOTSUP) {
+                error_report("unable to init msix vectors to %" PRIu32,
+                             proxy->nvectors);
+            }
+            proxy->nvectors = 0;
+        }
     }
 
     proxy->pci_dev.config_write = virtio_write_config;
@@ -1505,9 +1511,7 @@ static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
     if (legacy) {
         size = VIRTIO_PCI_REGION_SIZE(&proxy->pci_dev)
             + virtio_bus_get_vdev_config_len(bus);
-        if (size & (size - 1)) {
-            size = 1 << qemu_fls(size);
-        }
+        size = pow2ceil(size);
 
         memory_region_init_io(&proxy->bar, OBJECT(proxy),
                               &virtio_pci_config_ops,
@@ -2009,10 +2013,6 @@ static const TypeInfo virtio_net_pci_info = {
 
 /* virtio-rng-pci */
 
-static Property virtio_rng_pci_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void virtio_rng_pci_realize(VirtIOPCIProxy *vpci_dev, Error **errp)
 {
     VirtIORngPCI *vrng = VIRTIO_RNG_PCI(vpci_dev);
@@ -2039,7 +2039,6 @@ static void virtio_rng_pci_class_init(ObjectClass *klass, void *data)
 
     k->realize = virtio_rng_pci_realize;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
-    dc->props = virtio_rng_pci_properties;
 
     pcidev_k->vendor_id = PCI_VENDOR_ID_REDHAT_QUMRANET;
     pcidev_k->device_id = PCI_DEVICE_ID_VIRTIO_RNG;
@@ -2136,14 +2135,6 @@ static void virtio_tablet_initfn(Object *obj)
                                 TYPE_VIRTIO_TABLET);
 }
 
-static void virtio_host_initfn(Object *obj)
-{
-    VirtIOInputHostPCI *dev = VIRTIO_INPUT_HOST_PCI(obj);
-
-    virtio_instance_init_common(obj, &dev->vdev, sizeof(dev->vdev),
-                                TYPE_VIRTIO_INPUT_HOST);
-}
-
 static const TypeInfo virtio_input_pci_info = {
     .name          = TYPE_VIRTIO_INPUT_PCI,
     .parent        = TYPE_VIRTIO_PCI,
@@ -2182,12 +2173,22 @@ static const TypeInfo virtio_tablet_pci_info = {
     .instance_init = virtio_tablet_initfn,
 };
 
+#ifdef CONFIG_LINUX
+static void virtio_host_initfn(Object *obj)
+{
+    VirtIOInputHostPCI *dev = VIRTIO_INPUT_HOST_PCI(obj);
+
+    virtio_instance_init_common(obj, &dev->vdev, sizeof(dev->vdev),
+                                TYPE_VIRTIO_INPUT_HOST);
+}
+
 static const TypeInfo virtio_host_pci_info = {
     .name          = TYPE_VIRTIO_INPUT_HOST_PCI,
     .parent        = TYPE_VIRTIO_INPUT_PCI,
     .instance_size = sizeof(VirtIOInputHostPCI),
     .instance_init = virtio_host_initfn,
 };
+#endif
 
 /* virtio-pci-bus */
 
@@ -2235,7 +2236,9 @@ static void virtio_pci_register_types(void)
     type_register_static(&virtio_keyboard_pci_info);
     type_register_static(&virtio_mouse_pci_info);
     type_register_static(&virtio_tablet_pci_info);
+#ifdef CONFIG_LINUX
     type_register_static(&virtio_host_pci_info);
+#endif
     type_register_static(&virtio_pci_bus_info);
     type_register_static(&virtio_pci_info);
 #ifdef CONFIG_VIRTFS

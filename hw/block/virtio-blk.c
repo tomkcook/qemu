@@ -30,7 +30,7 @@
 
 VirtIOBlockReq *virtio_blk_alloc_request(VirtIOBlock *s)
 {
-    VirtIOBlockReq *req = g_slice_new(VirtIOBlockReq);
+    VirtIOBlockReq *req = g_new(VirtIOBlockReq, 1);
     req->dev = s;
     req->qiov.size = 0;
     req->in_len = 0;
@@ -42,7 +42,7 @@ VirtIOBlockReq *virtio_blk_alloc_request(VirtIOBlock *s)
 void virtio_blk_free_request(VirtIOBlockReq *req)
 {
     if (req) {
-        g_slice_free(VirtIOBlockReq, req);
+        g_free(req);
     }
 }
 
@@ -600,6 +600,8 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
         return;
     }
 
+    blk_io_plug(s->blk);
+
     while ((req = virtio_blk_get_request(s))) {
         virtio_blk_handle_request(req, &mrb);
     }
@@ -607,6 +609,8 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
     if (mrb.num_reqs) {
         virtio_blk_submit_multireq(s->blk, &mrb);
     }
+
+    blk_io_unplug(s->blk);
 }
 
 static void virtio_blk_dma_restart_bh(void *opaque)
@@ -731,7 +735,7 @@ static uint64_t virtio_blk_get_features(VirtIODevice *vdev, uint64_t features,
     virtio_add_feature(&features, VIRTIO_BLK_F_GEOMETRY);
     virtio_add_feature(&features, VIRTIO_BLK_F_TOPOLOGY);
     virtio_add_feature(&features, VIRTIO_BLK_F_BLK_SIZE);
-    if (__virtio_has_feature(features, VIRTIO_F_VERSION_1)) {
+    if (virtio_has_feature(features, VIRTIO_F_VERSION_1)) {
         if (s->conf.scsi) {
             error_setg(errp, "Please set scsi=off for virtio-blk devices in order to use virtio 1.0");
             return 0;
@@ -782,10 +786,11 @@ static void virtio_blk_set_status(VirtIODevice *vdev, uint8_t status)
      *
      * s->blk would erroneously be placed in writethrough mode.
      */
-    if (!virtio_has_feature(vdev, VIRTIO_BLK_F_CONFIG_WCE)) {
+    if (!virtio_vdev_has_feature(vdev, VIRTIO_BLK_F_CONFIG_WCE)) {
         aio_context_acquire(blk_get_aio_context(s->blk));
         blk_set_enable_write_cache(s->blk,
-                                   virtio_has_feature(vdev, VIRTIO_BLK_F_WCE));
+                                   virtio_vdev_has_feature(vdev,
+                                                           VIRTIO_BLK_F_WCE));
         aio_context_release(blk_get_aio_context(s->blk));
     }
 }
@@ -793,6 +798,11 @@ static void virtio_blk_set_status(VirtIODevice *vdev, uint8_t status)
 static void virtio_blk_save(QEMUFile *f, void *opaque)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(opaque);
+    VirtIOBlock *s = VIRTIO_BLK(vdev);
+
+    if (s->dataplane) {
+        virtio_blk_data_plane_stop(s->dataplane);
+    }
 
     virtio_save(vdev, f);
 }
@@ -834,10 +844,7 @@ static int virtio_blk_load_device(VirtIODevice *vdev, QEMUFile *f,
         req->next = s->rq;
         s->rq = req;
 
-        virtqueue_map_sg(req->elem.in_sg, req->elem.in_addr,
-            req->elem.in_num, 1);
-        virtqueue_map_sg(req->elem.out_sg, req->elem.out_addr,
-            req->elem.out_num, 0);
+        virtqueue_map(&req->elem);
     }
 
     return 0;
@@ -970,7 +977,7 @@ static Property virtio_blk_properties[] = {
     DEFINE_PROP_STRING("serial", VirtIOBlock, conf.serial),
     DEFINE_PROP_BIT("config-wce", VirtIOBlock, conf.config_wce, 0, true),
 #ifdef __linux__
-    DEFINE_PROP_BIT("scsi", VirtIOBlock, conf.scsi, 0, true),
+    DEFINE_PROP_BIT("scsi", VirtIOBlock, conf.scsi, 0, false),
 #endif
     DEFINE_PROP_BIT("request-merging", VirtIOBlock, conf.request_merging, 0,
                     true),

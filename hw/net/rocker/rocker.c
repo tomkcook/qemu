@@ -265,9 +265,7 @@ err_bad_io:
 err_no_mem:
 err_bad_attr:
     for (i = 0; i < ROCKER_TX_FRAGS_MAX; i++) {
-        if (iov[i].iov_base) {
-            g_free(iov[i].iov_base);
-        }
+        g_free(iov[i].iov_base);
     }
 
     return err;
@@ -1364,7 +1362,7 @@ static int pci_rocker_init(PCIDevice *dev)
         r->fp_ports = ROCKER_FP_PORTS_MAX;
     }
 
-    r->rings = g_malloc(sizeof(DescRing *) * rocker_pci_ring_count(r));
+    r->rings = g_new(DescRing *, rocker_pci_ring_count(r));
     if (!r->rings) {
         goto err_rings_alloc;
     }

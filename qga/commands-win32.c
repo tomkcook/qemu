@@ -26,6 +26,8 @@
 #include <setupapi.h>
 #include <initguid.h>
 #endif
+#include <lm.h>
+
 #include "qga/guest-agent-core.h"
 #include "qga/vss-win32.h"
 #include "qga-qmp-commands.h"
@@ -53,7 +55,9 @@ typedef struct GuestFileHandle {
 
 static struct {
     QTAILQ_HEAD(, GuestFileHandle) filehandles;
-} guest_file_state;
+} guest_file_state = {
+    .filehandles = QTAILQ_HEAD_INITIALIZER(guest_file_state.filehandles),
+};
 
 
 typedef struct OpenFlags {
@@ -104,7 +108,7 @@ static int64_t guest_file_handle_add(HANDLE fh, Error **errp)
     if (handle < 0) {
         return -1;
     }
-    gfh = g_malloc0(sizeof(GuestFileHandle));
+    gfh = g_new0(GuestFileHandle, 1);
     gfh->id = handle;
     gfh->fh = fh;
     QTAILQ_INSERT_TAIL(&guest_file_state.filehandles, gfh, next);
@@ -122,6 +126,28 @@ static GuestFileHandle *guest_file_handle_find(int64_t id, Error **errp)
     }
     error_setg(errp, "handle '%" PRId64 "' has not been found", id);
     return NULL;
+}
+
+static void handle_set_nonblocking(HANDLE fh)
+{
+    DWORD file_type, pipe_state;
+    file_type = GetFileType(fh);
+    if (file_type != FILE_TYPE_PIPE) {
+        return;
+    }
+    /* If file_type == FILE_TYPE_PIPE, according to MSDN
+     * the specified file is socket or named pipe */
+    if (!GetNamedPipeHandleState(fh, &pipe_state, NULL,
+                                 NULL, NULL, NULL, 0)) {
+        return;
+    }
+    /* The fd is named pipe fd */
+    if (pipe_state & PIPE_NOWAIT) {
+        return;
+    }
+
+    pipe_state |= PIPE_NOWAIT;
+    SetNamedPipeHandleState(fh, &pipe_state, NULL, NULL);
 }
 
 int64_t qmp_guest_file_open(const char *path, bool has_mode,
@@ -154,9 +180,14 @@ int64_t qmp_guest_file_open(const char *path, bool has_mode,
         return -1;
     }
 
+    /* set fd non-blocking to avoid common use cases (like reading from a
+     * named pipe) from hanging the agent
+     */
+    handle_set_nonblocking(fh);
+
     fd = guest_file_handle_add(fh, errp);
     if (fd < 0) {
-        CloseHandle(&fh);
+        CloseHandle(fh);
         error_setg(errp, "failed to add handle to qmp handle table");
         return -1;
     }
@@ -296,7 +327,7 @@ GuestFileRead *qmp_guest_file_read(int64_t handle, bool has_count,
         slog("guest-file-read failed, handle %" PRId64, handle);
     } else {
         buf[read_count] = 0;
-        read_data = g_malloc0(sizeof(GuestFileRead));
+        read_data = g_new0(GuestFileRead, 1);
         read_data->count = (size_t)read_count;
         read_data->eof = read_count == 0;
 
@@ -340,7 +371,7 @@ GuestFileWrite *qmp_guest_file_write(int64_t handle, const char *buf_b64,
         error_setg_win32(errp, GetLastError(), "failed to write to file");
         slog("guest-file-write-failed, handle: %" PRId64, handle);
     } else {
-        write_data = g_malloc0(sizeof(GuestFileWrite));
+        write_data = g_new0(GuestFileWrite, 1);
         write_data->count = (size_t) write_count;
     }
 
@@ -386,11 +417,6 @@ void qmp_guest_file_flush(int64_t handle, Error **errp)
     if (!FlushFileBuffers(fh)) {
         error_setg_win32(errp, GetLastError(), "failed to flush file");
     }
-}
-
-static void guest_file_init(void)
-{
-    QTAILQ_INIT(&guest_file_state.filehandles);
 }
 
 #ifdef CONFIG_QGA_NTDDSCSI
@@ -657,7 +683,7 @@ static GuestFilesystemInfo *build_guest_fsinfo(char *guid, Error **errp)
         fs->mountpoint = g_strndup(mnt_point, len);
     }
     fs->type = g_strdup(fs_name);
-    fs->disk = build_guest_disk_info(guid, errp);;
+    fs->disk = build_guest_disk_info(guid, errp);
 free:
     g_free(mnt_point);
     return fs;
@@ -863,7 +889,7 @@ static DWORD WINAPI do_suspend(LPVOID opaque)
 void qmp_guest_suspend_disk(Error **errp)
 {
     Error *local_err = NULL;
-    GuestSuspendMode *mode = g_malloc(sizeof(GuestSuspendMode));
+    GuestSuspendMode *mode = g_new(GuestSuspendMode, 1);
 
     *mode = GUEST_SUSPEND_MODE_DISK;
     check_suspend_mode(*mode, &local_err);
@@ -879,7 +905,7 @@ void qmp_guest_suspend_disk(Error **errp)
 void qmp_guest_suspend_ram(Error **errp)
 {
     Error *local_err = NULL;
-    GuestSuspendMode *mode = g_malloc(sizeof(GuestSuspendMode));
+    GuestSuspendMode *mode = g_new(GuestSuspendMode, 1);
 
     *mode = GUEST_SUSPEND_MODE_RAM;
     check_suspend_mode(*mode, &local_err);
@@ -1192,12 +1218,84 @@ int64_t qmp_guest_set_vcpus(GuestLogicalProcessorList *vcpus, Error **errp)
     return -1;
 }
 
+static gchar *
+get_net_error_message(gint error)
+{
+    HMODULE module = NULL;
+    gchar *retval = NULL;
+    wchar_t *msg = NULL;
+    int flags, nchars;
+
+    flags = FORMAT_MESSAGE_ALLOCATE_BUFFER
+        |FORMAT_MESSAGE_IGNORE_INSERTS
+        |FORMAT_MESSAGE_FROM_SYSTEM;
+
+    if (error >= NERR_BASE && error <= MAX_NERR) {
+        module = LoadLibraryExW(L"netmsg.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
+
+        if (module != NULL) {
+            flags |= FORMAT_MESSAGE_FROM_HMODULE;
+        }
+    }
+
+    FormatMessageW(flags, module, error, 0, (LPWSTR)&msg, 0, NULL);
+
+    if (msg != NULL) {
+        nchars = wcslen(msg);
+
+        if (nchars > 2 && msg[nchars-1] == '\n' && msg[nchars-2] == '\r') {
+            msg[nchars-2] = '\0';
+        }
+
+        retval = g_utf16_to_utf8(msg, -1, NULL, NULL, NULL);
+
+        LocalFree(msg);
+    }
+
+    if (module != NULL) {
+        FreeLibrary(module);
+    }
+
+    return retval;
+}
+
 void qmp_guest_set_user_password(const char *username,
                                  const char *password,
                                  bool crypted,
                                  Error **errp)
 {
-    error_setg(errp, QERR_UNSUPPORTED);
+    NET_API_STATUS nas;
+    char *rawpasswddata = NULL;
+    size_t rawpasswdlen;
+    wchar_t *user, *wpass;
+    USER_INFO_1003 pi1003 = { 0, };
+
+    if (crypted) {
+        error_setg(errp, QERR_UNSUPPORTED);
+        return;
+    }
+
+    rawpasswddata = (char *)g_base64_decode(password, &rawpasswdlen);
+    rawpasswddata = g_renew(char, rawpasswddata, rawpasswdlen + 1);
+    rawpasswddata[rawpasswdlen] = '\0';
+
+    user = g_utf8_to_utf16(username, -1, NULL, NULL, NULL);
+    wpass = g_utf8_to_utf16(rawpasswddata, -1, NULL, NULL, NULL);
+
+    pi1003.usri1003_password = wpass;
+    nas = NetUserSetInfo(NULL, user,
+                         1003, (LPBYTE)&pi1003,
+                         NULL);
+
+    if (nas != NERR_Success) {
+        gchar *msg = get_net_error_message(nas);
+        error_setg(errp, "failed to set password: %s", msg);
+        g_free(msg);
+    }
+
+    g_free(user);
+    g_free(wpass);
+    g_free(rawpasswddata);
 }
 
 GuestMemoryBlockList *qmp_guest_get_memory_blocks(Error **errp)
@@ -1225,7 +1323,6 @@ GList *ga_command_blacklist_init(GList *blacklist)
     const char *list_unsupported[] = {
         "guest-suspend-hybrid",
         "guest-get-vcpus", "guest-set-vcpus",
-        "guest-set-user-password",
         "guest-get-memory-blocks", "guest-set-memory-blocks",
         "guest-get-memory-block-size",
         "guest-fsfreeze-freeze-list",
@@ -1233,7 +1330,7 @@ GList *ga_command_blacklist_init(GList *blacklist)
     char **p = (char **)list_unsupported;
 
     while (*p) {
-        blacklist = g_list_append(blacklist, *p++);
+        blacklist = g_list_append(blacklist, g_strdup(*p++));
     }
 
     if (!vss_init(true)) {
@@ -1244,7 +1341,7 @@ GList *ga_command_blacklist_init(GList *blacklist)
         p = (char **)list;
 
         while (*p) {
-            blacklist = g_list_append(blacklist, *p++);
+            blacklist = g_list_append(blacklist, g_strdup(*p++));
         }
     }
 
@@ -1257,5 +1354,4 @@ void ga_command_state_init(GAState *s, GACommandState *cs)
     if (!vss_initialized()) {
         ga_command_state_add(cs, NULL, guest_fsfreeze_cleanup);
     }
-    ga_command_state_add(cs, guest_file_init, NULL);
 }

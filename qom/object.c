@@ -204,7 +204,7 @@ static bool type_is_ancestor(TypeImpl *type, TypeImpl *target_type)
 {
     assert(target_type);
 
-    /* Check if typename is a direct ancestor of type */
+    /* Check if target_type is a direct ancestor of type */
     while (type) {
         if (type == target_type) {
             return true;
@@ -775,21 +775,40 @@ void object_class_foreach(void (*fn)(ObjectClass *klass, void *opaque),
     enumerating_types = false;
 }
 
-int object_child_foreach(Object *obj, int (*fn)(Object *child, void *opaque),
-                         void *opaque)
+static int do_object_child_foreach(Object *obj,
+                                   int (*fn)(Object *child, void *opaque),
+                                   void *opaque, bool recurse)
 {
     ObjectProperty *prop, *next;
     int ret = 0;
 
     QTAILQ_FOREACH_SAFE(prop, &obj->properties, node, next) {
         if (object_property_is_child(prop)) {
-            ret = fn(prop->opaque, opaque);
+            Object *child = prop->opaque;
+
+            ret = fn(child, opaque);
             if (ret != 0) {
                 break;
+            }
+            if (recurse) {
+                do_object_child_foreach(child, fn, opaque, true);
             }
         }
     }
     return ret;
+}
+
+int object_child_foreach(Object *obj, int (*fn)(Object *child, void *opaque),
+                         void *opaque)
+{
+    return do_object_child_foreach(obj, fn, opaque, false);
+}
+
+int object_child_foreach_recursive(Object *obj,
+                                   int (*fn)(Object *child, void *opaque),
+                                   void *opaque)
+{
+    return do_object_child_foreach(obj, fn, opaque, true);
 }
 
 static void object_class_get_list_tramp(ObjectClass *klass, void *opaque)
@@ -1079,6 +1098,7 @@ typedef struct EnumProperty {
 int object_property_get_enum(Object *obj, const char *name,
                              const char *typename, Error **errp)
 {
+    Error *err = NULL;
     StringOutputVisitor *sov;
     StringInputVisitor *siv;
     char *str;
@@ -1100,7 +1120,12 @@ int object_property_get_enum(Object *obj, const char *name,
     enumprop = prop->opaque;
 
     sov = string_output_visitor_new(false);
-    object_property_get(obj, string_output_get_visitor(sov), name, errp);
+    object_property_get(obj, string_output_get_visitor(sov), name, &err);
+    if (err) {
+        error_propagate(errp, err);
+        string_output_visitor_cleanup(sov);
+        return 0;
+    }
     str = string_output_get_string(sov);
     siv = string_input_visitor_new(str);
     string_output_visitor_cleanup(sov);
@@ -1116,51 +1141,57 @@ int object_property_get_enum(Object *obj, const char *name,
 void object_property_get_uint16List(Object *obj, const char *name,
                                     uint16List **list, Error **errp)
 {
+    Error *err = NULL;
     StringOutputVisitor *ov;
     StringInputVisitor *iv;
     char *str;
 
     ov = string_output_visitor_new(false);
     object_property_get(obj, string_output_get_visitor(ov),
-                        name, errp);
+                        name, &err);
+    if (err) {
+        error_propagate(errp, err);
+        goto out;
+    }
     str = string_output_get_string(ov);
     iv = string_input_visitor_new(str);
     visit_type_uint16List(string_input_get_visitor(iv),
                           list, NULL, errp);
 
     g_free(str);
-    string_output_visitor_cleanup(ov);
     string_input_visitor_cleanup(iv);
+out:
+    string_output_visitor_cleanup(ov);
 }
 
 void object_property_parse(Object *obj, const char *string,
                            const char *name, Error **errp)
 {
-    StringInputVisitor *mi;
-    mi = string_input_visitor_new(string);
-    object_property_set(obj, string_input_get_visitor(mi), name, errp);
+    StringInputVisitor *siv;
+    siv = string_input_visitor_new(string);
+    object_property_set(obj, string_input_get_visitor(siv), name, errp);
 
-    string_input_visitor_cleanup(mi);
+    string_input_visitor_cleanup(siv);
 }
 
 char *object_property_print(Object *obj, const char *name, bool human,
                             Error **errp)
 {
-    StringOutputVisitor *mo;
+    StringOutputVisitor *sov;
     char *string = NULL;
     Error *local_err = NULL;
 
-    mo = string_output_visitor_new(human);
-    object_property_get(obj, string_output_get_visitor(mo), name, &local_err);
+    sov = string_output_visitor_new(human);
+    object_property_get(obj, string_output_get_visitor(sov), name, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         goto out;
     }
 
-    string = string_output_get_string(mo);
+    string = string_output_get_string(sov);
 
 out:
-    string_output_visitor_cleanup(mo);
+    string_output_visitor_cleanup(sov);
     return string;
 }
 
@@ -1581,12 +1612,16 @@ static void property_get_str(Object *obj, Visitor *v, void *opaque,
 {
     StringProperty *prop = opaque;
     char *value;
+    Error *err = NULL;
 
-    value = prop->get(obj, errp);
-    if (value) {
-        visit_type_str(v, &value, name, errp);
-        g_free(value);
+    value = prop->get(obj, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
     }
+
+    visit_type_str(v, &value, name, errp);
+    g_free(value);
 }
 
 static void property_set_str(Object *obj, Visitor *v, void *opaque,
@@ -1646,8 +1681,14 @@ static void property_get_bool(Object *obj, Visitor *v, void *opaque,
 {
     BoolProperty *prop = opaque;
     bool value;
+    Error *err = NULL;
 
-    value = prop->get(obj, errp);
+    value = prop->get(obj, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
     visit_type_bool(v, &value, name, errp);
 }
 
@@ -1701,8 +1742,14 @@ static void property_get_enum(Object *obj, Visitor *v, void *opaque,
 {
     EnumProperty *prop = opaque;
     int value;
+    Error *err = NULL;
 
-    value = prop->get(obj, errp);
+    value = prop->get(obj, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
     visit_type_enum(v, &value, prop->strings, NULL, name, errp);
 }
 
@@ -1711,8 +1758,13 @@ static void property_set_enum(Object *obj, Visitor *v, void *opaque,
 {
     EnumProperty *prop = opaque;
     int value;
+    Error *err = NULL;
 
-    visit_type_enum(v, &value, prop->strings, NULL, name, errp);
+    visit_type_enum(v, &value, prop->strings, NULL, name, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
     prop->set(obj, value, errp);
 }
 
