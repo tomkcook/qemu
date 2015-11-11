@@ -199,7 +199,9 @@ static void channel_enable(bcm2835_usb_hc_state *c)
         c->hcint |= hcint_chhltd | hcint_nak;
         bcm2835_usb_update_irq(c->parent);
     } else {
-        assert(0);
+        /* assert(0); */
+        c->hcint |= hcint_chhltd | hcint_stall;
+        bcm2835_usb_update_irq(c->parent);
     }
 
 }

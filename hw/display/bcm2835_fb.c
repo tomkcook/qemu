@@ -185,7 +185,7 @@ static void fb_update_display(void *opaque)
         dest_width *= 4;
         break;
     default:
-        hw_error("milkymist_vgafb: bad color depth\n");
+        hw_error("bcm2835_fb: bad color depth\n");
         break;
     }
 
