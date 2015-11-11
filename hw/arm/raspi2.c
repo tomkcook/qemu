@@ -445,17 +445,12 @@ static void raspi2_init(MachineState *machine)
     arm_load_kernel(ARM_CPU(first_cpu), &raspi_binfo);
 }
 
-static QEMUMachine raspi2_machine = {
-    .name = "raspi2",
-    .desc = "Raspberry Pi 2",
-    .init = raspi2_init,
-    .block_default_type = IF_SD,
-    .max_cpus = 4,
+static void raspi2_machine_init(MachineClass *mc)
+{
+    mc->desc = "Raspberry Pi 2";
+    mc->init = raspi2_init;
+    mc->block_default_type = IF_SD;
+    mc->max_cpus = 4;
 };
 
-static void raspi2_machine_init(void)
-{
-    qemu_register_machine(&raspi2_machine);
-}
-
-machine_init(raspi2_machine_init);
+DEFINE_MACHINE("raspi2", raspi2_machine_init)
