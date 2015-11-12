@@ -92,6 +92,7 @@ struct SDState {
     int32_t wpgrps_size;
     uint64_t size;
     uint32_t blk_len;
+    uint32_t multi_blk_cnt;
     uint32_t erase_start;
     uint32_t erase_end;
     uint8_t pwd[16];
@@ -423,6 +424,7 @@ static void sd_reset(SDState *sd)
     sd->blk_len = 0x200;
     sd->pwd_len = 0;
     sd->expecting_acmd = false;
+    sd->multi_blk_cnt = 0;
 }
 
 static void sd_cardchange(void *opaque, bool load)
@@ -696,6 +698,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         if (sd->spi)
             goto bad_cmd;
         switch (sd->state) {
+        case sd_idle_state: // XXX: UEFI is doing this -AB
         case sd_ready_state:
             sd->state = sd_identification_state;
             return sd_r2_i;
@@ -883,6 +886,13 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
             sd->state = sd_transfer_state;
             return sd_r1b;
 
+        case sd_transfer_state:
+            // Kludge for UEFI. Not clear whether this is due to my
+            // cheesy multi-block implementation, or a real feature of
+            // HW, but in either case it should be harmless to succeed
+            // here, sicne it's a no-op -AB 20150828
+            return sd_r1b;
+                        
         default:
             break;
         }
@@ -965,6 +975,17 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         }
         break;
 
+    case 23:    /* CMD23: SET_BLOCK_COUNT */
+        switch (sd->state) {
+        case sd_transfer_state:
+            sd->multi_blk_cnt = req.arg;
+            return sd_r1;
+
+        default:
+            break;
+        }
+        break;
+        
     /* Block write commands (Class 4) */
     case 24:	/* CMD24:  WRITE_SINGLE_BLOCK */
         if (sd->spi)
@@ -1563,6 +1584,15 @@ void sd_write_data(SDState *sd, uint8_t value)
             sd->data_offset = 0;
             sd->csd[14] |= 0x40;
 
+            if (sd->multi_blk_cnt) {
+                sd->multi_blk_cnt--;
+                if (sd->multi_blk_cnt == 0) {
+                    /* Stop! */
+                    sd->state = sd_transfer_state;
+                    break;
+                }
+            }
+
             /* Bzzzzzzztt .... Operation complete.  */
             sd->state = sd_receivingdata_state;
         }
@@ -1708,6 +1738,15 @@ uint8_t sd_read_data(SDState *sd)
         ret = sd->data[sd->data_offset ++];
 
         if (sd->data_offset >= io_len) {
+            if (sd->multi_blk_cnt) {
+                sd->multi_blk_cnt--;
+                if (sd->multi_blk_cnt == 0) {
+                    /* Stop! */
+                    sd->state = sd_transfer_state;
+                    break;
+                }
+            }
+
             sd->data_start += io_len;
             sd->data_offset = 0;
             if (sd->data_start + io_len > sd->size) {

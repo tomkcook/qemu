@@ -37,6 +37,7 @@
 
 #include "trace-tcg.h"
 
+#define CONFIG_ALIGNMENT_EXCEPTIONS 1
 
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_dc_feature(s, ARM_FEATURE_V5)
@@ -1057,6 +1058,15 @@ static void gen_exception_insn(DisasContext *s, int offset, int excp,
     gen_exception(excp, syn, target_el);
     s->is_jmp = DISAS_JUMP;
 }
+
+#ifdef CONFIG_ALIGNMENT_EXCEPTIONS
+static void gen_alignment_exception_insn(DisasContext *s, int offset,
+                                         TCGv_i32 addr)
+{
+    gen_set_pc_im(s, s->pc - offset);
+    gen_helper_alignment_exception(cpu_env, addr);
+}
+#endif
 
 /* Force a TB lookup after an instruction that changes the CPU state.  */
 static inline void gen_lookup_tb(DisasContext *s)
@@ -7428,6 +7438,23 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
     TCGv_i32 tmp = tcg_temp_new_i32();
 
     s->is_ldex = true;
+
+#ifdef CONFIG_ALIGNMENT_EXCEPTIONS
+    if (size != 0) {
+        TCGLabel *alignok_label = gen_new_label();
+        uint32_t alignmask = (1 << size) - 1;
+
+        // check alignment, branch to alignok_label if aligned
+        tcg_gen_andi_i32(tmp, addr, alignmask);
+        tcg_gen_brcondi_i32(TCG_COND_EQ, tmp, 0, alignok_label);
+
+        // emit alignment exception
+        // NB: all LDREX variants (incl. thumb) occupy 4 bytes
+        gen_alignment_exception_insn(s, 4, addr);
+
+        gen_set_label(alignok_label);
+    }
+#endif
 
     switch (size) {
     case 0:

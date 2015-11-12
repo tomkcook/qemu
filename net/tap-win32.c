@@ -77,7 +77,12 @@
 
 //#define DEBUG_TAP_WIN32
 
-#define TUN_ASYNCHRONOUS_WRITES 1
+// FIXME: The asynch write path appears to be broken at
+//present. WriteFile() ignores the lpNumberOfBytesWritten parameter
+//for overlapped writes, with the result we return zero bytes sent,
+//and after handling a single packet, receive is disabled for this
+//interface.
+//#define TUN_ASYNCHRONOUS_WRITES 1
 
 #define TUN_BUFFER_SIZE 1560
 #define TUN_MAX_BUFFER_COUNT 32
@@ -356,7 +361,8 @@ static int get_device_guid(
                 &len);
 
             if (status != ERROR_SUCCESS || name_type != REG_SZ) {
-                    return -1;
+                ++i;
+                continue;
             }
             else {
                 if (is_tap_win32_dev(enum_name)) {
@@ -460,26 +466,46 @@ static int tap_win32_write(tap_win32_overlapped_t *overlapped,
     BOOL result;
     DWORD error;
 
+#ifdef TUN_ASYNCHRONOUS_WRITES
     result = GetOverlappedResult( overlapped->handle, &overlapped->write_overlapped,
                                   &write_size, FALSE);
 
     if (!result && GetLastError() == ERROR_IO_INCOMPLETE)
         WaitForSingleObject(overlapped->write_event, INFINITE);
+#endif
 
     result = WriteFile(overlapped->handle, buffer, size,
-                       &write_size, &overlapped->write_overlapped);
+                       NULL, &overlapped->write_overlapped);
+
+#ifdef TUN_ASYNCHRONOUS_WRITES
+    // FIXME: we can't sensibly set write_size here, without waiting
+    // for the IO to complete! Moreover, we can't return zero,
+    // because that will disable receive on this interface, and we
+    // also can't assume it will succeed and return the full size,
+    // because that will result in the buffer being reclaimed while
+    // the IO is in progress.
+#error The asynchronous write code-path appears broken. Please disable TUN_ASYNCHRONOUS_WRITES.
+#else // !TUN_ASYNCHRONOUS_WRITES
+    if (!result && (error = GetLastError()) == ERROR_IO_PENDING) {
+        result = GetOverlappedResult( overlapped->handle,
+                                      &overlapped->write_overlapped,
+                                      &write_size, TRUE);
+    if (!result) {
+            error = GetLastError();
+        }
+    }
+#endif
 
     if (!result) {
-        switch (error = GetLastError())
-        {
-        case ERROR_IO_PENDING:
-#ifndef TUN_ASYNCHRONOUS_WRITES
-            WaitForSingleObject(overlapped->write_event, INFINITE);
+#ifdef DEBUG_TAP_WIN32
+        LPVOID lpBuffer;
+        FormatMessage( FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                       NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                       (LPTSTR) & lpBuffer, 0, NULL );
+        fprintf(stderr, "Tap-Win32: Error WriteFile %d - %s\n", error, lpBuffer);
+        LocalFree( lpBuffer );
 #endif
-            break;
-        default:
-            return -1;
-        }
+        return 0;
     }
 
     return write_size;
