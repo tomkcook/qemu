@@ -1131,8 +1131,8 @@ static void lan9118_writel(void *opaque, hwaddr offset,
         break;
 
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "lan9118_write: Bad reg 0x%x = %x\n", (int)offset, (int)val);
+        qemu_log_mask(LOG_GUEST_ERROR, "lan9118_write: Bad reg 0x%x = %x\n",
+                      (int)offset, (int)val);
         break;
     }
     lan9118_update(s);

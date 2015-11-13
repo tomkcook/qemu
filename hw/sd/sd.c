@@ -698,7 +698,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         if (sd->spi)
             goto bad_cmd;
         switch (sd->state) {
-        case sd_idle_state: // XXX: UEFI is doing this -AB
+        case sd_idle_state: /* XXX: UEFI is doing this -AB */
         case sd_ready_state:
             sd->state = sd_identification_state;
             return sd_r2_i;
@@ -887,12 +887,12 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
             return sd_r1b;
 
         case sd_transfer_state:
-            // Kludge for UEFI. Not clear whether this is due to my
-            // cheesy multi-block implementation, or a real feature of
-            // HW, but in either case it should be harmless to succeed
-            // here, sicne it's a no-op -AB 20150828
+            /* Kludge for UEFI. It's not clear whether this is due to my
+             * cheesy multi-block implementation, or a real feature of
+             * HW, but in either case it should be harmless to succeed
+             * here, since it's a no-op -AB 20150828 */
             return sd_r1b;
-                        
+
         default:
             break;
         }
@@ -985,7 +985,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
             break;
         }
         break;
-        
+
     /* Block write commands (Class 4) */
     case 24:	/* CMD24:  WRITE_SINGLE_BLOCK */
         if (sd->spi)

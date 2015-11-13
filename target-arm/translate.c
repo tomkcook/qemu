@@ -7444,12 +7444,12 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
         TCGLabel *alignok_label = gen_new_label();
         uint32_t alignmask = (1 << size) - 1;
 
-        // check alignment, branch to alignok_label if aligned
+        /* check alignment, branch to alignok_label if aligned */
         tcg_gen_andi_i32(tmp, addr, alignmask);
         tcg_gen_brcondi_i32(TCG_COND_EQ, tmp, 0, alignok_label);
 
-        // emit alignment exception
-        // NB: all LDREX variants (incl. thumb) occupy 4 bytes
+        /* emit alignment exception */
+        /* NB: all LDREX variants (incl. thumb) occupy 4 bytes */
         gen_alignment_exception_insn(s, 4, addr);
 
         gen_set_label(alignok_label);

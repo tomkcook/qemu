@@ -59,11 +59,11 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
     if (value > 0xc0000000) {
         value -= 0xc0000000;
     }
-    
+
     s->addr = value;
 
     tot_len = ldl_phys(&address_space_memory, value);
-    
+
     /* @(s->addr + 4) : Buffer response code */
     value = s->addr + 8;
     while (value + 8 <= s->addr + tot_len) {
@@ -86,8 +86,9 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
             resplen = 4;
             break;
         case 0x00010003: /* Get board MAC address */
+            /* write the first four bytes of the 6-byte MAC */
             stl_phys(&address_space_memory, value + 12, 0xB827EBD0);
-            // write the last two bytes, avoid a writing past the end of buffer
+            /* write the last two bytes, avoid any write past the buffer end */
             stb_phys(&address_space_memory, value + 16, 0xEE);
             stb_phys(&address_space_memory, value + 17, 0xDF);
             resplen = 6;
@@ -96,13 +97,17 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
             resplen = 8;
             break;
         case 0x00010005: /* Get ARM memory */
-            stl_phys(&address_space_memory, value + 12, 0); /* base */
-            stl_phys(&address_space_memory, value + 16, bcm2835_vcram_base); /* size */
+            /* base */
+            stl_phys(&address_space_memory, value + 12, 0);
+            /* size */
+            stl_phys(&address_space_memory, value + 16, bcm2835_vcram_base);
             resplen = 8;
             break;
         case 0x00010006: /* Get VC memory */
-            stl_phys(&address_space_memory, value + 12, bcm2835_vcram_base); /* base */
-            stl_phys(&address_space_memory, value + 16, VCRAM_SIZE); /* size */
+            /* base */
+            stl_phys(&address_space_memory, value + 12, bcm2835_vcram_base);
+            /* size */
+            stl_phys(&address_space_memory, value + 16, VCRAM_SIZE);
             resplen = 8;
             break;
 
@@ -156,8 +161,8 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
         /* Frame buffer */
 
         case 0x00040001: /* Allocate buffer */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.base); /* base */
-            stl_phys(&address_space_memory, value + 16, bcm2835_fb.size); /* size */
+            stl_phys(&address_space_memory, value + 12, bcm2835_fb.base);
+            stl_phys(&address_space_memory, value + 16, bcm2835_fb.size);
             resplen = 8;
             break;
         case 0x00048001: /* Release buffer */
@@ -255,7 +260,8 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
             n = 0;
             while (n < length - offset) {
                 color = ldl_phys(&address_space_memory, value + 20 + (n << 2));
-                stl_phys(&address_space_memory, bcm2835_vcram_base + ((offset + n) << 2), color);
+                stl_phys(&address_space_memory,
+                         bcm2835_vcram_base + ((offset + n) << 2), color);
                 n++;
             }
             stl_phys(&address_space_memory, value + 12, 0);
@@ -263,7 +269,8 @@ static void bcm2835_property_mbox_push(bcm2835_property_state *s,
             break;
 
         case 0x00060001: /* Get DMA channels */
-            stl_phys(&address_space_memory, value + 12, 0x003C); /* channels 2-5 */
+            /* channels 2-5 */
+            stl_phys(&address_space_memory, value + 12, 0x003C);
             resplen = 4;
             break;
 

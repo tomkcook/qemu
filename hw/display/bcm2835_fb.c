@@ -103,7 +103,7 @@ static void draw_line_src16(void *opaque, uint8_t *d, const uint8_t *s,
         }
 
         if (bcm2835_fb.pixo == 0) {
-            // swap to BGR pixel format
+            /* swap to BGR pixel format */
             uint8_t tmp = r;
             r = b;
             b = tmp;
@@ -226,11 +226,11 @@ static void bcm2835_fb_mbox_push(bcm2835_fb_state *s, uint32_t value)
 {
     value &= ~0xf;
 
-    // UEFI passes a high (uncached?) address here
-    if (value >= 0xC0000000) {
-        value -= 0xC0000000;
+    /* UEFI passes a high (uncached?) address here */
+    if (value >= 0xc0000000) {
+        value -= 0xc0000000;
     }
-    
+
     bcm2835_fb.lock = 1;
 
     bcm2835_fb.xres = ldl_phys(&address_space_memory, value);
@@ -342,9 +342,9 @@ static int bcm2835_fb_init(SysBusDevice *sbd)
 
     bcm2835_fb.pitch = bcm2835_fb.xres * (bcm2835_fb.bpp >> 3);
     bcm2835_fb.size = bcm2835_fb.yres * bcm2835_fb.pitch;
-    
-    bcm2835_fb.pixo = 1; // RGB
-    bcm2835_fb.alpha = 2; // Alpha channel ignored
+
+    bcm2835_fb.pixo = 1; /* RGB */
+    bcm2835_fb.alpha = 2; /* Alpha channel ignored */
 
     bcm2835_fb.invalidate = 1;
     bcm2835_fb.lock = 1;

@@ -333,7 +333,8 @@ static void raspi_init(MachineState *machine)
             stl_phys(&address_space_memory, (n << 2), bootloader_0[n]);
         }
         for (n = 0; n < ARRAY_SIZE(bootloader_100); n++) {
-            stl_phys(&address_space_memory, 0x100 + (n << 2), bootloader_100[n]);
+            stl_phys(&address_space_memory, 0x100 + (n << 2),
+                     bootloader_100[n]);
         }
         load_image_targphys(machine->initrd_filename,
                             0x8000,

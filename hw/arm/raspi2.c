@@ -32,56 +32,56 @@
 #define BUS_ADDR(x) (((x) - BCM2708_PERI_BASE) + 0x7e000000)
 
 static const uint32_t bootloader_0[] = {
-    0xea000006, // b 0x20 ; reset vector: branch to the bootloader below
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
-    0xe1a00000, // nop ; (mov r0, r0)
+    0xea000006, /* b 0x20 ; reset vector: branch to the bootloader below */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
+    0xe1a00000, /* nop ; (mov r0, r0) */
 
     /* start of bootloader */
-    0xE3A03902, //    mov   r3, #0x8000            ; entry point for primary core
+    0xE3A03902, /*    mov   r3, #0x8000            ; boot core entry point */
 
     /* retrieve core ID */
-    0xEE100FB0, //    mrc   p15, 0, r0, c0, c0, 5  ; get core ID
-    0xE7E10050, //    ubfx  r0, r0, #0, #2         ; extract LSB
-    0xE3500000, //    cmp   r0, #0                 ; if zero, we're the primary
-    0x0A000004, //    beq   2f
+    0xEE100FB0, /*    mrc   p15, 0, r0, c0, c0, 5  ; get core ID */
+    0xE7E10050, /*    ubfx  r0, r0, #0, #2         ; extract LSB */
+    0xE3500000, /*    cmp   r0, #0                 ; if zero, we're boot core */
+    0x0A000004, /*    beq   2f */
 
     /* busy-wait for mailbox set on secondary cores */
-    0xE59F501C, //    ldr     r4, =0x400000CC      ; mailbox 3 read/clear base
-    0xE7953200, // 1: ldr     r3, [r4, r0, lsl #4] ; read mailbox for our core
-    0xE3530000, //    cmp     r3, #0               ; spin while zero
-    0x0AFFFFFC, //    beq     1b
-    0xE7853200, //    str     r3, [r4, r0, lsl #4] ; clear mailbox
+    0xE59F501C, /*    ldr     r4, =0x400000CC      ; mbox 3 read/clear base */
+    0xE7953200, /* 1: ldr     r3, [r4, r0, lsl #4] ; read mbox for our core */
+    0xE3530000, /*    cmp     r3, #0               ; spin while zero */
+    0x0AFFFFFC, /*    beq     1b */
+    0xE7853200, /*    str     r3, [r4, r0, lsl #4] ; clear mbox */
 
     /* enter image at [r3] */
-    0xE3A00000, // 2: mov     r0, #0
-    0xE59F1008, //    ldr     r1, =0xc43           ; Linux machine type MACH_BCM2709 = 0xc43
-    0xE3A02C01, //    ldr     r2, =0x100           ; Address of ATAGS
-    0xE12FFF13, //    bx      r3
+    0xE3A00000, /* 2: mov     r0, #0 */
+    0xE59F1008, /*    ldr     r1, =0xc43           ; Linux MACH_BCM2709 */
+    0xE3A02C01, /*    ldr     r2, =0x100           ; Address of ATAGS */
+    0xE12FFF13, /*    bx      r3 */
 
     /* constants */
     0x400000CC,
     0x00000C43,
 };
 
-static uint32_t bootloader_100[] = { // this is the "tag list" in RAM at 0x100
-    // ref: http://www.simtec.co.uk/products/SWLINUX/files/booting_article.html
-    0x00000005, // length of core tag (words)
-    0x54410001, // ATAG_CORE
-    0x00000001, // flags
-    0x00001000, // page size (4k)
-    0x00000000, // root device
-    0x00000004, // length of mem tag (words)
-    0x54410002, // ATAG_MEM
-    /* It will be overwritten by dynamically calculated memory size */
-    0x08000000, // RAM size (to be overwritten)
-    0x00000000, // start of RAM
-    0x00000000, // "length" of none tag (magic)
-    0x00000000  // ATAG_NONE
+/* ATAG "tag list" in RAM at 0x100
+ * ref: http://www.simtec.co.uk/products/SWLINUX/files/booting_article.html */
+static uint32_t bootloader_100[] = {
+    0x00000005, /* length of core tag (words) */
+    0x54410001, /* ATAG_CORE */
+    0x00000001, /* flags */
+    0x00001000, /* page size (4k) */
+    0x00000000, /* root device */
+    0x00000004, /* length of mem tag (words) */
+    0x54410002, /* ATAG_MEM */
+    0x08000000, /* RAM size (to be overwritten by dynamic memory size) */
+    0x00000000, /* start of RAM */
+    0x00000000, /* "length" of none tag (magic) */
+    0x00000000  /* ATAG_NONE */
 };
 
 static struct arm_boot_info raspi_binfo;
@@ -112,13 +112,13 @@ static void init_cpus(const char *cpu_model, DeviceState *icdev)
             error_report_err(err);
             exit(1);
         }
-        
+
         /* Connect irq/fiq outputs from the interrupt controller. */
         qdev_connect_gpio_out_named(icdev, "irq", n,
                                     qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
         qdev_connect_gpio_out_named(icdev, "fiq", n,
                                     qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
-    
+
         /* Connect timers from the CPU to the interrupt controller */
         ARM_CPU(cpu)->gt_timer_outputs[GTIMER_PHYS]
             = qdev_get_gpio_in_named(icdev, "cntpsirq", 0);
@@ -220,18 +220,18 @@ static void raspi2_init(MachineState *machine)
         0, memory_region_size(mr));
     memory_region_add_subregion(sysmem, BUS_ADDR(ARMCTRL_IC_BASE),
         per_ic_bus);
-    
+
     for (n = 0; n < 72; n++) {
         pic[n] = qdev_get_gpio_in(dev, n);
     }
 
     /* Create the CPUs, and wire them up to the interrupt controller */
     if (!machine->cpu_model) {
-        machine->cpu_model = "cortex-a15"; /* Closest architecturally to the A7 */
+        machine->cpu_model = "cortex-a15"; /* Equivalent ISA to the CA7 */
     }
 
     init_cpus(machine->cpu_model, icdev);
-    
+
     /* UART0 */
     dev = sysbus_create_simple("pl011", UART0_BASE, pic[INTERRUPT_VC_UART]);
     s = SYS_BUS_DEVICE(dev);
@@ -400,14 +400,14 @@ static void raspi2_init(MachineState *machine)
     sysbus_connect_irq(s, 11, pic[INTERRUPT_DMA11]);
     sysbus_connect_irq(s, 12, pic[INTERRUPT_DMA12]);
 
-    /* XXX: this is not present on a real pi, it's a kludge for Windows NIC/debug */
+    /* XXX: not present on a real pi, it's a kludge for Windows NIC/debug */
     if (nd_table[0].used) {
-        lan9118_init(&nd_table[0], 0x3F900000, NULL); // no interrupt (yet)
+        lan9118_init(&nd_table[0], 0x3F900000, NULL); /* no interrupt (yet) */
     }
-    
+
     /* Finally, the board itself */
     raspi_binfo.ram_size = bcm2835_vcram_base;
-    raspi_binfo.board_id = 0xc43; // Linux MACH_BCM2709
+    raspi_binfo.board_id = 0xc43; /* Linux MACH_BCM2709 */
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
        the normal Linux boot process */
@@ -428,7 +428,8 @@ static void raspi2_init(MachineState *machine)
             stl_phys(&address_space_memory, (n << 2), bootloader_0[n]);
         }
         for (n = 0; n < ARRAY_SIZE(bootloader_100); n++) {
-            stl_phys(&address_space_memory, 0x100 + (n << 2), bootloader_100[n]);
+            stl_phys(&address_space_memory, 0x100 + (n << 2),
+                     bootloader_100[n]);
         }
 
         /* set variables so arm_load_kernel does the right thing */

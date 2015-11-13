@@ -36,7 +36,8 @@ typedef struct BCM2835_AUXState {
 
 static void bcm2835_aux_update(BCM2835_AUXState *s)
 {
-    qemu_set_irq(s->irq, (s->rx_int_enable && s->read_count != 0) || s->tx_int_enable);
+    bool status = (s->rx_int_enable && s->read_count != 0) || s->tx_int_enable;
+    qemu_set_irq(s->irq, status);
 }
 
 static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
@@ -47,14 +48,15 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
 
     switch (offset >> 2) {
     case 1: /* AUXENB */
-        return 1; /* mini UART enabled */        
-        
+        return 1; /* mini UART enabled */
+
     case 16: /* AUX_MU_IO_REG */
         c = s->read_fifo[s->read_pos];
         if (s->read_count > 0) {
             s->read_count--;
-            if (++s->read_pos == 8)
+            if (++s->read_pos == 8) {
                 s->read_pos = 0;
+            }
         }
         if (s->chr) {
             qemu_chr_accept_input(s->chr);
@@ -71,7 +73,7 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
             res |= 0x1;
         }
         return res;
-        
+
     case 18: /* AUX_MU_IER_REG */
         res = 0xc0;
         if (s->tx_int_enable) {
@@ -93,10 +95,10 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         if (s->read_count > 0) {
             res |= 0x1; /* data in input buffer */
             assert(s->read_count < 8);
-            res |= ((uint32_t)s->read_count) << 16; /* receive fifo fill level */
+            res |= ((uint32_t)s->read_count) << 16; /* rx fifo fill level */
         }
         return res;
-        
+
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "bcm2835_aux_read: Bad offset %x\n", (int)offset);
@@ -117,13 +119,14 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
                           "bcm2835_aux_write: Trying to enable SPI or disable UART. Not supported!\n");
         }
         break;
-        
+
     case 16: /* AUX_MU_IO_REG */
         ch = value;
-        if (s->chr)
+        if (s->chr) {
             qemu_chr_fe_write(s->chr, &ch, 1);
+        }
         break;
-        
+
     case 17: /* AUX_MU_IIR_REG */
         s->rx_int_enable = (value & 0x2) != 0;
         s->tx_int_enable = (value & 0x1) != 0;
@@ -134,12 +137,12 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
             s->read_count = 0;
         }
         break;
-       
+
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "bcm2835_aux_write: Bad offset %x\n", (int)offset);
     }
-    
+
     bcm2835_aux_update(s);
 }
 
@@ -156,12 +159,13 @@ static void bcm2835_aux_put_fifo(void *opaque, uint32_t value)
     int slot;
 
     slot = s->read_pos + s->read_count;
-    if (slot >= 8)
+    if (slot >= 8) {
         slot -= 8;
+    }
     s->read_fifo[slot] = value;
     s->read_count++;
     if (s->read_count == 8) {
-        // buffer full
+        /* buffer full */
     }
     bcm2835_aux_update(s);
 }
@@ -173,8 +177,9 @@ static void bcm2835_aux_receive(void *opaque, const uint8_t *buf, int size)
 
 static void bcm2835_aux_event(void *opaque, int event)
 {
-    if (event == CHR_EVENT_BREAK)
+    if (event == CHR_EVENT_BREAK) {
         bcm2835_aux_put_fifo(opaque, 0x400);
+    }
 }
 
 static const MemoryRegionOps bcm2835_aux_ops = {
@@ -200,7 +205,8 @@ static void bcm2835_aux_init(Object *obj)
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
     BCM2835_AUXState *s = BCM2835_AUX(obj);
 
-    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_aux_ops, s, "bcm2835_aux", 0x100);
+    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_aux_ops, s,
+                          "bcm2835_aux", 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->irq);
 }
@@ -213,8 +219,8 @@ static void bcm2835_aux_realize(DeviceState *dev, Error **errp)
     s->chr = qemu_char_get_next_serial();
 
     if (s->chr) {
-        qemu_chr_add_handlers(s->chr, bcm2835_aux_can_receive, bcm2835_aux_receive,
-                              bcm2835_aux_event, s);
+        qemu_chr_add_handlers(s->chr, bcm2835_aux_can_receive,
+                              bcm2835_aux_receive, bcm2835_aux_event, s);
     }
 }
 

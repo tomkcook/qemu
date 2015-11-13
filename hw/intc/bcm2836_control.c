@@ -6,7 +6,8 @@
  * At present, only implements interrupt routing, and mailboxes (i.e.,
  * not local timer, PMU interrupt, or AXI counters).
  *
- * Ref: https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2836/QA7_rev3.4.pdf
+ * Ref:
+ * https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2836/QA7_rev3.4.pdf
  *
  * Based on bcm2835_ic.c, terms below...
  */
@@ -29,7 +30,7 @@
 
 #include "hw/sysbus.h"
 
-// 4 mailboxes per core, for 16 total
+/* 4 mailboxes per core, for 16 total */
 #define NCORES 4
 #define MBPERCORE 4
 
@@ -54,30 +55,30 @@
 #define IRQ_MAX         IRQ_TIMER
 
 #define TYPE_BCM2836_CONTROL "bcm2836_control"
-#define BCM2836_CONTROL(obj) OBJECT_CHECK(bcm2836_control_state, (obj), TYPE_BCM2836_CONTROL)
+#define BCM2836_CONTROL(obj) \
+    OBJECT_CHECK(bcm2836_control_state, (obj), TYPE_BCM2836_CONTROL)
 
 typedef struct bcm2836_control_state {
     SysBusDevice busdev;
     MemoryRegion iomem;
 
-    // interrupt status registers
-    // (not directly visible to user)
+    /* interrupt status registers (not directly visible to user) */
     bool gpu_irq, gpu_fiq;
     uint32_t localirqs[NCORES];
 
-    // mailboxes
+    /* mailboxes */
     uint32_t mailboxes[NCORES * MBPERCORE];
 
-    // interrupt routing/control registers
+    /* interrupt routing/control registers */
     uint8_t route_gpu_irq, route_gpu_fiq;
     uint32_t timercontrol[NCORES];
     uint32_t mailboxcontrol[NCORES];
 
-    // interrupt source registers, post-routing (visible)
+    /* interrupt source registers, post-routing (visible) */
     uint32_t irqsrc[NCORES];
     uint32_t fiqsrc[NCORES];
-    
-    // outputs to CPU cores
+
+    /* outputs to CPU cores */
     qemu_irq irq[NCORES];
     qemu_irq fiq[NCORES];
 } bcm2836_control_state;
@@ -87,18 +88,18 @@ static void bcm2836_control_update(bcm2836_control_state *s)
 {
     int i, j;
 
-    //
-    // reset pending IRQs/FIQs
-    //
-    
+    /*
+     * reset pending IRQs/FIQs
+     */
+
     for (i = 0; i < NCORES; i++) {
         s->irqsrc[i] = s->fiqsrc[i] = 0;
     }
 
-    //
-    // apply routing logic, update status regs
-    //
-    
+    /*
+     * apply routing logic, update status regs
+     */
+
     if (s->gpu_irq) {
         assert(s->route_gpu_irq < NCORES);
         s->irqsrc[s->route_gpu_irq] |= (uint32_t)1 << IRQ_GPU;
@@ -110,54 +111,54 @@ static void bcm2836_control_update(bcm2836_control_state *s)
     }
 
     for (i = 0; i < NCORES; i++) {
-        // handle local interrupts for this core
+        /* handle local interrupts for this core */
         if (s->localirqs[i]) {
             assert(s->localirqs[i] < (1 << IRQ_MAILBOX0));
             for (j = 0; j < IRQ_MAILBOX0; j++) {
                 if ((s->localirqs[i] & (1 << j)) != 0) {
-                    // local interrupt j is set
+                    /* local interrupt j is set */
                     if (FIQ_BIT(s->timercontrol[i], j)) {
-                        // deliver a FIQ
+                        /* deliver a FIQ */
                         s->fiqsrc[i] |= (uint32_t)1 << j;
                     } else if (IRQ_BIT(s->timercontrol[i], j)) {
-                        // deliver an IRQ
+                        /* deliver an IRQ */
                         s->irqsrc[i] |= (uint32_t)1 << j;
                     } else {
-                        // the interrupt is masked
+                        /* the interrupt is masked */
                     }
                 }
             }
         }
 
-        // handle mailboxes for this core
+        /* handle mailboxes for this core */
         for (j = 0; j < MBPERCORE; j++) {
             if (s->mailboxes[i * MBPERCORE + j] != 0) {
-                // mailbox j is set
+                /* mailbox j is set */
                 if (FIQ_BIT(s->mailboxcontrol[i], j)) {
-                    // deliver a FIQ
+                    /* deliver a FIQ */
                     s->fiqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
                 } else if (IRQ_BIT(s->mailboxcontrol[i], j)) {
-                    // deliver an IRQ
+                    /* deliver an IRQ */
                     s->irqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
                 } else {
-                    // the interrupt is masked
+                    /* the interrupt is masked */
                 }
             }
         }
     }
 
-    //
-    // call set_irq appropriately for each output
-    //
-    
+    /*
+     * call set_irq appropriately for each output
+     */
+
     for (i = 0; i < NCORES; i++) {
         qemu_set_irq(s->irq[i], s->irqsrc[i] != 0);
         qemu_set_irq(s->fiq[i], s->fiqsrc[i] != 0);
     }
 }
 
-// XXX: ugly kludge, because I can't seem to pass useful information in the "irq" parameter when using named interrupts
-static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq, int level)
+static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
+                                          int level)
 {
     bcm2836_control_state *s = (bcm2836_control_state *)opaque;
 
@@ -172,6 +173,11 @@ static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
 
     bcm2836_control_update(s);
 }
+
+/* XXX: the following wrapper functions are a kludgy workaround,
+ * needed because I can't seem to pass useful information in the "irq"
+ * parameter when using named interrupts. Feel free to clean this up!
+ */
 
 static void bcm2836_control_set_local_irq0(void *opaque, int core, int level)
 {
@@ -198,7 +204,7 @@ static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
     bcm2836_control_state *s = (bcm2836_control_state *)opaque;
 
     s->gpu_irq = level;
-    
+
     bcm2836_control_update(s);
 }
 
@@ -207,7 +213,7 @@ static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
     bcm2836_control_state *s = (bcm2836_control_state *)opaque;
 
     s->gpu_fiq = level;
-    
+
     bcm2836_control_update(s);
 }
 
@@ -304,18 +310,23 @@ static int bcm2836_control_init(SysBusDevice *sbd)
         TYPE_BCM2836_CONTROL, 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
 
-    // inputs from each CPU core
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq0, "cntpsirq", NCORES);
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq1, "cntpnsirq", NCORES);
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq2, "cnthpirq", NCORES);
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq3, "cntvirq", NCORES);
-    //qdev_init_gpio_in_named(dev, bcm2836_control_set_pmu_irq, "pmuirq", NCORES);
+    /* inputs from each CPU core */
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq0, "cntpsirq",
+                            NCORES);
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq1, "cntpnsirq",
+                            NCORES);
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq2, "cnthpirq",
+                            NCORES);
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq3, "cntvirq",
+                            NCORES);
+    /* qdev_init_gpio_in_named(dev, bcm2836_control_set_pmu_irq, "pmuirq",
+                            NCORES); */
 
-    // IRQ and FIQ inputs from upstream bcm2835 controller
+    /* IRQ and FIQ inputs from upstream bcm2835 controller */
     qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_irq, "gpu_irq", 1);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_fiq, "gpu_fiq", 1);
 
-    // outputs to CPU cores
+    /* outputs to CPU cores */
     qdev_init_gpio_out_named(dev, s->irq, "irq", NCORES);
     qdev_init_gpio_out_named(dev, s->fiq, "fiq", NCORES);
 
@@ -327,7 +338,7 @@ static const VMStateDescription vmstate_bcm2836_control = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        // TODO
+        /* TODO */
         VMSTATE_END_OF_LIST()
     }
 };

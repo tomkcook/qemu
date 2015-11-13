@@ -137,8 +137,10 @@
         SDHCI_INT_DATA_END_BIT | SDHCI_INT_ADMA_ERROR)
 #define SDHCI_INT_ALL_MASK  ((unsigned int)-1)
 
-/* Per the BCM2835 ARM peripherals document (p76), some interrupts are not implemented (reserved) */
-#define BCM2835_DISABLED_INTERRUPTS (SDHCI_INT_DMA_END | SDHCI_INT_CARD_INSERT | SDHCI_INT_CARD_REMOVE)
+/* Per the BCM2835 ARM peripherals document (p76), some interrupts are
+ * not implemented (reserved) */
+#define BCM2835_DISABLED_INTS (SDHCI_INT_DMA_END | SDHCI_INT_CARD_INSERT \
+                               | SDHCI_INT_CARD_REMOVE)
 
 #define SDHCI_ACMD12_ERR    0x3C
 
@@ -338,11 +340,11 @@ typedef struct {
 
 static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
 {
-    // the error bit must be set iff there are any other errors
+    /* the error bit must be set iff there are any other errors */
     assert(((s->interrupt & SDHCI_INT_ERROR) == 0)
            == ((s->interrupt & SDHCI_INT_ERROR_MASK & ~SDHCI_INT_ERROR) == 0));
 
-    if (s->irpt_en & s->irpt_mask & s->interrupt & ~BCM2835_DISABLED_INTERRUPTS) {
+    if (s->irpt_en & s->irpt_mask & s->interrupt & ~BCM2835_DISABLED_INTS) {
         qemu_set_irq(s->irq, 1);
     } else {
         qemu_set_irq(s->irq, 0);
@@ -716,7 +718,7 @@ static void bcm2835_emmc_write(void *opaque, hwaddr offset,
         break;
     case SDHCI_INT_STATUS:      /* INTERRUPT */
         s->interrupt &= ~value;
-        // clearing all error sources also clears the overall error status
+        /* clearing all error sources also clears the overall error status */
         if ((s->interrupt & SDHCI_INT_ERROR_MASK) == SDHCI_INT_ERROR) {
             s->interrupt &= ~SDHCI_INT_ERROR_MASK;
         }
@@ -786,14 +788,14 @@ static int bcm2835_emmc_init(SysBusDevice *sbd)
     s->status = (0x1ff << 16);
     s->control0 = 0;
     s->control1 = SDHCI_CLOCK_INT_STABLE;
-    
+
     /* Although the Broadcom doc says it is unimplemented/reserved, on
      * real hardware the card inserted interrupt is actually set at
      * boot, and is later cleared by a reset command (as observed on a
      * Raspberry Pi 2). Moreover, EDK2/UEFI depend on seeing this bit
      * set, so we set it here and later clear it in the reset. */
     s->interrupt = SDHCI_INT_CARD_INSERT;
-    
+
     s->irpt_mask = 0;
     s->irpt_en = 0;
     s->control2 = 0;
