@@ -6,6 +6,7 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 #include "hw/arm/bcm2835_common.h"
+#include "hw/arm/bcm2835_arm_control.h"
 
 #define TYPE_BCM2835_SBM "bcm2835_sbm"
 #define BCM2835_SBM(obj) \

@@ -1,8 +1,6 @@
 #ifndef BCM2835_COMMON_H
 #define BCM2835_COMMON_H
 
-#include "bcm2835_platform.h"
-
 #define VCRAM_SIZE (0x4000000)
 extern hwaddr bcm2835_vcram_base;
 
