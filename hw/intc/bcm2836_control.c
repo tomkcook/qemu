@@ -338,7 +338,12 @@ static const VMStateDescription vmstate_bcm2836_control = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        /* TODO */
+        VMSTATE_UINT32_ARRAY(mailboxes, bcm2836_control_state,
+                             NCORES * MBPERCORE),
+        VMSTATE_UINT8(route_gpu_irq, bcm2836_control_state),
+        VMSTATE_UINT8(route_gpu_fiq, bcm2836_control_state),
+        VMSTATE_UINT32_ARRAY(timercontrol, bcm2836_control_state, NCORES),
+        VMSTATE_UINT32_ARRAY(mailboxcontrol, bcm2836_control_state, NCORES),
         VMSTATE_END_OF_LIST()
     }
 };
