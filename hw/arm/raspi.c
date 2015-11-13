@@ -78,7 +78,6 @@ static void raspi_init(MachineState *machine)
     MemoryRegion *ram_alias = g_new(MemoryRegion, 4);
     MemoryRegion *vcram_alias = g_new(MemoryRegion, 4);
 
-    MemoryRegion *per_todo_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_ic_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_uart_bus = g_new(MemoryRegion, 1);
     MemoryRegion *per_st_bus = g_new(MemoryRegion, 1);
@@ -133,15 +132,6 @@ static void raspi_init(MachineState *machine)
         memory_region_add_subregion(sysmem, (n << 30) + bcm2835_vcram_base,
             &vcram_alias[n]);
     }
-
-    /* (Yet) unmapped I/O registers */
-    dev = sysbus_create_simple("bcm2835_todo", BCM2708_PERI_BASE, NULL);
-    s = SYS_BUS_DEVICE(dev);
-    mr = sysbus_mmio_get_region(s, 0);
-    memory_region_init_alias(per_todo_bus, NULL, NULL, mr,
-        0, memory_region_size(mr));
-    memory_region_add_subregion(sysmem, BUS_ADDR(BCM2708_PERI_BASE),
-        per_todo_bus);
 
     /* Interrupt Controller */
     dev = sysbus_create_varargs("bcm2835_ic", ARMCTRL_IC_BASE,
