@@ -80,6 +80,7 @@ struct SDState {
     uint32_t mode;    /* current card mode, one of SDCardModes */
     int32_t state;    /* current card state, one of SDCardStates */
     uint32_t ocr;
+    bool ocr_initdelay;
     uint8_t scr[8];
     uint8_t cid[16];
     uint8_t csd[16];
@@ -93,6 +94,7 @@ struct SDState {
     uint64_t size;
     uint32_t blk_len;
     uint32_t multi_blk_cnt;
+    bool multi_blk_active;
     uint32_t erase_start;
     uint32_t erase_end;
     uint8_t pwd[16];
@@ -194,8 +196,21 @@ static uint16_t sd_crc16(void *message, size_t width)
 
 static void sd_set_ocr(SDState *sd)
 {
-    /* All voltages OK, card power-up OK, Standard Capacity SD Memory Card */
-    sd->ocr = 0x80ffff00;
+    /* All voltages OK, Standard Capacity SD Memory Card, not yet powered up */
+    sd->ocr = 0x00ffff00;
+    sd->ocr_initdelay = false;
+}
+
+static bool sd_model_ocr_init_delay(SDState *sd)
+{
+    if (!sd->ocr_initdelay) {
+        sd->ocr_initdelay = true;
+        return false;
+    } else {
+        /* Set powered up bit in OCR */
+        sd->ocr |= 0x80000000;
+        return true;
+    }
 }
 
 static void sd_set_scr(SDState *sd)
@@ -425,6 +440,7 @@ static void sd_reset(SDState *sd)
     sd->pwd_len = 0;
     sd->expecting_acmd = false;
     sd->multi_blk_cnt = 0;
+    sd->multi_blk_active = false;
 }
 
 static void sd_cardchange(void *opaque, bool load)
@@ -449,6 +465,7 @@ static const VMStateDescription sd_vmstate = {
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(mode, SDState),
         VMSTATE_INT32(state, SDState),
+        VMSTATE_BOOL(ocr_initdelay, SDState),
         VMSTATE_UINT8_ARRAY(cid, SDState, 16),
         VMSTATE_UINT8_ARRAY(csd, SDState, 16),
         VMSTATE_UINT16(rca, SDState),
@@ -457,6 +474,8 @@ static const VMStateDescription sd_vmstate = {
         VMSTATE_UINT32(vhs, SDState),
         VMSTATE_BITMAP(wp_groups, SDState, 0, wpgrps_size),
         VMSTATE_UINT32(blk_len, SDState),
+        VMSTATE_UINT32(multi_blk_cnt, SDState),
+        VMSTATE_BOOL(multi_blk_active, SDState),
         VMSTATE_UINT32(erase_start, SDState),
         VMSTATE_UINT32(erase_end, SDState),
         VMSTATE_UINT8_ARRAY(pwd, SDState, 16),
@@ -672,6 +691,12 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
     if (sd_cmd_type[req.cmd] == sd_ac || sd_cmd_type[req.cmd] == sd_adtc)
         rca = req.arg >> 16;
 
+    /* CMD23 (set block count) must be immediately followed by CMD18 or CMD25
+     * if not, its effects are cancelled */
+    if (sd->multi_blk_active && !(req.cmd == 18 || req.cmd == 25)) {
+        sd->multi_blk_active = false;
+    }
+
     DPRINTF("CMD%d 0x%08x state %d\n", req.cmd, req.arg, sd->state);
     switch (req.cmd) {
     /* Basic commands (Class 0 and Class 1) */
@@ -698,7 +723,6 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         if (sd->spi)
             goto bad_cmd;
         switch (sd->state) {
-        case sd_idle_state: /* XXX: UEFI is doing this -AB */
         case sd_ready_state:
             sd->state = sd_identification_state;
             return sd_r2_i;
@@ -886,13 +910,6 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
             sd->state = sd_transfer_state;
             return sd_r1b;
 
-        case sd_transfer_state:
-            /* Kludge for UEFI. It's not clear whether this is due to my
-             * cheesy multi-block implementation, or a real feature of
-             * HW, but in either case it should be harmless to succeed
-             * here, since it's a no-op -AB 20150828 */
-            return sd_r1b;
-
         default:
             break;
         }
@@ -979,6 +996,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         switch (sd->state) {
         case sd_transfer_state:
             sd->multi_blk_cnt = req.arg;
+            sd->multi_blk_active = req.arg != 0;
             return sd_r1;
 
         default:
@@ -1297,10 +1315,17 @@ static sd_rsp_type_t sd_app_command(SDState *sd,
         case sd_idle_state:
             /* We accept any voltage.  10000 V is nothing.
              *
-             * We don't model init delay so just advance straight to ready state
+             * We model an init "delay" of one polling cycle, as a
+             * workaround for around a bug in TianoCore EDK2 which
+             * sends an initial zero ACMD41, but nevertheless assumes
+             * that the card is in ready state as soon as it sees the
+             * power up bit set.
+             *
+             * Once we've delayed, we advance straight to ready state
              * unless it's an enquiry ACMD41 (bits 23:0 == 0).
              */
-            if (req.arg & ACMD41_ENQUIRY_MASK) {
+            if (sd_model_ocr_init_delay(sd)
+                && (req.arg & ACMD41_ENQUIRY_MASK)) {
                 sd->state = sd_ready_state;
             }
 
@@ -1563,6 +1588,11 @@ void sd_write_data(SDState *sd, uint8_t value)
         break;
 
     case 25:	/* CMD25:  WRITE_MULTIPLE_BLOCK */
+        if (sd->multi_blk_active && sd->multi_blk_cnt == 0) {
+            /* just ignore this write -- we've overrun the block count */
+            fprintf(stderr, "sd_write_data: overrun of multi-block transfer\n");
+            break;
+        }
         if (sd->data_offset == 0) {
             /* Start of the block - let's check the address is valid */
             if (sd->data_start + sd->blk_len > sd->size) {
@@ -1584,13 +1614,9 @@ void sd_write_data(SDState *sd, uint8_t value)
             sd->data_offset = 0;
             sd->csd[14] |= 0x40;
 
-            if (sd->multi_blk_cnt) {
+            if (sd->multi_blk_active) {
+                assert(sd->multi_blk_cnt > 0);
                 sd->multi_blk_cnt--;
-                if (sd->multi_blk_cnt == 0) {
-                    /* Stop! */
-                    sd->state = sd_transfer_state;
-                    break;
-                }
             }
 
             /* Bzzzzzzztt .... Operation complete.  */
@@ -1733,22 +1759,27 @@ uint8_t sd_read_data(SDState *sd)
         break;
 
     case 18:	/* CMD18:  READ_MULTIPLE_BLOCK */
+        if (sd->multi_blk_active && sd->multi_blk_cnt == 0) {
+            /* we've overrun the block count */
+            fprintf(stderr, "sd_read_data: overrun of multi-block transfer\n");
+            ret = 0;
+            break;
+        }
         if (sd->data_offset == 0)
             BLK_READ_BLOCK(sd->data_start, io_len);
         ret = sd->data[sd->data_offset ++];
 
         if (sd->data_offset >= io_len) {
-            if (sd->multi_blk_cnt) {
-                sd->multi_blk_cnt--;
-                if (sd->multi_blk_cnt == 0) {
-                    /* Stop! */
-                    sd->state = sd_transfer_state;
+            sd->data_start += io_len;
+            sd->data_offset = 0;
+
+            if (sd->multi_blk_active) {
+                assert(sd->multi_blk_cnt > 0);
+                if (--sd->multi_blk_cnt == 0) {
                     break;
                 }
             }
 
-            sd->data_start += io_len;
-            sd->data_offset = 0;
             if (sd->data_start + io_len > sd->size) {
                 sd->card_status |= ADDRESS_ERROR;
                 break;
