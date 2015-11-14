@@ -28,8 +28,8 @@ typedef struct {
     uint32_t base, pitch, size;
 
     uint32_t pixo, alpha;
-} bcm2835_fb_type;
+} Bcm2835Fb;
 
-extern bcm2835_fb_type bcm2835_fb;
+extern Bcm2835Fb bcm2835_fb;
 
 #endif /* BCM2835_COMMON_H */

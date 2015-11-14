@@ -56,9 +56,9 @@
 
 #define TYPE_BCM2836_CONTROL "bcm2836_control"
 #define BCM2836_CONTROL(obj) \
-    OBJECT_CHECK(bcm2836_control_state, (obj), TYPE_BCM2836_CONTROL)
+    OBJECT_CHECK(Bcm2836ControlState, (obj), TYPE_BCM2836_CONTROL)
 
-typedef struct bcm2836_control_state {
+typedef struct Bcm2836ControlState {
     SysBusDevice busdev;
     MemoryRegion iomem;
 
@@ -81,10 +81,10 @@ typedef struct bcm2836_control_state {
     /* outputs to CPU cores */
     qemu_irq irq[NCORES];
     qemu_irq fiq[NCORES];
-} bcm2836_control_state;
+} Bcm2836ControlState;
 
 /* Update interrupts.  */
-static void bcm2836_control_update(bcm2836_control_state *s)
+static void bcm2836_control_update(Bcm2836ControlState *s)
 {
     int i, j;
 
@@ -160,7 +160,7 @@ static void bcm2836_control_update(bcm2836_control_state *s)
 static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
                                           int level)
 {
-    bcm2836_control_state *s = (bcm2836_control_state *)opaque;
+    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
 
     assert(core >= 0 && core < NCORES);
     assert(local_irq >= 0 && local_irq <= IRQ_CNTVIRQ);
@@ -201,7 +201,7 @@ static void bcm2836_control_set_local_irq3(void *opaque, int core, int level)
 
 static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 {
-    bcm2836_control_state *s = (bcm2836_control_state *)opaque;
+    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
 
     s->gpu_irq = level;
 
@@ -210,7 +210,7 @@ static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 
 static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
 {
-    bcm2836_control_state *s = (bcm2836_control_state *)opaque;
+    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
 
     s->gpu_fiq = level;
 
@@ -220,7 +220,7 @@ static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
 static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2836_control_state *s = (bcm2836_control_state *)opaque;
+    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
@@ -251,7 +251,7 @@ static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
 static void bcm2836_control_write(void *opaque, hwaddr offset,
     uint64_t val, unsigned size)
 {
-    bcm2836_control_state *s = (bcm2836_control_state *)opaque;
+    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
@@ -286,7 +286,7 @@ static const MemoryRegionOps bcm2836_control_ops = {
 
 static void bcm2836_control_reset(DeviceState *d)
 {
-    bcm2836_control_state *s = BCM2836_CONTROL(d);
+    Bcm2836ControlState *s = BCM2836_CONTROL(d);
     int i;
 
     s->route_gpu_irq = s->route_gpu_fiq = 0;
@@ -304,7 +304,7 @@ static void bcm2836_control_reset(DeviceState *d)
 static int bcm2836_control_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2836_control_state *s = BCM2836_CONTROL(dev);
+    Bcm2836ControlState *s = BCM2836_CONTROL(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2836_control_ops, s,
         TYPE_BCM2836_CONTROL, 0x100);
@@ -338,12 +338,12 @@ static const VMStateDescription vmstate_bcm2836_control = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(mailboxes, bcm2836_control_state,
+        VMSTATE_UINT32_ARRAY(mailboxes, Bcm2836ControlState,
                              NCORES * MBPERCORE),
-        VMSTATE_UINT8(route_gpu_irq, bcm2836_control_state),
-        VMSTATE_UINT8(route_gpu_fiq, bcm2836_control_state),
-        VMSTATE_UINT32_ARRAY(timercontrol, bcm2836_control_state, NCORES),
-        VMSTATE_UINT32_ARRAY(mailboxcontrol, bcm2836_control_state, NCORES),
+        VMSTATE_UINT8(route_gpu_irq, Bcm2836ControlState),
+        VMSTATE_UINT8(route_gpu_fiq, Bcm2836ControlState),
+        VMSTATE_UINT32_ARRAY(timercontrol, Bcm2836ControlState, NCORES),
+        VMSTATE_UINT32_ARRAY(mailboxcontrol, Bcm2836ControlState, NCORES),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -361,7 +361,7 @@ static void bcm2836_control_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2836_control_info = {
     .name          = TYPE_BCM2836_CONTROL,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2836_control_state),
+    .instance_size = sizeof(Bcm2836ControlState),
     .class_init    = bcm2836_control_class_init,
 };
 

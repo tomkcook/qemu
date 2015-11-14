@@ -9,19 +9,19 @@
 
 #define TYPE_BCM2835_POWER "bcm2835_power"
 #define BCM2835_POWER(obj) \
-        OBJECT_CHECK(bcm2835_power_state, (obj), TYPE_BCM2835_POWER)
+        OBJECT_CHECK(Bcm2835PowerState, (obj), TYPE_BCM2835_POWER)
 
 typedef struct {
     SysBusDevice busdev;
     MemoryRegion iomem;
     int pending;
     qemu_irq mbox_irq;
-} bcm2835_power_state;
+} Bcm2835PowerState;
 
 static uint64_t bcm2835_power_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_power_state *s = (bcm2835_power_state *)opaque;
+    Bcm2835PowerState *s = (Bcm2835PowerState *)opaque;
     uint32_t res = 0;
 
     switch (offset) {
@@ -43,7 +43,7 @@ static uint64_t bcm2835_power_read(void *opaque, hwaddr offset,
 static void bcm2835_power_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_power_state *s = (bcm2835_power_state *)opaque;
+    Bcm2835PowerState *s = (Bcm2835PowerState *)opaque;
     switch (offset) {
     case 0:
         s->pending = 1;
@@ -78,7 +78,7 @@ static const VMStateDescription vmstate_bcm2835_power = {
 static int bcm2835_power_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_power_state *s = BCM2835_POWER(dev);
+    Bcm2835PowerState *s = BCM2835_POWER(dev);
 
     s->pending = 0;
 
@@ -101,7 +101,7 @@ static void bcm2835_power_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_power_info = {
     .name          = TYPE_BCM2835_POWER,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_power_state),
+    .instance_size = sizeof(Bcm2835PowerState),
     .class_init    = bcm2835_power_class_init,
 };
 

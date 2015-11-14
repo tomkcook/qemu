@@ -21,7 +21,7 @@
 
 #define TYPE_BCM2835_TIMER "bcm2835_timer"
 #define BCM2835_TIMER(obj) \
-        OBJECT_CHECK(bcm2835_timer_state, (obj), TYPE_BCM2835_TIMER)
+        OBJECT_CHECK(Bcm2835TimerState, (obj), TYPE_BCM2835_TIMER)
 
 typedef struct {
     SysBusDevice busdev;
@@ -37,11 +37,11 @@ typedef struct {
 
     ptimer_state *timer;
     ptimer_state *frc_timer;
-} bcm2835_timer_state;
+} Bcm2835TimerState;
 
 static void timer_tick(void *opaque)
 {
-    bcm2835_timer_state *s = (bcm2835_timer_state *)opaque;
+    Bcm2835TimerState *s = (Bcm2835TimerState *)opaque;
     s->raw_irq = 1;
     if (s->control & CTRL_IRQ_EN) {
         qemu_set_irq(s->irq, 1);
@@ -49,14 +49,14 @@ static void timer_tick(void *opaque)
 }
 static void frc_timer_tick(void *opaque)
 {
-    bcm2835_timer_state *s = (bcm2835_timer_state *)opaque;
+    Bcm2835TimerState *s = (Bcm2835TimerState *)opaque;
     s->frc_value++;
 }
 
 static uint64_t bcm2835_timer_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_timer_state *s = (bcm2835_timer_state *)opaque;
+    Bcm2835TimerState *s = (Bcm2835TimerState *)opaque;
     uint32_t res = 0;
 
     assert(size == 4);
@@ -103,7 +103,7 @@ static uint64_t bcm2835_timer_read(void *opaque, hwaddr offset,
 static void bcm2835_timer_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_timer_state *s = (bcm2835_timer_state *)opaque;
+    Bcm2835TimerState *s = (Bcm2835TimerState *)opaque;
     uint32_t freq;
 
     assert(size == 4);
@@ -197,7 +197,7 @@ static int bcm2835_timer_init(SysBusDevice *sbd)
     QEMUBH *bh;
 
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_timer_state *s = BCM2835_TIMER(dev);
+    Bcm2835TimerState *s = BCM2835_TIMER(dev);
 
     s->load = 0;
     s->control = 0x3e << 16;
@@ -230,7 +230,7 @@ static void bcm2835_timer_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_timer_info = {
     .name          = TYPE_BCM2835_TIMER,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_timer_state),
+    .instance_size = sizeof(Bcm2835TimerState),
     .class_init    = bcm2835_timer_class_init,
 };
 

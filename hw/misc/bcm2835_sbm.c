@@ -10,17 +10,17 @@
 
 #define TYPE_BCM2835_SBM "bcm2835_sbm"
 #define BCM2835_SBM(obj) \
-        OBJECT_CHECK(bcm2835_sbm_state, (obj), TYPE_BCM2835_SBM)
+        OBJECT_CHECK(Bcm2835SbmState, (obj), TYPE_BCM2835_SBM)
 
 typedef struct {
     uint32_t reg[MBOX_SIZE];
     int count;
     uint32_t status;
     uint32_t config;
-} bcm2835_mbox;
+} Bcm2835Mbox;
 
 
-static void mbox_update_status(bcm2835_mbox *mb)
+static void mbox_update_status(Bcm2835Mbox *mb)
 {
     if (mb->count == 0) {
         mb->status |= ARM_MS_EMPTY;
@@ -34,7 +34,7 @@ static void mbox_update_status(bcm2835_mbox *mb)
     }
 }
 
-static void mbox_init(bcm2835_mbox *mb)
+static void mbox_init(Bcm2835Mbox *mb)
 {
     int n;
     mb->count = 0;
@@ -45,7 +45,7 @@ static void mbox_init(bcm2835_mbox *mb)
     mbox_update_status(mb);
 }
 
-static uint32_t mbox_pull(bcm2835_mbox *mb, int index)
+static uint32_t mbox_pull(Bcm2835Mbox *mb, int index)
 {
     int n;
     uint32_t val;
@@ -65,13 +65,10 @@ static uint32_t mbox_pull(bcm2835_mbox *mb, int index)
     return val;
 }
 
-static void mbox_push(bcm2835_mbox *mb, uint32_t val)
+static void mbox_push(Bcm2835Mbox *mb, uint32_t val)
 {
-
     assert(mb->count < MBOX_SIZE);
-
     mb->reg[mb->count++] = val;
-
     mbox_update_status(mb);
 }
 
@@ -81,11 +78,10 @@ typedef struct {
     int mbox_irq_disabled;
     qemu_irq arm_irq;
     int available[MBOX_CHAN_COUNT];
-    bcm2835_mbox mbox[2];
+    Bcm2835Mbox mbox[2];
+} Bcm2835SbmState;
 
-} bcm2835_sbm_state;
-
-static void bcm2835_sbm_update(bcm2835_sbm_state *s)
+static void bcm2835_sbm_update(Bcm2835SbmState *s)
 {
     int set;
     int done, n;
@@ -138,7 +134,7 @@ static void bcm2835_sbm_update(bcm2835_sbm_state *s)
 
 static void bcm2835_sbm_set_irq(void *opaque, int irq, int level)
 {
-    bcm2835_sbm_state *s = (bcm2835_sbm_state *)opaque;
+    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
     s->available[irq] = level;
     if (!s->mbox_irq_disabled) {
         bcm2835_sbm_update(s);
@@ -148,7 +144,7 @@ static void bcm2835_sbm_set_irq(void *opaque, int irq, int level)
 static uint64_t bcm2835_sbm_read(void *opaque, hwaddr offset,
                            unsigned size)
 {
-    bcm2835_sbm_state *s = (bcm2835_sbm_state *)opaque;
+    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
     uint32_t res = 0;
 
     offset &= 0xff;
@@ -191,7 +187,7 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
 {
     int ch;
 
-    bcm2835_sbm_state *s = (bcm2835_sbm_state *)opaque;
+    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
 
     offset &= 0xff;
 
@@ -253,7 +249,7 @@ static int bcm2835_sbm_init(SysBusDevice *sbd)
 {
     int n;
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_sbm_state *s = BCM2835_SBM(dev);
+    Bcm2835SbmState *s = BCM2835_SBM(dev);
 
     mbox_init(&s->mbox[0]);
     mbox_init(&s->mbox[1]);
@@ -283,7 +279,7 @@ static void bcm2835_sbm_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_sbm_info = {
     .name          = TYPE_BCM2835_SBM,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_sbm_state),
+    .instance_size = sizeof(Bcm2835SbmState),
     .class_init    = bcm2835_sbm_class_init,
 };
 

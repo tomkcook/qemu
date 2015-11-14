@@ -296,7 +296,7 @@
 
 #define TYPE_BCM2835_EMMC "bcm2835_emmc"
 #define BCM2835_EMMC(obj) \
-        OBJECT_CHECK(bcm2835_emmc_state, (obj), TYPE_BCM2835_EMMC)
+        OBJECT_CHECK(Bcm2835EmmcState, (obj), TYPE_BCM2835_EMMC)
 
 typedef struct {
     SysBusDevice busdev;
@@ -336,9 +336,9 @@ typedef struct {
     QEMUTimer *delay_timer;
     qemu_irq irq;
 
-} bcm2835_emmc_state;
+} Bcm2835EmmcState;
 
-static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
+static void bcm2835_emmc_set_irq(Bcm2835EmmcState *s)
 {
     /* the error bit must be set iff there are any other errors */
     assert(((s->interrupt & SDHCI_INT_ERROR) == 0)
@@ -351,7 +351,7 @@ static void bcm2835_emmc_set_irq(bcm2835_emmc_state *s)
     }
 }
 
-static void autocmd12(bcm2835_emmc_state *s)
+static void autocmd12(Bcm2835EmmcState *s)
 {
     SDRequest request;
     uint8_t response[16];
@@ -366,7 +366,7 @@ static void autocmd12(bcm2835_emmc_state *s)
     sd_do_command(s->card, &request, response);
 }
 
-static void autocmd23(bcm2835_emmc_state *s)
+static void autocmd23(Bcm2835EmmcState *s)
 {
     SDRequest request;
     uint8_t response[16];
@@ -383,7 +383,7 @@ static void autocmd23(bcm2835_emmc_state *s)
 
 static void delayed_completion(void *opaque)
 {
-    bcm2835_emmc_state *s = (bcm2835_emmc_state *)opaque;
+    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
 
     s->interrupt |= SDHCI_INT_DATA_END;
     autocmd12(s);
@@ -395,7 +395,7 @@ static void delayed_completion(void *opaque)
 static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_emmc_state *s = (bcm2835_emmc_state *)opaque;
+    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
     uint32_t res = 0;
     uint8_t tmp = 0;
     int set_irq = 0;
@@ -539,7 +539,7 @@ static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
 static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                         uint64_t value, unsigned size)
 {
-    bcm2835_emmc_state *s = (bcm2835_emmc_state *)opaque;
+    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
     uint8_t cmd;
     SDRequest request;
     uint8_t response[16];
@@ -767,7 +767,7 @@ static int bcm2835_emmc_init(SysBusDevice *sbd)
 {
     DriveInfo *dinfo;
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_emmc_state *s = BCM2835_EMMC(dev);
+    Bcm2835EmmcState *s = BCM2835_EMMC(dev);
 
     dinfo = drive_get(IF_SD, 0, 0);
     if (!dinfo) {
@@ -832,7 +832,7 @@ static void bcm2835_emmc_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_emmc_info = {
     .name          = TYPE_BCM2835_EMMC,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_emmc_state),
+    .instance_size = sizeof(Bcm2835EmmcState),
     .class_init    = bcm2835_emmc_class_init,
 };
 

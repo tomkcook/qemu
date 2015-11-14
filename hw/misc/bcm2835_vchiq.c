@@ -9,19 +9,19 @@
 
 #define TYPE_BCM2835_VCHIQ "bcm2835_vchiq"
 #define BCM2835_VCHIQ(obj) \
-        OBJECT_CHECK(bcm2835_vchiq_state, (obj), TYPE_BCM2835_VCHIQ)
+        OBJECT_CHECK(Bcm2835VchiqState, (obj), TYPE_BCM2835_VCHIQ)
 
 typedef struct {
     SysBusDevice busdev;
     MemoryRegion iomem;
     int pending;
     qemu_irq mbox_irq;
-} bcm2835_vchiq_state;
+} Bcm2835VchiqState;
 
 static uint64_t bcm2835_vchiq_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_vchiq_state *s = (bcm2835_vchiq_state *)opaque;
+    Bcm2835VchiqState *s = (Bcm2835VchiqState *)opaque;
     uint32_t res = 0;
 
     switch (offset) {
@@ -43,7 +43,7 @@ static uint64_t bcm2835_vchiq_read(void *opaque, hwaddr offset,
 static void bcm2835_vchiq_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_vchiq_state *s = (bcm2835_vchiq_state *)opaque;
+    Bcm2835VchiqState *s = (Bcm2835VchiqState *)opaque;
     switch (offset) {
     case 0:
         s->pending = 1;
@@ -78,7 +78,7 @@ static const VMStateDescription vmstate_bcm2835_vchiq = {
 static int bcm2835_vchiq_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_vchiq_state *s = BCM2835_VCHIQ(dev);
+    Bcm2835VchiqState *s = BCM2835_VCHIQ(dev);
 
     s->pending = 0;
 
@@ -101,7 +101,7 @@ static void bcm2835_vchiq_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_vchiq_info = {
     .name          = TYPE_BCM2835_VCHIQ,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_vchiq_state),
+    .instance_size = sizeof(Bcm2835VchiqState),
     .class_init    = bcm2835_vchiq_class_init,
 };
 

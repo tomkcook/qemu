@@ -7,7 +7,7 @@
 
 #define TYPE_BCM2835_MPHI "bcm2835_mphi"
 #define BCM2835_MPHI(obj) \
-        OBJECT_CHECK(bcm2835_mphi_state, (obj), TYPE_BCM2835_MPHI)
+        OBJECT_CHECK(Bcm2835MphiState, (obj), TYPE_BCM2835_MPHI)
 
 typedef struct {
     SysBusDevice busdev;
@@ -21,10 +21,10 @@ typedef struct {
 
     qemu_irq irq;
 
-} bcm2835_mphi_state;
+} Bcm2835MphiState;
 
 
-static void bcm2835_mphi_update_irq(bcm2835_mphi_state *s)
+static void bcm2835_mphi_update_irq(Bcm2835MphiState *s)
 {
     if (s->mphi_intstat) {
         qemu_set_irq(s->irq, 1);
@@ -36,7 +36,7 @@ static void bcm2835_mphi_update_irq(bcm2835_mphi_state *s)
 static uint64_t bcm2835_mphi_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_mphi_state *s = (bcm2835_mphi_state *)opaque;
+    Bcm2835MphiState *s = (Bcm2835MphiState *)opaque;
     uint32_t res = 0;
 
     assert(size == 4);
@@ -71,7 +71,7 @@ static uint64_t bcm2835_mphi_read(void *opaque, hwaddr offset,
 static void bcm2835_mphi_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_mphi_state *s = (bcm2835_mphi_state *)opaque;
+    Bcm2835MphiState *s = (Bcm2835MphiState *)opaque;
     int set_irq = 0;
 
     assert(size == 4);
@@ -136,7 +136,7 @@ static const VMStateDescription vmstate_bcm2835_mphi = {
 static int bcm2835_mphi_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_mphi_state *s = BCM2835_MPHI(dev);
+    Bcm2835MphiState *s = BCM2835_MPHI(dev);
 
     s->mphi_base = 0;
     s->mphi_ctrl = 0;
@@ -164,7 +164,7 @@ static void bcm2835_mphi_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_mphi_info = {
     .name          = TYPE_BCM2835_MPHI,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_mphi_state),
+    .instance_size = sizeof(Bcm2835MphiState),
     .class_init    = bcm2835_mphi_class_init,
 };
 

@@ -19,9 +19,9 @@
 #include "sysemu/char.h"
 
 #define TYPE_BCM2835_AUX "bcm2835_aux"
-#define BCM2835_AUX(obj) OBJECT_CHECK(BCM2835_AUXState, (obj), TYPE_BCM2835_AUX)
+#define BCM2835_AUX(obj) OBJECT_CHECK(Bcm2835AuxState, (obj), TYPE_BCM2835_AUX)
 
-typedef struct BCM2835_AUXState {
+typedef struct {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
@@ -32,9 +32,9 @@ typedef struct BCM2835_AUXState {
     CharDriverState *chr;
     qemu_irq irq;
     const unsigned char *id;
-} BCM2835_AUXState;
+} Bcm2835AuxState;
 
-static void bcm2835_aux_update(BCM2835_AUXState *s)
+static void bcm2835_aux_update(Bcm2835AuxState *s)
 {
     bool status = (s->rx_int_enable && s->read_count != 0) || s->tx_int_enable;
     qemu_set_irq(s->irq, status);
@@ -43,7 +43,7 @@ static void bcm2835_aux_update(BCM2835_AUXState *s)
 static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
                            unsigned size)
 {
-    BCM2835_AUXState *s = (BCM2835_AUXState *)opaque;
+    Bcm2835AuxState *s = (Bcm2835AuxState *)opaque;
     uint32_t c, res;
 
     switch (offset >> 2) {
@@ -109,7 +109,7 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
 static void bcm2835_aux_write(void *opaque, hwaddr offset,
                         uint64_t value, unsigned size)
 {
-    BCM2835_AUXState *s = (BCM2835_AUXState *)opaque;
+    Bcm2835AuxState *s = (Bcm2835AuxState *)opaque;
     unsigned char ch;
 
     switch (offset >> 2) {
@@ -148,14 +148,14 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
 
 static int bcm2835_aux_can_receive(void *opaque)
 {
-    BCM2835_AUXState *s = (BCM2835_AUXState *)opaque;
+    Bcm2835AuxState *s = (Bcm2835AuxState *)opaque;
 
     return s->read_count < 8;
 }
 
 static void bcm2835_aux_put_fifo(void *opaque, uint32_t value)
 {
-    BCM2835_AUXState *s = (BCM2835_AUXState *)opaque;
+    Bcm2835AuxState *s = (Bcm2835AuxState *)opaque;
     int slot;
 
     slot = s->read_pos + s->read_count;
@@ -193,9 +193,9 @@ static const VMStateDescription vmstate_bcm2835_aux = {
     .version_id = 2,
     .minimum_version_id = 2,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(read_fifo, BCM2835_AUXState, 8),
-        VMSTATE_INT32(read_pos, BCM2835_AUXState),
-        VMSTATE_INT32(read_count, BCM2835_AUXState),
+        VMSTATE_UINT32_ARRAY(read_fifo, Bcm2835AuxState, 8),
+        VMSTATE_INT32(read_pos, Bcm2835AuxState),
+        VMSTATE_INT32(read_count, Bcm2835AuxState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -203,7 +203,7 @@ static const VMStateDescription vmstate_bcm2835_aux = {
 static void bcm2835_aux_init(Object *obj)
 {
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    BCM2835_AUXState *s = BCM2835_AUX(obj);
+    Bcm2835AuxState *s = BCM2835_AUX(obj);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_aux_ops, s,
                           "bcm2835_aux", 0x100);
@@ -213,7 +213,7 @@ static void bcm2835_aux_init(Object *obj)
 
 static void bcm2835_aux_realize(DeviceState *dev, Error **errp)
 {
-    BCM2835_AUXState *s = BCM2835_AUX(dev);
+    Bcm2835AuxState *s = BCM2835_AUX(dev);
 
     /* FIXME use a qdev chardev prop instead of qemu_char_get_next_serial() */
     s->chr = qemu_char_get_next_serial();
@@ -237,7 +237,7 @@ static void bcm2835_aux_class_init(ObjectClass *oc, void *data)
 static const TypeInfo bcm2835_aux_info = {
     .name          = TYPE_BCM2835_AUX,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(BCM2835_AUXState),
+    .instance_size = sizeof(Bcm2835AuxState),
     .instance_init = bcm2835_aux_init,
     .class_init    = bcm2835_aux_class_init,
 };

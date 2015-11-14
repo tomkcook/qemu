@@ -24,12 +24,12 @@
 
 #define TYPE_BCM2835_USB "bcm2835_usb"
 #define BCM2835_USB(obj) \
-        OBJECT_CHECK(bcm2835_usb_state, (obj), TYPE_BCM2835_USB)
+        OBJECT_CHECK(Bcm2835UsbState, (obj), TYPE_BCM2835_USB)
 
-typedef struct bcm2835_usb_state_struct bcm2835_usb_state;
+typedef struct Bcm2835UsbState Bcm2835UsbState;
 
 typedef struct {
-    bcm2835_usb_state *parent;
+    Bcm2835UsbState *parent;
     int index;
 
     uint32_t hcchar;
@@ -43,9 +43,9 @@ typedef struct {
 
     USBPacket packet;
     uint8_t buffer[8192];
-} bcm2835_usb_hc_state;
+} Bcm2835UsbHcState;
 
-struct bcm2835_usb_state_struct {
+struct Bcm2835UsbState {
     SysBusDevice busdev;
     MemoryRegion iomem;
     AddressSpace *dma;
@@ -79,13 +79,12 @@ struct bcm2835_usb_state_struct {
     uint32_t hptxsts;
     uint32_t guid;
 
-    bcm2835_usb_hc_state hchan[NB_HCHANS];
+    Bcm2835UsbHcState hchan[NB_HCHANS];
 
     qemu_irq irq;
-
 };
 
-static void bcm2835_usb_update_irq(bcm2835_usb_state *s)
+static void bcm2835_usb_update_irq(Bcm2835UsbState *s)
 {
     int n;
 
@@ -124,7 +123,7 @@ static void bcm2835_usb_update_irq(bcm2835_usb_state *s)
 
 static void bcm2835_usb_sof_tick(void *opaque)
 {
-    bcm2835_usb_state *s = (bcm2835_usb_state *)opaque;
+    Bcm2835UsbState *s = (Bcm2835UsbState *)opaque;
     int64_t now;
 
     uint32_t num = (s->hfnum & 0x3fff) + SOF_INCR;
@@ -137,7 +136,7 @@ static void bcm2835_usb_sof_tick(void *opaque)
     timer_mod(s->sof_timer, now + SOF_DELAY);
 }
 
-static void channel_enable(bcm2835_usb_hc_state *c)
+static void channel_enable(Bcm2835UsbHcState *c)
 {
     USBEndpoint *ep;
     USBDevice *dev;
@@ -206,10 +205,10 @@ static void channel_enable(bcm2835_usb_hc_state *c)
 
 }
 
-static uint32_t bcm2835_usb_hchan_read(bcm2835_usb_state *s, int ch,
+static uint32_t bcm2835_usb_hchan_read(Bcm2835UsbState *s, int ch,
     int offset)
 {
-    bcm2835_usb_hc_state *c = &s->hchan[ch];
+    Bcm2835UsbHcState *c = &s->hchan[ch];
     uint32_t res;
 
     switch (offset) {
@@ -240,10 +239,10 @@ static uint32_t bcm2835_usb_hchan_read(bcm2835_usb_state *s, int ch,
     }
     return res;
 }
-static void bcm2835_usb_hchan_write(bcm2835_usb_state *s, int ch,
+static void bcm2835_usb_hchan_write(Bcm2835UsbState *s, int ch,
     int offset, uint32_t value, int *pset_irq)
 {
-    bcm2835_usb_hc_state *c = &s->hchan[ch];
+    Bcm2835UsbHcState *c = &s->hchan[ch];
 
     switch (offset) {
     case 0x0:
@@ -284,7 +283,7 @@ static void bcm2835_usb_hchan_write(bcm2835_usb_state *s, int ch,
 static uint64_t bcm2835_usb_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_usb_state *s = (bcm2835_usb_state *)opaque;
+    Bcm2835UsbState *s = (Bcm2835UsbState *)opaque;
     uint32_t res = 0;
     int i;
 
@@ -398,7 +397,7 @@ static uint64_t bcm2835_usb_read(void *opaque, hwaddr offset,
 static void bcm2835_usb_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_usb_state *s = (bcm2835_usb_state *)opaque;
+    Bcm2835UsbState *s = (Bcm2835UsbState *)opaque;
 
     int i;
     int set_irq = 0;
@@ -527,7 +526,7 @@ static void bcm2835_usb_write(void *opaque, hwaddr offset,
 
 static void bcm2835_usb_attach(USBPort *port1)
 {
-    bcm2835_usb_state *s = port1->opaque;
+    Bcm2835UsbState *s = port1->opaque;
     s->attached = 1;
 }
 static void bcm2835_usb_detach(USBPort *port1)
@@ -575,7 +574,7 @@ static int bcm2835_usb_init(SysBusDevice *sbd)
 {
     int n;
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_usb_state *s = BCM2835_USB(dev);
+    Bcm2835UsbState *s = BCM2835_USB(dev);
 
     s->dma = &address_space_memory;
 
@@ -644,7 +643,7 @@ static void bcm2835_usb_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_usb_info = {
     .name          = TYPE_BCM2835_USB,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_usb_state),
+    .instance_size = sizeof(Bcm2835UsbState),
     .class_init    = bcm2835_usb_class_init,
 };
 

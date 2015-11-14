@@ -36,10 +36,10 @@
 
 #define FRAMESKIP 1
 
-bcm2835_fb_type bcm2835_fb;
+Bcm2835Fb bcm2835_fb;
 
 #define TYPE_BCM2835_FB "bcm2835_fb"
-#define BCM2835_FB(obj) OBJECT_CHECK(bcm2835_fb_state, (obj), TYPE_BCM2835_FB)
+#define BCM2835_FB(obj) OBJECT_CHECK(Bcm2835FbState, (obj), TYPE_BCM2835_FB)
 
 typedef struct {
     SysBusDevice busdev;
@@ -47,7 +47,7 @@ typedef struct {
     MemoryRegionSection fbsection;
     int pending;
     qemu_irq mbox_irq;
-} bcm2835_fb_state;
+} Bcm2835FbState;
 
 static void fb_invalidate_display(void *opaque)
 {
@@ -139,7 +139,7 @@ static void draw_line_src16(void *opaque, uint8_t *d, const uint8_t *s,
 
 static void fb_update_display(void *opaque)
 {
-    bcm2835_fb_state *s = (bcm2835_fb_state *)opaque;
+    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
     int first = 0;
     int last = 0;
     drawfn fn;
@@ -222,7 +222,7 @@ static void fb_update_display(void *opaque)
 
 
 
-static void bcm2835_fb_mbox_push(bcm2835_fb_state *s, uint32_t value)
+static void bcm2835_fb_mbox_push(Bcm2835FbState *s, uint32_t value)
 {
     value &= ~0xf;
 
@@ -262,7 +262,7 @@ static void bcm2835_fb_mbox_push(bcm2835_fb_state *s, uint32_t value)
 static uint64_t bcm2835_fb_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_fb_state *s = (bcm2835_fb_state *)opaque;
+    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
     uint32_t res = 0;
 
     switch (offset) {
@@ -284,7 +284,7 @@ static uint64_t bcm2835_fb_read(void *opaque, hwaddr offset,
 static void bcm2835_fb_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_fb_state *s = (bcm2835_fb_state *)opaque;
+    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
     switch (offset) {
     case 0:
         if (!s->pending) {
@@ -324,7 +324,7 @@ static const GraphicHwOps vgafb_ops = {
 static int bcm2835_fb_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_fb_state *s = BCM2835_FB(dev);
+    Bcm2835FbState *s = BCM2835_FB(dev);
 
     s->pending = 0;
 
@@ -372,7 +372,7 @@ static void bcm2835_fb_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_fb_info = {
     .name          = TYPE_BCM2835_FB,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_fb_state),
+    .instance_size = sizeof(Bcm2835FbState),
     .class_init    = bcm2835_fb_class_init,
 };
 

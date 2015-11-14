@@ -59,27 +59,27 @@ typedef struct {
     uint32_t debug;
 
     qemu_irq irq;
-} dmachan;
+} DmaChan;
 
 #define TYPE_BCM2835_DMA "bcm2835_dma"
 #define BCM2835_DMA(obj) \
-        OBJECT_CHECK(bcm2835_dma_state, (obj), TYPE_BCM2835_DMA)
+        OBJECT_CHECK(Bcm2835DmaState, (obj), TYPE_BCM2835_DMA)
 
 typedef struct {
     SysBusDevice busdev;
     MemoryRegion iomem0_14;
     MemoryRegion iomem15;
 
-    dmachan chan[16];
+    DmaChan chan[16];
     uint32_t int_status;
     uint32_t enable;
 
-} bcm2835_dma_state;
+} Bcm2835DmaState;
 
 
-static void bcm2835_dma_update(bcm2835_dma_state *s, int c)
+static void bcm2835_dma_update(Bcm2835DmaState *s, int c)
 {
-    dmachan *ch = &s->chan[c];
+    DmaChan *ch = &s->chan[c];
     uint32_t data;
 
     if (!(s->enable & (1 << c))) {
@@ -131,10 +131,10 @@ static void bcm2835_dma_update(bcm2835_dma_state *s, int c)
     ch->cs &= ~BCM2708_DMA_ACTIVE;
 }
 
-static uint64_t bcm2835_dma_read(bcm2835_dma_state *s, hwaddr offset,
+static uint64_t bcm2835_dma_read(Bcm2835DmaState *s, hwaddr offset,
     unsigned size, int c)
 {
-    dmachan *ch = &s->chan[c];
+    DmaChan *ch = &s->chan[c];
     uint32_t res = 0;
 
     assert(size == 4);
@@ -175,10 +175,10 @@ static uint64_t bcm2835_dma_read(bcm2835_dma_state *s, hwaddr offset,
     return res;
 }
 
-static void bcm2835_dma_write(bcm2835_dma_state *s, hwaddr offset,
+static void bcm2835_dma_write(Bcm2835DmaState *s, hwaddr offset,
     uint64_t value, unsigned size, int c)
 {
-    dmachan *ch = &s->chan[c];
+    DmaChan *ch = &s->chan[c];
     uint32_t oldcs = ch->cs;
 
     assert(size == 4);
@@ -241,7 +241,7 @@ static void bcm2835_dma_write(bcm2835_dma_state *s, hwaddr offset,
 static uint64_t bcm2835_dma0_14_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_dma_state *s = (bcm2835_dma_state *)opaque;
+    Bcm2835DmaState *s = (Bcm2835DmaState *)opaque;
     if (offset == 0xfe0) {
         return s->int_status;
     }
@@ -255,14 +255,14 @@ static uint64_t bcm2835_dma0_14_read(void *opaque, hwaddr offset,
 static uint64_t bcm2835_dma15_read(void *opaque, hwaddr offset,
                            unsigned size)
 {
-    return bcm2835_dma_read((bcm2835_dma_state *)opaque, (offset & 0xff),
+    return bcm2835_dma_read((Bcm2835DmaState *)opaque, (offset & 0xff),
         size, 15);
 }
 
 static void bcm2835_dma0_14_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_dma_state *s = (bcm2835_dma_state *)opaque;
+    Bcm2835DmaState *s = (Bcm2835DmaState *)opaque;
     if (offset == 0xfe0) {
         return;
     }
@@ -277,7 +277,7 @@ static void bcm2835_dma0_14_write(void *opaque, hwaddr offset,
 static void bcm2835_dma15_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    bcm2835_dma_write((bcm2835_dma_state *)opaque, (offset & 0xff),
+    bcm2835_dma_write((Bcm2835DmaState *)opaque, (offset & 0xff),
         value, size, 15);
 }
 
@@ -308,7 +308,7 @@ static int bcm2835_dma_init(SysBusDevice *sbd)
 {
     int n;
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_dma_state *s = BCM2835_DMA(dev);
+    Bcm2835DmaState *s = BCM2835_DMA(dev);
 
     s->enable = 0xffff;
     s->int_status = 0;
@@ -340,7 +340,7 @@ static void bcm2835_dma_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_dma_info = {
     .name          = TYPE_BCM2835_DMA,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_dma_state),
+    .instance_size = sizeof(Bcm2835DmaState),
     .class_init    = bcm2835_dma_class_init,
 };
 

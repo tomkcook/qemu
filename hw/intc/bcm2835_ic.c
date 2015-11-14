@@ -21,10 +21,10 @@
 #define IR_2 1
 
 #define TYPE_BCM2835_IC "bcm2835_ic"
-#define BCM2835_IC(obj) OBJECT_CHECK(bcm2835_ic_state, (obj), TYPE_BCM2835_IC)
+#define BCM2835_IC(obj) OBJECT_CHECK(Bcm2835IcState, (obj), TYPE_BCM2835_IC)
 
 
-typedef struct bcm2835_ic_state {
+typedef struct Bcm2835IcState {
     SysBusDevice busdev;
     MemoryRegion iomem;
 
@@ -34,10 +34,10 @@ typedef struct bcm2835_ic_state {
     int fiq_select;
     qemu_irq irq;
     qemu_irq fiq;
-} bcm2835_ic_state;
+} Bcm2835IcState;
 
 /* Update interrupts.  */
-static void bcm2835_ic_update(bcm2835_ic_state *s)
+static void bcm2835_ic_update(Bcm2835IcState *s)
 {
     int set;
     int i;
@@ -58,7 +58,7 @@ static void bcm2835_ic_update(bcm2835_ic_state *s)
 
 static void bcm2835_ic_set_irq(void *opaque, int irq, int level)
 {
-    bcm2835_ic_state *s = (bcm2835_ic_state *)opaque;
+    Bcm2835IcState *s = (Bcm2835IcState *)opaque;
 
     if (irq >= 0 && irq <= 71) {
         if (level) {
@@ -79,7 +79,7 @@ static const int irq_dups[] = { 7, 9, 10, 18, 19, 53, 54, 55, 56, 57, 62, -1 };
 static uint64_t bcm2835_ic_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    bcm2835_ic_state *s = (bcm2835_ic_state *)opaque;
+    Bcm2835IcState *s = (Bcm2835IcState *)opaque;
     int i;
     int p = 0;
     uint32_t res = 0;
@@ -144,7 +144,7 @@ static uint64_t bcm2835_ic_read(void *opaque, hwaddr offset,
 static void bcm2835_ic_write(void *opaque, hwaddr offset,
     uint64_t val, unsigned size)
 {
-    bcm2835_ic_state *s = (bcm2835_ic_state *)opaque;
+    Bcm2835IcState *s = (Bcm2835IcState *)opaque;
 
     switch (offset) {
     case 0x0C:  /* FIQ register */
@@ -185,7 +185,7 @@ static const MemoryRegionOps bcm2835_ic_ops = {
 
 static void bcm2835_ic_reset(DeviceState *d)
 {
-    bcm2835_ic_state *s = BCM2835_IC(d);
+    Bcm2835IcState *s = BCM2835_IC(d);
     int i;
 
     for (i = 0; i < 3; i++) {
@@ -198,7 +198,7 @@ static void bcm2835_ic_reset(DeviceState *d)
 static int bcm2835_ic_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
-    bcm2835_ic_state *s = BCM2835_IC(dev);
+    Bcm2835IcState *s = BCM2835_IC(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_ic_ops, s,
         TYPE_BCM2835_IC, 0x200);
@@ -215,10 +215,10 @@ static const VMStateDescription vmstate_bcm2835_ic = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(level, bcm2835_ic_state, 3),
-        VMSTATE_UINT32_ARRAY(irq_enable, bcm2835_ic_state, 3),
-        VMSTATE_INT32(fiq_enable, bcm2835_ic_state),
-        VMSTATE_INT32(fiq_select, bcm2835_ic_state),
+        VMSTATE_UINT32_ARRAY(level, Bcm2835IcState, 3),
+        VMSTATE_UINT32_ARRAY(irq_enable, Bcm2835IcState, 3),
+        VMSTATE_INT32(fiq_enable, Bcm2835IcState),
+        VMSTATE_INT32(fiq_select, Bcm2835IcState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -236,7 +236,7 @@ static void bcm2835_ic_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_ic_info = {
     .name          = TYPE_BCM2835_IC,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(bcm2835_ic_state),
+    .instance_size = sizeof(Bcm2835IcState),
     .class_init    = bcm2835_ic_class_init,
 };
 
