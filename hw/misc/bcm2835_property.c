@@ -48,6 +48,7 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
     int n;
     int resplen;
     uint32_t offset, length, color;
+    uint32_t tmp;
 
     value &= ~0xf;
 
@@ -108,6 +109,13 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             stl_phys(&address_space_memory, value + 12, bcm2835_vcram_base);
             /* size */
             stl_phys(&address_space_memory, value + 16, VCRAM_SIZE);
+            resplen = 8;
+            break;
+        case 0x00028001: /* Set power state */
+            /* Assume that whatever device they asked for exists,
+             * and we'll just claim we set it to the desired state */
+            tmp = ldl_phys(&address_space_memory, value + 16);
+            stl_phys(&address_space_memory, value + 16, (tmp & 1));
             resplen = 8;
             break;
 
