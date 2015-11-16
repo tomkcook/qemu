@@ -171,6 +171,9 @@ static uint64_t bcm2835_sbm_read(void *opaque, hwaddr offset,
     case 0x9c:  /* MAIL0_CONFIG */
         res = s->mbox[0].config;
         break;
+    case 0xb8:  /* MAIL1_STATUS */
+        res = s->mbox[1].status;
+        break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
             "bcm2835_sbm_read: Bad offset %x\n", (int)offset);
