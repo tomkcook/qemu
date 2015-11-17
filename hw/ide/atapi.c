@@ -108,27 +108,30 @@ static void cd_data_to_raw(uint8_t *buf, int lba)
 static int cd_read_sector(IDEState *s, int lba, uint8_t *buf, int sector_size)
 {
     int ret;
+    block_acct_start(blk_get_stats(s->blk), &s->acct,
+                     4 * BDRV_SECTOR_SIZE, BLOCK_ACCT_READ);
 
     switch(sector_size) {
     case 2048:
-        block_acct_start(blk_get_stats(s->blk), &s->acct,
-                         4 * BDRV_SECTOR_SIZE, BLOCK_ACCT_READ);
         ret = blk_read(s->blk, (int64_t)lba << 2, buf, 4);
-        block_acct_done(blk_get_stats(s->blk), &s->acct);
         break;
     case 2352:
-        block_acct_start(blk_get_stats(s->blk), &s->acct,
-                         4 * BDRV_SECTOR_SIZE, BLOCK_ACCT_READ);
         ret = blk_read(s->blk, (int64_t)lba << 2, buf + 16, 4);
-        block_acct_done(blk_get_stats(s->blk), &s->acct);
-        if (ret < 0)
-            return ret;
-        cd_data_to_raw(buf, lba);
+        if (ret >= 0) {
+            cd_data_to_raw(buf, lba);
+        }
         break;
     default:
-        ret = -EIO;
-        break;
+        block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_READ);
+        return -EIO;
     }
+
+    if (ret < 0) {
+        block_acct_failed(blk_get_stats(s->blk), &s->acct);
+    } else {
+        block_acct_done(blk_get_stats(s->blk), &s->acct);
+    }
+
     return ret;
 }
 
@@ -165,6 +168,17 @@ void ide_atapi_io_error(IDEState *s, int ret)
         ide_atapi_cmd_error(s, ILLEGAL_REQUEST,
                             ASC_LOGICAL_BLOCK_OOR);
     }
+}
+
+static uint16_t atapi_byte_count_limit(IDEState *s)
+{
+    uint16_t bcl;
+
+    bcl = s->lcyl | (s->hcyl << 8);
+    if (bcl == 0xffff) {
+        return 0xfffe;
+    }
+    return bcl;
 }
 
 /* The whole ATAPI transfer logic is handled in this function */
@@ -209,12 +223,10 @@ void ide_atapi_cmd_reply_end(IDEState *s)
         } else {
             /* a new transfer is needed */
             s->nsector = (s->nsector & ~7) | ATAPI_INT_REASON_IO;
-            byte_count_limit = s->lcyl | (s->hcyl << 8);
+            byte_count_limit = atapi_byte_count_limit(s);
 #ifdef DEBUG_IDE_ATAPI
             printf("byte_count_limit=%d\n", byte_count_limit);
 #endif
-            if (byte_count_limit == 0xffff)
-                byte_count_limit--;
             size = s->packet_transfer_size;
             if (size > byte_count_limit) {
                 /* byte count limit must be even if this case */
@@ -357,7 +369,11 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
     return;
 
 eot:
-    block_acct_done(blk_get_stats(s->blk), &s->acct);
+    if (ret < 0) {
+        block_acct_failed(blk_get_stats(s->blk), &s->acct);
+    } else {
+        block_acct_done(blk_get_stats(s->blk), &s->acct);
+    }
     ide_set_inactive(s, false);
 }
 
@@ -1179,7 +1195,7 @@ enum {
     NONDATA = 0x04,
 };
 
-static const struct {
+static const struct AtapiCmd {
     void (*handler)(IDEState *s, uint8_t *buf);
     int flags;
 } atapi_cmd_table[0x100] = {
@@ -1206,9 +1222,9 @@ static const struct {
 
 void ide_atapi_cmd(IDEState *s)
 {
-    uint8_t *buf;
+    uint8_t *buf = s->io_buffer;
+    const struct AtapiCmd *cmd = &atapi_cmd_table[s->io_buffer[0]];
 
-    buf = s->io_buffer;
 #ifdef DEBUG_IDE_ATAPI
     {
         int i;
@@ -1219,14 +1235,14 @@ void ide_atapi_cmd(IDEState *s)
         printf("\n");
     }
 #endif
+
     /*
      * If there's a UNIT_ATTENTION condition pending, only command flagged with
      * ALLOW_UA are allowed to complete. with other commands getting a CHECK
      * condition response unless a higher priority status, defined by the drive
      * here, is pending.
      */
-    if (s->sense_key == UNIT_ATTENTION &&
-        !(atapi_cmd_table[s->io_buffer[0]].flags & ALLOW_UA)) {
+    if (s->sense_key == UNIT_ATTENTION && !(cmd->flags & ALLOW_UA)) {
         ide_atapi_cmd_check_status(s);
         return;
     }
@@ -1237,7 +1253,7 @@ void ide_atapi_cmd(IDEState *s)
      * GET_EVENT_STATUS_NOTIFICATION to detect such tray open/close
      * states rely on this behavior.
      */
-    if (!(atapi_cmd_table[s->io_buffer[0]].flags & ALLOW_UA) &&
+    if (!(cmd->flags & ALLOW_UA) &&
         !s->tray_open && blk_is_inserted(s->blk) && s->cdrom_changed) {
 
         if (s->cdrom_changed == 1) {
@@ -1252,7 +1268,7 @@ void ide_atapi_cmd(IDEState *s)
     }
 
     /* Report a Not Ready condition if appropriate for the command */
-    if ((atapi_cmd_table[s->io_buffer[0]].flags & CHECK_READY) &&
+    if ((cmd->flags & CHECK_READY) &&
         (!media_present(s) || !blk_is_inserted(s->blk)))
     {
         ide_atapi_cmd_error(s, NOT_READY, ASC_MEDIUM_NOT_PRESENT);
@@ -1263,10 +1279,9 @@ void ide_atapi_cmd(IDEState *s)
      * If this is a data-transferring PIO command and BCL is 0,
      * we abort at the /ATA/ level, not the ATAPI level.
      * See ATA8 ACS3 section 7.17.6.49 and 7.21.5 */
-    if (!(atapi_cmd_table[s->io_buffer[0]].flags & NONDATA)) {
+    if (cmd->handler && !(cmd->flags & NONDATA)) {
         /* TODO: Check IDENTIFY data word 125 for default BCL (currently 0) */
-        uint16_t byte_count_limit = s->lcyl | (s->hcyl << 8);
-        if (!(byte_count_limit || s->atapi_dma)) {
+        if (!(atapi_byte_count_limit(s) || s->atapi_dma)) {
             /* TODO: Move abort back into core.c and make static inline again */
             ide_abort_command(s);
             return;
@@ -1274,8 +1289,8 @@ void ide_atapi_cmd(IDEState *s)
     }
 
     /* Execute the command */
-    if (atapi_cmd_table[s->io_buffer[0]].handler) {
-        atapi_cmd_table[s->io_buffer[0]].handler(s, buf);
+    if (cmd->handler) {
+        cmd->handler(s, buf);
         return;
     }
 

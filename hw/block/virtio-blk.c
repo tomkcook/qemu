@@ -76,7 +76,7 @@ static int virtio_blk_handle_rw_error(VirtIOBlockReq *req, int error,
         s->rq = req;
     } else if (action == BLOCK_ERROR_ACTION_REPORT) {
         virtio_blk_req_complete(req, VIRTIO_BLK_S_IOERR);
-        block_acct_done(blk_get_stats(s->blk), &req->acct);
+        block_acct_failed(blk_get_stats(s->blk), &req->acct);
         virtio_blk_free_request(req);
     }
 
@@ -112,6 +112,10 @@ static void virtio_blk_rw_complete(void *opaque, int ret)
              * happen on the other side of the migration).
              */
             if (virtio_blk_handle_rw_error(req, -ret, is_read)) {
+                /* Break the link in case the next request is added to the
+                 * restart queue and is going to be parsed from the ring again.
+                 */
+                req->mr_next = NULL;
                 continue;
             }
         }
@@ -536,6 +540,8 @@ void virtio_blk_handle_request(VirtIOBlockReq *req, MultiReqBuffer *mrb)
         if (!virtio_blk_sect_range_ok(req->dev, req->sector_num,
                                       req->qiov.size)) {
             virtio_blk_req_complete(req, VIRTIO_BLK_S_IOERR);
+            block_acct_invalid(blk_get_stats(req->dev->blk),
+                               is_write ? BLOCK_ACCT_WRITE : BLOCK_ACCT_READ);
             virtio_blk_free_request(req);
             return;
         }

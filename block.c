@@ -1801,8 +1801,7 @@ int bdrv_reopen_prepare(BDRVReopenState *reopen_state, BlockReopenQueue *queue,
 
     ret = bdrv_flush(reopen_state->bs);
     if (ret) {
-        error_set(errp, ERROR_CLASS_GENERIC_ERROR, "Error (%s) flushing drive",
-                  strerror(-ret));
+        error_setg_errno(errp, -ret, "Error flushing drive");
         goto error;
     }
 
@@ -3405,10 +3404,25 @@ void bdrv_reset_dirty_bitmap(BdrvDirtyBitmap *bitmap,
     hbitmap_reset(bitmap->bitmap, cur_sector, nr_sectors);
 }
 
-void bdrv_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap)
+void bdrv_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap **out)
 {
     assert(bdrv_dirty_bitmap_enabled(bitmap));
-    hbitmap_reset_all(bitmap->bitmap);
+    if (!out) {
+        hbitmap_reset_all(bitmap->bitmap);
+    } else {
+        HBitmap *backup = bitmap->bitmap;
+        bitmap->bitmap = hbitmap_alloc(bitmap->size,
+                                       hbitmap_granularity(backup));
+        *out = backup;
+    }
+}
+
+void bdrv_undo_clear_dirty_bitmap(BdrvDirtyBitmap *bitmap, HBitmap *in)
+{
+    HBitmap *tmp = bitmap->bitmap;
+    assert(bdrv_dirty_bitmap_enabled(bitmap));
+    bitmap->bitmap = in;
+    hbitmap_free(tmp);
 }
 
 void bdrv_set_dirty(BlockDriverState *bs, int64_t cur_sector,
