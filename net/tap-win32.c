@@ -475,7 +475,7 @@ static int tap_win32_write(tap_win32_overlapped_t *overlapped,
 #endif
 
     result = WriteFile(overlapped->handle, buffer, size,
-                       NULL, &overlapped->write_overlapped);
+                       &write_size, &overlapped->write_overlapped);
 
 #ifdef TUN_ASYNCHRONOUS_WRITES
     /* FIXME: we can't sensibly set write_size here, without waiting
@@ -498,11 +498,11 @@ static int tap_win32_write(tap_win32_overlapped_t *overlapped,
 
     if (!result) {
 #ifdef DEBUG_TAP_WIN32
-        LPVOID msgbuf;
+        LPTSTR msgbuf;
         error = GetLastError();
         FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
                       NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                      (LPTSTR)&msgbuf, 0, NULL);
+                      &msgbuf, 0, NULL);
         fprintf(stderr, "Tap-Win32: Error WriteFile %d - %s\n", error, msgbuf);
         LocalFree(msgbuf);
 #endif
