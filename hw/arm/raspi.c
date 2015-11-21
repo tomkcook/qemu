@@ -19,6 +19,8 @@
  * This code is licensed under the GPL.
  */
 
+#include "hw/arm/bcm2836.h"
+#include "qemu/error-report.h"
 #include "hw/boards.h"
 #include "hw/devices.h"
 #include "hw/loader.h"
@@ -29,7 +31,7 @@
 #include "hw/arm/raspi_platform.h"
 #include "hw/arm/bcm2835_common.h"
 
-#define BUS_ADDR(x) ((x) + 0x7e000000)
+/* #define BUS_ADDR(x) ((x) + 0x7e000000) */
 
 /* Globals */
 hwaddr bcm2835_vcram_base;
@@ -110,6 +112,7 @@ static uint32_t bootloader_100[] = {
     0x00000000  /* ATAG_NONE */
 };
 
+#if 0
 static void init_pi2_cpus(const char *cpu_model, DeviceState *icdev)
 {
     ObjectClass *cpu_oc = cpu_class_by_name(TYPE_ARM_CPU, cpu_model);
@@ -150,14 +153,13 @@ static void init_pi2_cpus(const char *cpu_model, DeviceState *icdev)
             = qdev_get_gpio_in_named(icdev, "cntvirq", 0);
     }
 }
+#endif
 
-static void init_ram(ram_addr_t ram_size)
+static void init_ram(Object *parent, ram_addr_t ram_size)
 {
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *bcm2835_ram = g_new(MemoryRegion, 1);
-    MemoryRegion *bcm2835_vcram = g_new(MemoryRegion, 1);
-    MemoryRegion *ram_alias = g_new(MemoryRegion, 4);
-    MemoryRegion *vcram_alias = g_new(MemoryRegion, 4);
+    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *ram_alias = g_new(MemoryRegion, 3);
     int n;
 
     bcm2835_vcram_base = ram_size - VCRAM_SIZE;
@@ -165,26 +167,17 @@ static void init_ram(ram_addr_t ram_size)
     /* Write real RAM size in ATAG structure */
     bootloader_100[7] = bcm2835_vcram_base;
 
-    memory_region_allocate_system_memory(bcm2835_ram, NULL, "raspi.ram",
-                                         bcm2835_vcram_base);
+    memory_region_allocate_system_memory(ram, parent, "ram", ram_size);
+    memory_region_add_subregion_overlap(sysmem, 0, ram, 0);
 
-    memory_region_allocate_system_memory(bcm2835_vcram, NULL, "vcram.ram",
-                                         VCRAM_SIZE);
-
-    memory_region_add_subregion(sysmem, 0, bcm2835_ram);
-    memory_region_add_subregion(sysmem, bcm2835_vcram_base, bcm2835_vcram);
-
-    for (n = 1; n < 4; n++) {
-        memory_region_init_alias(&ram_alias[n], NULL, NULL, bcm2835_ram, 0,
-                                 bcm2835_vcram_base);
-        memory_region_init_alias(&vcram_alias[n], NULL, NULL, bcm2835_vcram, 0,
-                                 VCRAM_SIZE);
-        memory_region_add_subregion(sysmem, n << 30, &ram_alias[n]);
-        memory_region_add_subregion(sysmem, (n << 30) + bcm2835_vcram_base,
-                                    &vcram_alias[n]);
+    for (n = 0; n < 3; n++) {
+        memory_region_init_alias(&ram_alias[n], parent, "ram_alias", ram, 0,
+                                 ram_size);
+        memory_region_add_subregion(sysmem, (hwaddr)(n+1) << 30, &ram_alias[n]);
     }
 }
 
+#if 0
 static void init_common_devices(hwaddr peribase, qemu_irq cpuirq,
                                 qemu_irq cpufiq)
 {
@@ -392,6 +385,7 @@ static void init_common_devices(hwaddr peribase, qemu_irq cpuirq,
     sysbus_connect_irq(s, 11, pic[INTERRUPT_DMA11]);
     sysbus_connect_irq(s, 12, pic[INTERRUPT_DMA12]);
 }
+#endif
 
 static void setup_boot(MachineState *machine, int board_id,
                        const uint32_t *bootloader, size_t bootloader_len)
@@ -441,6 +435,7 @@ static void setup_boot(MachineState *machine, int board_id,
     arm_load_kernel(ARM_CPU(first_cpu), &raspi_binfo);
 }
 
+#if 0
 static void raspi_init(MachineState *machine)
 {
     ARMCPU *cpu;
@@ -451,7 +446,7 @@ static void raspi_init(MachineState *machine)
         exit(1);
     }
 
-    init_ram(machine->ram_size);
+    init_ram(OBJECT(machine), machine->ram_size);
 
     init_common_devices(BCM2835_PERI_BASE,
                         qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ),
@@ -459,43 +454,27 @@ static void raspi_init(MachineState *machine)
 
     setup_boot(machine, 0xc42, bootloader_0_pi1, ARRAY_SIZE(bootloader_0_pi1));
 }
+#endif
 
 static void raspi2_init(MachineState *machine)
 {
-    MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *per_ic_bus = g_new(MemoryRegion, 1);
-    MemoryRegion *mr;
-    DeviceState *dev;
-    SysBusDevice *s;
+    Object *bcm2836;
+    Error *err = NULL;
 
-    init_ram(machine->ram_size);
+    bcm2836 = object_new(TYPE_BCM2836);
+    object_property_add_child(OBJECT(machine), "soc", bcm2836, &error_abort);
 
-    /* Create Pi2-specific root interrupt controller */
-    dev = sysbus_create_varargs("bcm2836_control",
-                                BCM2836_PERI_BASE + BCM2836_CONTROL_OFFSET,
-                                NULL);
-    s = SYS_BUS_DEVICE(dev);
-    mr = sysbus_mmio_get_region(s, 0);
-    memory_region_init_alias(per_ic_bus, NULL, NULL, mr, 0,
-                             memory_region_size(mr));
-    memory_region_add_subregion(sysmem, BUS_ADDR(BCM2836_CONTROL_OFFSET),
-                                per_ic_bus);
-
-    /* Create the CPUs, and wire them up to the interrupt controller */
-    if (!machine->cpu_model) {
-        machine->cpu_model = "cortex-a15"; /* Equivalent ISA to the CA7 */
+    object_property_set_bool(bcm2836, true, "realized", &err);
+    if (err) {
+        error_report("%s", error_get_pretty(err));
+        exit(1);
     }
 
-    init_pi2_cpus(machine->cpu_model, dev);
-
-    /* Create the common (BCM2835) devices */
-    init_common_devices(BCM2836_PERI_BASE,
-                        qdev_get_gpio_in_named(dev, "gpu_irq", 0),
-                        qdev_get_gpio_in_named(dev, "gpu_fiq", 0));
-
+    init_ram(OBJECT(machine), machine->ram_size);
     setup_boot(machine, 0xc43, bootloader_0_pi2, ARRAY_SIZE(bootloader_0_pi2));
 }
 
+#if 0
 static void raspi_machine_init(MachineClass *mc)
 {
     mc->desc = "Raspberry Pi";
@@ -503,6 +482,7 @@ static void raspi_machine_init(MachineClass *mc)
     mc->block_default_type = IF_SD;
 };
 DEFINE_MACHINE("raspi", raspi_machine_init)
+#endif
 
 static void raspi2_machine_init(MachineClass *mc)
 {

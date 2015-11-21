@@ -5,12 +5,16 @@
 
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
+#include "hw/arm/raspi_platform.h"
 #include "hw/arm/bcm2835_common.h"
 #include "hw/arm/bcm2835_arm_control.h"
 
 #define TYPE_BCM2835_SBM "bcm2835_sbm"
 #define BCM2835_SBM(obj) \
         OBJECT_CHECK(Bcm2835SbmState, (obj), TYPE_BCM2835_SBM)
+
+// XXX: FIXME:
+extern AddressSpace *bcm2835_peripheral_as;
 
 typedef struct {
     uint32_t reg[MBOX_SIZE];
@@ -99,8 +103,8 @@ static void bcm2835_sbm_update(Bcm2835SbmState *s)
         } else {
             for (n = 0; n < MBOX_CHAN_COUNT; n++) {
                 if (s->available[n]) {
-                    value = ldl_phys(&address_space_memory,
-                                     s->iomem.addr + 0x400 + (n<<4));
+                    value = ldl_phys(bcm2835_peripheral_as,
+                                     ARMCTRL_0_SBM_OFFSET + 0x400 + (n<<4));
                     if (value != MBOX_INVALID_DATA) {
                         mbox_push(&s->mbox[0], value);
                     } else {
@@ -210,13 +214,13 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
         } else {
             ch = value & 0xf;
             if (ch < MBOX_CHAN_COUNT) {
-                if (ldl_phys(&address_space_memory,
-                             s->iomem.addr + 0x400 + (ch<<4) + 4)) {
+                if (ldl_phys(bcm2835_peripheral_as,
+                             ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4) + 4)) {
                     /* Push delayed, push it in the arm->vc mbox */
                     mbox_push(&s->mbox[1], value);
                 } else {
-                    stl_phys(&address_space_memory,
-                             s->iomem.addr + 0x400 + (ch<<4), value);
+                    stl_phys(bcm2835_peripheral_as,
+                             ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4), value);
                 }
             } else {
                 /* Invalid channel number */
