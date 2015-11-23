@@ -35,7 +35,6 @@ static void bcm2836_init(Object *obj)
 static void bcm2836_realize(DeviceState *dev, Error **errp)
 {
     BCM2836State *s = BCM2836(dev);
-    MemoryRegion *mr;
     Error *err = NULL;
     int n;
 
@@ -46,17 +45,8 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    //sysbus_mmio_map_overlap(SYS_BUS_DEVICE(&s->peripherals), 0,
-    //                        BCM2836_PERI_BASE, 1);
-    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->peripherals), 0);
-    memory_region_init_alias(&s->peripheral_mr, OBJECT(s),
-                             "peripheral-alias0", mr, 0, memory_region_size(mr));
-    memory_region_init_alias(&s->peripheral_alias, OBJECT(s),
-                             "peripheral-alias1", mr, 0, memory_region_size(mr));
-    memory_region_add_subregion_overlap(get_system_memory(), BCM2836_PERI_BASE,
-                                        &s->peripheral_mr, 1);
-    memory_region_add_subregion(get_system_memory(), 0x7e000000,
-                                &s->peripheral_alias);
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(&s->peripherals), 0,
+                            BCM2836_PERI_BASE, 1);
 
     /* bcm2836 interrupt controller (and mailboxes, etc.) */
     object_property_set_bool(OBJECT(s->ic), true, "realized", &err);
@@ -65,20 +55,15 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(s->ic), 0,
-                            BCM2836_PERI_BASE + BCM2836_CONTROL_OFFSET, 1);
-    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(s->ic), 0);
-    memory_region_init_alias(&s->ic_alias, OBJECT(s), "ic-alias", mr, 0,
-                             memory_region_size(mr));
-    memory_region_add_subregion_overlap(get_system_memory(),
-                                        0x7e000000 + BCM2836_CONTROL_OFFSET,
-                                        &s->ic_alias, 1);
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->ic), 0, BCM2836_CONTROL_BASE);
 
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->peripherals), 0,
                        qdev_get_gpio_in_named(DEVICE(s->ic), "gpu_irq", 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->peripherals), 1,
                        qdev_get_gpio_in_named(DEVICE(s->ic), "gpu_fiq", 0));
 
+    /* TODO: probably shouldn't be using smp_cpus here */
+    assert(smp_cpus <= BCM2836_NCPUS);
     for (n = 0; n < smp_cpus; n++) {
         /* Mirror bcm2836, which has clusterid set to 0xf */
         s->cpus[n].mp_affinity = 0xF00 | n;

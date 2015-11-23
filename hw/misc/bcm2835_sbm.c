@@ -104,7 +104,7 @@ static void bcm2835_sbm_update(Bcm2835SbmState *s)
             for (n = 0; n < MBOX_CHAN_COUNT; n++) {
                 if (s->available[n]) {
                     value = ldl_phys(bcm2835_peripheral_as,
-                                     ARMCTRL_0_SBM_OFFSET + 0x400 + (n<<4));
+                                     BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (n<<4));
                     if (value != MBOX_INVALID_DATA) {
                         mbox_push(&s->mbox[0], value);
                     } else {
@@ -215,12 +215,12 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
             ch = value & 0xf;
             if (ch < MBOX_CHAN_COUNT) {
                 if (ldl_phys(bcm2835_peripheral_as,
-                             ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4) + 4)) {
+                             BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4) + 4)) {
                     /* Push delayed, push it in the arm->vc mbox */
                     mbox_push(&s->mbox[1], value);
                 } else {
                     stl_phys(bcm2835_peripheral_as,
-                             ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4), value);
+                             BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4), value);
                 }
             } else {
                 /* Invalid channel number */

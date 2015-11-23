@@ -11,6 +11,9 @@
 
 #include "hw/arm/bcm2835_common.h"
 
+// XXX: FIXME:
+extern AddressSpace *bcm2835_peripheral_as;
+
 #define TYPE_BCM2835_PROPERTY "bcm2835_property"
 #define BCM2835_PROPERTY(obj) \
         OBJECT_CHECK(Bcm2835PropertyState, (obj), TYPE_BCM2835_PROPERTY)
@@ -52,31 +55,22 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
 
     value &= ~0xf;
 
-    /* XXX: According to the doc link above, the physical address
-       should be used. However, the Windows UEFI loader is observed
-       talking to us using the uncached mapping address (of
-       0xc0000000), and evidently that is expected to work as well.
-     */
-    if (value > 0xc0000000) {
-        value -= 0xc0000000;
-    }
-
     s->addr = value;
 
-    tot_len = ldl_phys(&address_space_memory, value);
+    tot_len = ldl_phys(bcm2835_peripheral_as, value);
 
     /* @(s->addr + 4) : Buffer response code */
     value = s->addr + 8;
     while (value + 8 <= s->addr + tot_len) {
-        tag = ldl_phys(&address_space_memory, value);
-        bufsize = ldl_phys(&address_space_memory, value + 4);
+        tag = ldl_phys(bcm2835_peripheral_as, value);
+        bufsize = ldl_phys(bcm2835_peripheral_as, value + 4);
         /* @(value + 8) : Request/response indicator */
         resplen = 0;
         switch (tag) {
         case 0x00000000: /* End tag */
             break;
         case 0x00000001: /* Get firmware revision */
-            stl_phys(&address_space_memory, value + 12, 346337);
+            stl_phys(bcm2835_peripheral_as, value + 12, 346337);
             resplen = 4;
             break;
 
@@ -88,10 +82,10 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             break;
         case 0x00010003: /* Get board MAC address */
             /* write the first four bytes of the 6-byte MAC */
-            stl_phys(&address_space_memory, value + 12, 0xB827EBD0);
+            stl_phys(bcm2835_peripheral_as, value + 12, 0xB827EBD0);
             /* write the last two bytes, avoid any write past the buffer end */
-            stb_phys(&address_space_memory, value + 16, 0xEE);
-            stb_phys(&address_space_memory, value + 17, 0xDF);
+            stb_phys(bcm2835_peripheral_as, value + 16, 0xEE);
+            stb_phys(bcm2835_peripheral_as, value + 17, 0xDF);
             resplen = 6;
             break;
         case 0x00010004: /* Get board serial */
@@ -99,30 +93,30 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             break;
         case 0x00010005: /* Get ARM memory */
             /* base */
-            stl_phys(&address_space_memory, value + 12, 0);
+            stl_phys(bcm2835_peripheral_as, value + 12, 0);
             /* size */
-            stl_phys(&address_space_memory, value + 16, bcm2835_vcram_base);
+            stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_vcram_base);
             resplen = 8;
             break;
         case 0x00010006: /* Get VC memory */
             /* base */
-            stl_phys(&address_space_memory, value + 12, bcm2835_vcram_base);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_vcram_base);
             /* size */
-            stl_phys(&address_space_memory, value + 16, VCRAM_SIZE);
+            stl_phys(bcm2835_peripheral_as, value + 16, VCRAM_SIZE);
             resplen = 8;
             break;
         case 0x00028001: /* Set power state */
             /* Assume that whatever device they asked for exists,
              * and we'll just claim we set it to the desired state */
-            tmp = ldl_phys(&address_space_memory, value + 16);
-            stl_phys(&address_space_memory, value + 16, (tmp & 1));
+            tmp = ldl_phys(bcm2835_peripheral_as, value + 16);
+            stl_phys(bcm2835_peripheral_as, value + 16, (tmp & 1));
             resplen = 8;
             break;
 
         /* Clocks */
 
         case 0x00030001: /* Get clock state */
-            stl_phys(&address_space_memory, value + 16, 0x1);
+            stl_phys(bcm2835_peripheral_as, value + 16, 0x1);
             resplen = 8;
             break;
 
@@ -133,15 +127,15 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
         case 0x00030002: /* Get clock rate */
         case 0x00030004: /* Get max clock rate */
         case 0x00030007: /* Get min clock rate */
-            switch (ldl_phys(&address_space_memory, value + 12)) {
+            switch (ldl_phys(bcm2835_peripheral_as, value + 12)) {
             case 1: /* EMMC */
-                stl_phys(&address_space_memory, value + 16, 50000000);
+                stl_phys(bcm2835_peripheral_as, value + 16, 50000000);
                 break;
             case 2: /* UART */
-                stl_phys(&address_space_memory, value + 16, 3000000);
+                stl_phys(bcm2835_peripheral_as, value + 16, 3000000);
                 break;
             default:
-                stl_phys(&address_space_memory, value + 16, 700000000);
+                stl_phys(bcm2835_peripheral_as, value + 16, 700000000);
                 break;
             }
             resplen = 8;
@@ -156,12 +150,12 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
         /* Temperature */
 
         case 0x00030006: /* Get temperature */
-            stl_phys(&address_space_memory, value + 16, 25000);
+            stl_phys(bcm2835_peripheral_as, value + 16, 25000);
             resplen = 8;
             break;
 
         case 0x0003000A: /* Get max temperature */
-            stl_phys(&address_space_memory, value + 16, 99000);
+            stl_phys(bcm2835_peripheral_as, value + 16, 99000);
             resplen = 8;
             break;
 
@@ -169,8 +163,8 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
         /* Frame buffer */
 
         case 0x00040001: /* Allocate buffer */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.base);
-            stl_phys(&address_space_memory, value + 16, bcm2835_fb.size);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.base);
+            stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_fb.size);
             resplen = 8;
             break;
         case 0x00048001: /* Release buffer */
@@ -181,8 +175,8 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             break;
         case 0x00040003: /* Get display width/height */
         case 0x00040004:
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.xres);
-            stl_phys(&address_space_memory, value + 16, bcm2835_fb.yres);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.xres);
+            stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_fb.yres);
             resplen = 8;
             break;
         case 0x00044003: /* Test display width/height */
@@ -191,94 +185,94 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             break;
         case 0x00048003: /* Set display width/height */
         case 0x00048004:
-            bcm2835_fb.xres = ldl_phys(&address_space_memory, value + 12);
-            bcm2835_fb.yres = ldl_phys(&address_space_memory, value + 16);
+            bcm2835_fb.xres = ldl_phys(bcm2835_peripheral_as, value + 12);
+            bcm2835_fb.yres = ldl_phys(bcm2835_peripheral_as, value + 16);
             update_fb();
             resplen = 8;
             break;
         case 0x00040005: /* Get depth */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.bpp);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.bpp);
             resplen = 4;
             break;
         case 0x00044005: /* Test depth */
             resplen = 4;
             break;
         case 0x00048005: /* Set depth */
-            bcm2835_fb.bpp = ldl_phys(&address_space_memory, value + 12);
+            bcm2835_fb.bpp = ldl_phys(bcm2835_peripheral_as, value + 12);
             update_fb();
             resplen = 4;
             break;
         case 0x00040006: /* Get pixel order */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.pixo);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.pixo);
             resplen = 4;
             break;
         case 0x00044006: /* Test pixel order */
             resplen = 4;
             break;
         case 0x00048006: /* Set pixel order */
-            bcm2835_fb.pixo = ldl_phys(&address_space_memory, value + 12);
+            bcm2835_fb.pixo = ldl_phys(bcm2835_peripheral_as, value + 12);
             update_fb();
             resplen = 4;
             break;
         case 0x00040007: /* Get alpha */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.alpha);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.alpha);
             resplen = 4;
             break;
         case 0x00044007: /* Test pixel alpha */
             resplen = 4;
             break;
         case 0x00048007: /* Set alpha */
-            bcm2835_fb.alpha = ldl_phys(&address_space_memory, value + 12);
+            bcm2835_fb.alpha = ldl_phys(bcm2835_peripheral_as, value + 12);
             update_fb();
             resplen = 4;
             break;
         case 0x00040008: /* Get pitch */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.pitch);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.pitch);
             resplen = 4;
             break;
         case 0x00040009: /* Get virtual offset */
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.xoffset);
-            stl_phys(&address_space_memory, value + 16, bcm2835_fb.yoffset);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.xoffset);
+            stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_fb.yoffset);
             resplen = 8;
             break;
         case 0x00044009: /* Test virtual offset */
             resplen = 8;
             break;
         case 0x00048009: /* Set virtual offset */
-            bcm2835_fb.xoffset = ldl_phys(&address_space_memory, value + 12);
-            bcm2835_fb.yoffset = ldl_phys(&address_space_memory, value + 16);
+            bcm2835_fb.xoffset = ldl_phys(bcm2835_peripheral_as, value + 12);
+            bcm2835_fb.yoffset = ldl_phys(bcm2835_peripheral_as, value + 16);
             update_fb();
-            stl_phys(&address_space_memory, value + 12, bcm2835_fb.xres);
-            stl_phys(&address_space_memory, value + 16, bcm2835_fb.yres);
+            stl_phys(bcm2835_peripheral_as, value + 12, bcm2835_fb.xres);
+            stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_fb.yres);
             resplen = 8;
             break;
         case 0x0004000a: /* Get/Test/Set overscan */
         case 0x0004400a:
         case 0x0004800a:
-            stl_phys(&address_space_memory, value + 12, 0);
-            stl_phys(&address_space_memory, value + 16, 0);
-            stl_phys(&address_space_memory, value + 20, 0);
-            stl_phys(&address_space_memory, value + 24, 0);
+            stl_phys(bcm2835_peripheral_as, value + 12, 0);
+            stl_phys(bcm2835_peripheral_as, value + 16, 0);
+            stl_phys(bcm2835_peripheral_as, value + 20, 0);
+            stl_phys(bcm2835_peripheral_as, value + 24, 0);
             resplen = 16;
             break;
 
         case 0x0004800b: /* Set palette */
-            offset = ldl_phys(&address_space_memory, value + 12);
-            length = ldl_phys(&address_space_memory, value + 16);
+            offset = ldl_phys(bcm2835_peripheral_as, value + 12);
+            length = ldl_phys(bcm2835_peripheral_as, value + 16);
             n = 0;
             while (n < length - offset) {
-                color = ldl_phys(&address_space_memory, value + 20 + (n << 2));
-                stl_phys(&address_space_memory,
+                color = ldl_phys(bcm2835_peripheral_as, value + 20 + (n << 2));
+                stl_phys(bcm2835_peripheral_as,
                          bcm2835_vcram_base + ((offset + n) << 2), color);
                 n++;
             }
-            stl_phys(&address_space_memory, value + 12, 0);
+            stl_phys(bcm2835_peripheral_as, value + 12, 0);
             resplen = 4;
             break;
 
         case 0x00060001: /* Get DMA channels */
             /* channels 2-5 */
-            stl_phys(&address_space_memory, value + 12, 0x003C);
+            stl_phys(bcm2835_peripheral_as, value + 12, 0x003C);
             resplen = 4;
             break;
 
@@ -296,12 +290,12 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s,
             break;
         }
 
-        stl_phys(&address_space_memory, value + 8, (1 << 31) | resplen);
+        stl_phys(bcm2835_peripheral_as, value + 8, (1 << 31) | resplen);
         value += bufsize + 12;
     }
 
     /* Buffer response code */
-    stl_phys(&address_space_memory, s->addr + 4, (1 << 31));
+    stl_phys(bcm2835_peripheral_as, s->addr + 4, (1 << 31));
 
     if (bcm2835_fb.lock) {
         bcm2835_fb.invalidate = 1;

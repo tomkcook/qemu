@@ -11,10 +11,10 @@ extern hwaddr bcm2835_vcram_base;
 #define MBOX_CHAN_PROPERTY 8 /* for use by the property channel */
 #define MBOX_CHAN_COUNT    9
 
-#define MBOX_SIZE       32
-#define MBOX_INVALID_DATA   0x0f
+#define MBOX_SIZE          32
+#define MBOX_INVALID_DATA  0x0f
 
-#define BCM2835_FB_OFFSET 0x00100000
+#define BCM2835_FB_OFFSET  0x00100000
 
 typedef struct {
     QemuConsole *con;

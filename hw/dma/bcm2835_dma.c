@@ -6,6 +6,9 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 
+// XXX: FIXME:
+extern AddressSpace *bcm2835_peripheral_as;
+
 /* DMA CS Control and Status bits */
 #define BCM2708_DMA_ACTIVE      (1 << 0)
 #define BCM2708_DMA_INT         (1 << 2)
@@ -88,12 +91,12 @@ static void bcm2835_dma_update(Bcm2835DmaState *s, int c)
 
     while ((s->enable & (1 << c)) && (ch->conblk_ad != 0)) {
         /* CB fetch */
-        ch->ti = ldl_phys(&address_space_memory, ch->conblk_ad);
-        ch->source_ad = ldl_phys(&address_space_memory, ch->conblk_ad + 4);
-        ch->dest_ad = ldl_phys(&address_space_memory, ch->conblk_ad + 8);
-        ch->txfr_len = ldl_phys(&address_space_memory, ch->conblk_ad + 12);
-        ch->stride = ldl_phys(&address_space_memory, ch->conblk_ad + 16);
-        ch->nextconbk = ldl_phys(&address_space_memory, ch->conblk_ad + 20);
+        ch->ti = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad);
+        ch->source_ad = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad + 4);
+        ch->dest_ad = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad + 8);
+        ch->txfr_len = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad + 12);
+        ch->stride = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad + 16);
+        ch->nextconbk = ldl_phys(bcm2835_peripheral_as, ch->conblk_ad + 20);
 
         assert(!(ch->ti & BCM2708_DMA_TDMODE));
 
@@ -102,7 +105,7 @@ static void bcm2835_dma_update(Bcm2835DmaState *s, int c)
             if (ch->ti & (1 << 11)) {
                 /* Ignore reads */
             } else {
-                data = ldl_phys(&address_space_memory, ch->source_ad);
+                data = ldl_phys(bcm2835_peripheral_as, ch->source_ad);
             }
             if (ch->ti & BCM2708_DMA_S_INC) {
                 ch->source_ad += 4;
@@ -111,7 +114,7 @@ static void bcm2835_dma_update(Bcm2835DmaState *s, int c)
             if (ch->ti & (1 << 7)) {
                 /* Ignore writes */
             } else {
-                stl_phys(&address_space_memory, ch->dest_ad, data);
+                stl_phys(bcm2835_peripheral_as, ch->dest_ad, data);
             }
             if (ch->ti & BCM2708_DMA_D_INC) {
                 ch->dest_ad += 4;

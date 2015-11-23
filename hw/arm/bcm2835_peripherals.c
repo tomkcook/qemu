@@ -1,8 +1,10 @@
 #include "hw/arm/bcm2835_peripherals.h"
 #include "hw/arm/bcm2835_common.h"
 #include "hw/arm/raspi_platform.h"
+#include "exec/address-spaces.h"
 
 // XXX: FIXME:
+MemoryRegion *bcm2835_peripheral_mr;
 AddressSpace *bcm2835_peripheral_as;
 
 static void bcm2835_peripherals_init(Object *obj)
@@ -10,8 +12,20 @@ static void bcm2835_peripherals_init(Object *obj)
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(obj);
     SysBusDevice *dev;
 
-    memory_region_init_io(&s->iomem, OBJECT(s), NULL, s, "mmio", 0x1000000);
-    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
+    /* We track two memory regions. One, for the peripheral devices
+     * themselves, which we export to our parent soc device, and
+     * one for the bus addresses used by the peripherals, which is
+     * used internally. The latter requires an alias. */
+    memory_region_init_io(&s->peri_mr, OBJECT(s), NULL, s,
+                          "bcm2835_peripherals", 0x1000000);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->peri_mr);
+
+    memory_region_init_io(&s->gpu_bus_mr, OBJECT(s), NULL, s, "bcm2835_gpu_bus",
+                          (uint64_t)1 << 32);
+
+    address_space_init(&s->gpu_bus_as, &s->gpu_bus_mr, "bcm2835_gpu_bus");
+    bcm2835_peripheral_mr = &s->gpu_bus_mr; // XXX
+    bcm2835_peripheral_as = &s->gpu_bus_as; // XXX
 
     /* Interrupt Controller */
     s->ic = dev = SYS_BUS_DEVICE(object_new("bcm2835_ic"));
@@ -87,6 +101,7 @@ static void bcm2835_peripherals_init(Object *obj)
 static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
 {
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(dev);
+    MemoryRegion *ram;
     qemu_irq pic[72];
     qemu_irq mbox_irq[MBOX_CHAN_COUNT];
     hwaddr tmpoffset;
@@ -100,7 +115,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, ARMCTRL_IC_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, ARMCTRL_IC_OFFSET,
                                 sysbus_mmio_get_region(s->ic, 0));
     sysbus_pass_irq(SYS_BUS_DEVICE(s), s->ic);
 
@@ -115,7 +130,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, UART0_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, UART0_OFFSET,
                                 sysbus_mmio_get_region(s->uart0, 0));
     sysbus_connect_irq(s->uart0, 0, pic[INTERRUPT_VC_UART]);
 
@@ -126,7 +141,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, UART1_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, UART1_OFFSET,
                                 sysbus_mmio_get_region(s->uart1, 0));
     sysbus_connect_irq(s->uart1, 0, pic[INTERRUPT_AUX]);
 
@@ -137,7 +152,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, ST_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, ST_OFFSET,
                                 sysbus_mmio_get_region(s->systimer, 0));
     sysbus_connect_irq(s->systimer, 0, pic[INTERRUPT_TIMER0]);
     sysbus_connect_irq(s->systimer, 1, pic[INTERRUPT_TIMER1]);
@@ -151,7 +166,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, ARMCTRL_TIMER0_1_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, ARMCTRL_TIMER0_1_OFFSET,
                                 sysbus_mmio_get_region(s->armtimer, 0));
     sysbus_connect_irq(s->armtimer, 0, pic[INTERRUPT_ARM_TIMER]);
 
@@ -162,7 +177,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, USB_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, USB_OFFSET,
                                 sysbus_mmio_get_region(s->usb, 0));
     sysbus_connect_irq(s->usb, 0, pic[INTERRUPT_VC_USB]);
 
@@ -173,7 +188,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, MPHI_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, MPHI_OFFSET,
                                 sysbus_mmio_get_region(s->mphi, 0));
     sysbus_connect_irq(s->mphi, 0, pic[INTERRUPT_HOSTPORT]);
 
@@ -184,7 +199,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, ARMCTRL_0_SBM_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, ARMCTRL_0_SBM_OFFSET,
                                 sysbus_mmio_get_region(s->sbm, 0));
     sysbus_connect_irq(s->sbm, 0, pic[INTERRUPT_ARM_MAILBOX]);
 
@@ -205,7 +220,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, tmpoffset + (MBOX_CHAN_POWER<<4),
+    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_POWER<<4),
                                 sysbus_mmio_get_region(s->power, 0));
     sysbus_connect_irq(s->power, 0, mbox_irq[MBOX_CHAN_POWER]);
 
@@ -216,7 +231,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, tmpoffset + (MBOX_CHAN_FB<<4),
+    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_FB<<4),
                                 sysbus_mmio_get_region(s->fb, 0));
     sysbus_connect_irq(s->fb, 0, mbox_irq[MBOX_CHAN_FB]);
 
@@ -227,7 +242,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, tmpoffset + (MBOX_CHAN_PROPERTY<<4),
+    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_PROPERTY<<4),
                                 sysbus_mmio_get_region(s->property, 0));
     sysbus_connect_irq(s->property, 0, mbox_irq[MBOX_CHAN_PROPERTY]);
 
@@ -238,7 +253,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, tmpoffset + (MBOX_CHAN_VCHIQ<<4),
+    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_VCHIQ<<4),
                                 sysbus_mmio_get_region(s->vchiq, 0));
     sysbus_connect_irq(s->vchiq, 0, mbox_irq[MBOX_CHAN_VCHIQ]);
 
@@ -249,7 +264,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, EMMC_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, EMMC_OFFSET,
                                 sysbus_mmio_get_region(s->emmc, 0));
     sysbus_connect_irq(s->emmc, 0, pic[INTERRUPT_VC_ARASANSDIO]);
 
@@ -260,15 +275,10 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->iomem, DMA_OFFSET,
+    memory_region_add_subregion(&s->peri_mr, DMA_OFFSET,
                                 sysbus_mmio_get_region(s->dma, 0));
-    memory_region_add_subregion(&s->iomem, 0xe05000,
+    memory_region_add_subregion(&s->peri_mr, 0xe05000, // XXX
                                 sysbus_mmio_get_region(s->dma, 1));
-
-    // XXX: tmp kludge
-    static AddressSpace tmpas;
-    address_space_init(&tmpas, &s->iomem, "bcm2835_peripheral_as");
-    bcm2835_peripheral_as = &tmpas;
 
     sysbus_connect_irq(s->dma, 0, pic[INTERRUPT_DMA0]);
     sysbus_connect_irq(s->dma, 1, pic[INTERRUPT_DMA1]);
@@ -283,6 +293,27 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->dma, 10, pic[INTERRUPT_DMA10]);
     sysbus_connect_irq(s->dma, 11, pic[INTERRUPT_DMA11]);
     sysbus_connect_irq(s->dma, 12, pic[INTERRUPT_DMA12]);
+
+    /* Map peripherals and RAM into the GPU address space. */
+    memory_region_init_alias(&s->peri_mr_alias, OBJECT(s),
+                             "bcm2835_peripherals", &s->peri_mr, 0,
+                             memory_region_size(&s->peri_mr));
+
+    memory_region_add_subregion_overlap(&s->gpu_bus_mr, BCM2835_VC_PERI_BASE,
+                                        &s->peri_mr_alias, 1);
+
+    /* XXX: assume that RAM is contiguous and mapped at system address zero */
+    ram = memory_region_find(get_system_memory(), 0, 1).mr;
+    assert(ram != NULL && memory_region_size(ram) >= 128 * 1024 * 1024);
+
+    /* RAM is aliased four times (different cache configurations) on the GPU */
+    for (n = 0; n < 4; n++) {
+        memory_region_init_alias(&s->ram_alias[n], OBJECT(s),
+                                 "bcm2835_gpu_ram_alias[*]", ram, 0,
+                                 memory_region_size(ram));
+        memory_region_add_subregion_overlap(&s->gpu_bus_mr, (hwaddr)n << 30,
+                                            &s->ram_alias[n], 0);
+    }
 }
 
 static void bcm2835_peripherals_class_init(ObjectClass *oc, void *data)

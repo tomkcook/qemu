@@ -38,6 +38,10 @@
 
 Bcm2835Fb bcm2835_fb;
 
+// XXX: FIXME:
+extern AddressSpace *bcm2835_peripheral_as;
+extern MemoryRegion *bcm2835_peripheral_mr;
+
 #define TYPE_BCM2835_FB "bcm2835_fb"
 #define BCM2835_FB(obj) OBJECT_CHECK(Bcm2835FbState, (obj), TYPE_BCM2835_FB)
 
@@ -67,7 +71,7 @@ static void draw_line_src16(void *opaque, uint8_t *d, const uint8_t *s,
     while (width--) {
         switch (bcm2835_fb.bpp) {
         case 8:
-            rgb888 = ldl_phys(&address_space_memory,
+            rgb888 = ldl_phys(bcm2835_peripheral_as,
                               bcm2835_vcram_base + (*s << 2));
             r = (rgb888 >> 0) & 0xff;
             g = (rgb888 >> 8) & 0xff;
@@ -195,7 +199,7 @@ static void fb_update_display(void *opaque)
 
     if (bcm2835_fb.invalidate) {
         framebuffer_update_memory_section(&s->fbsection,
-                                          sysbus_address_space(&s->busdev),
+                                          bcm2835_peripheral_mr,
                                           bcm2835_fb.base,
                                           bcm2835_fb.yres,
                                           src_width);
@@ -226,21 +230,16 @@ static void bcm2835_fb_mbox_push(Bcm2835FbState *s, uint32_t value)
 {
     value &= ~0xf;
 
-    /* UEFI passes a high (uncached?) address here */
-    if (value >= 0xc0000000) {
-        value -= 0xc0000000;
-    }
-
     bcm2835_fb.lock = 1;
 
-    bcm2835_fb.xres = ldl_phys(&address_space_memory, value);
-    bcm2835_fb.yres = ldl_phys(&address_space_memory, value + 4);
-    bcm2835_fb.xres_virtual = ldl_phys(&address_space_memory, value + 8);
-    bcm2835_fb.yres_virtual = ldl_phys(&address_space_memory, value + 12);
+    bcm2835_fb.xres = ldl_phys(bcm2835_peripheral_as, value);
+    bcm2835_fb.yres = ldl_phys(bcm2835_peripheral_as, value + 4);
+    bcm2835_fb.xres_virtual = ldl_phys(bcm2835_peripheral_as, value + 8);
+    bcm2835_fb.yres_virtual = ldl_phys(bcm2835_peripheral_as, value + 12);
 
-    bcm2835_fb.bpp = ldl_phys(&address_space_memory, value + 20);
-    bcm2835_fb.xoffset = ldl_phys(&address_space_memory, value + 24);
-    bcm2835_fb.yoffset = ldl_phys(&address_space_memory, value + 28);
+    bcm2835_fb.bpp = ldl_phys(bcm2835_peripheral_as, value + 20);
+    bcm2835_fb.xoffset = ldl_phys(bcm2835_peripheral_as, value + 24);
+    bcm2835_fb.yoffset = ldl_phys(bcm2835_peripheral_as, value + 28);
 
     bcm2835_fb.base = bcm2835_vcram_base | (value & 0xc0000000);
     bcm2835_fb.base += BCM2835_FB_OFFSET;
@@ -250,9 +249,9 @@ static void bcm2835_fb_mbox_push(Bcm2835FbState *s, uint32_t value)
     bcm2835_fb.pitch = bcm2835_fb.xres * (bcm2835_fb.bpp >> 3);
     bcm2835_fb.size = bcm2835_fb.yres * bcm2835_fb.pitch;
 
-    stl_phys(&address_space_memory, value + 16, bcm2835_fb.pitch);
-    stl_phys(&address_space_memory, value + 32, bcm2835_fb.base);
-    stl_phys(&address_space_memory, value + 36, bcm2835_fb.size);
+    stl_phys(bcm2835_peripheral_as, value + 16, bcm2835_fb.pitch);
+    stl_phys(bcm2835_peripheral_as, value + 32, bcm2835_fb.base);
+    stl_phys(bcm2835_peripheral_as, value + 36, bcm2835_fb.size);
 
     bcm2835_fb.invalidate = 1;
     qemu_console_resize(bcm2835_fb.con, bcm2835_fb.xres, bcm2835_fb.yres);

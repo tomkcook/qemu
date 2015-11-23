@@ -26,9 +26,15 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-/* Pi1 and Pi2 differ only in their peripheral base addresses */
+/* Peripheral base address on the VC (GPU) system bus */
+#define BCM2835_VC_PERI_BASE 0x7e000000
+
+/* Peripheral base addresses seen by the CPU: Pi1 and Pi2 differ */
 #define BCM2835_PERI_BASE       0x20000000
 #define BCM2836_PERI_BASE       0x3F000000
+
+/* "QA7" (Pi2) interrupt controller and mailboxes etc. */
+#define BCM2836_CONTROL_BASE    0x40000000
 
 #define MCORE_OFFSET            0x0000   /* Fake frame buffer device
                                           * (the multicore sync block) */
@@ -57,7 +63,6 @@
 #define SMI_OFFSET              0x600000 /* SMI */
 #define BSC1_OFFSET             0x804000 /* BSC1 I2C/TWI */
 #define USB_OFFSET              0x980000 /* DTC_OTG USB controller */
-#define BCM2836_CONTROL_OFFSET 0x1000000 /* "QA7" (Pi2) interrupt controller */
 
 /*
  * Interrupt assignments
