@@ -14,8 +14,8 @@
         OBJECT_CHECK(Bcm2835SbmState, (obj), TYPE_BCM2835_SBM)
 
 typedef struct {
-    MemoryRegion *dma_mr;
-    AddressSpace dma_as;
+    MemoryRegion *mbox_mr;
+    AddressSpace mbox_as;
     uint32_t reg[MBOX_SIZE];
     int count;
     uint32_t status;
@@ -77,8 +77,8 @@ static void mbox_push(Bcm2835Mbox *mb, uint32_t val)
 
 typedef struct {
     SysBusDevice busdev;
-    MemoryRegion *dma_mr;
-    AddressSpace dma_as;
+    MemoryRegion *mbox_mr;
+    AddressSpace mbox_as;
     MemoryRegion iomem;
     int mbox_irq_disabled;
     qemu_irq arm_irq;
@@ -104,8 +104,7 @@ static void bcm2835_sbm_update(Bcm2835SbmState *s)
         } else {
             for (n = 0; n < MBOX_CHAN_COUNT; n++) {
                 if (s->available[n]) {
-                    value = ldl_phys(&s->dma_as,
-                                     BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (n<<4));
+                    value = ldl_phys(&s->mbox_as, n<<4);
                     if (value != MBOX_INVALID_DATA) {
                         mbox_push(&s->mbox[0], value);
                     } else {
@@ -215,13 +214,11 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
         } else {
             ch = value & 0xf;
             if (ch < MBOX_CHAN_COUNT) {
-                if (ldl_phys(&s->dma_as,
-                             BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4) + 4)) {
+                if (ldl_phys(&s->mbox_as, (ch<<4) + 4)) {
                     /* Push delayed, push it in the arm->vc mbox */
                     mbox_push(&s->mbox[1], value);
                 } else {
-                    stl_phys(&s->dma_as,
-                             BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4), value);
+                    stl_phys(&s->mbox_as, ch<<4, value);
                 }
             } else {
                 /* Invalid channel number */
@@ -267,14 +264,14 @@ static void bcm2835_sbm_realize(DeviceState *dev, Error **errp)
     Object *obj;
     Error *err = NULL;
 
-    obj = object_property_get_link(OBJECT(dev), "dma_mr", &err);
+    obj = object_property_get_link(OBJECT(dev), "mbox_mr", &err);
     if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_sbm: required dma_mr link not found");
+        error_setg(errp, "bcm2835_sbm: required mbox_mr link not found");
         return;
     }
 
-    s->dma_mr = MEMORY_REGION(obj);
-    address_space_init(&s->dma_as, s->dma_mr, NULL);
+    s->mbox_mr = MEMORY_REGION(obj);
+    address_space_init(&s->mbox_as, s->mbox_mr, NULL);
 
     mbox_init(&s->mbox[0]);
     mbox_init(&s->mbox[1]);

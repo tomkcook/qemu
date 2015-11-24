@@ -18,18 +18,20 @@ static void bcm2835_peripherals_init(Object *obj)
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(obj);
     SysBusDevice *dev;
 
-    /* We track two memory regions. One, for the peripheral devices
-     * themselves, which we export to our parent soc device, and
-     * one for the bus addresses used by the peripherals, which is
-     * used internally. The latter requires an alias. */
+    /* Memory region for peripheral devices, which we export to our parent */
     memory_region_init_io(&s->peri_mr, OBJECT(s), NULL, s,
                           "bcm2835_peripherals", 0x1000000);
     object_property_add_child(obj, "peripheral_io", OBJECT(&s->peri_mr), NULL);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->peri_mr);
 
+    /* Internal memory region for peripheral bus addresses (not exported) */
     memory_region_init_io(&s->gpu_bus_mr, OBJECT(s), NULL, s, "bcm2835_gpu_bus",
                           (uint64_t)1 << 32);
     object_property_add_child(obj, "gpu_bus", OBJECT(&s->gpu_bus_mr), NULL);
+
+    /* Internal memory region for communication of mailbox channel data */
+    memory_region_init_io(&s->mbox_mr, OBJECT(s), NULL, s, "bcm2835_mbox",
+                          MBOX_CHAN_COUNT << 4);
 
     /* Interrupt Controller */
     s->ic = dev = SYS_BUS_DEVICE(object_new("bcm2835_ic"));
@@ -71,8 +73,8 @@ static void bcm2835_peripherals_init(Object *obj)
     object_property_add_child(obj, "sbm", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
-    object_property_add_const_link(OBJECT(dev), "dma_mr",
-                                   OBJECT(&s->gpu_bus_mr), &error_abort);
+    object_property_add_const_link(OBJECT(dev), "mbox_mr",
+                                   OBJECT(&s->mbox_mr), &error_abort);
 
     /* Power management */
     s->power = dev = SYS_BUS_DEVICE(object_new("bcm2835_power"));
@@ -122,7 +124,6 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     MemoryRegion *ram;
     qemu_irq pic[72];
     qemu_irq mbox_irq[MBOX_CHAN_COUNT];
-    hwaddr tmpoffset;
     Error *err = NULL;
     size_t ram_size;
     int n;
@@ -247,11 +248,8 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         mbox_irq[n] = qdev_get_gpio_in(DEVICE(s->sbm), n);
     }
 
-    /* Mailbox-addressable peripherals using (hopefully) free address space
-     * locations and pseudo-irqs to dispatch mailbox requests and responses
-     * between them. */
-
-    tmpoffset = ARMCTRL_0_SBM_OFFSET + 0x400;
+    /* Mailbox-addressable peripherals use the private mbox_mr address space
+     * and pseudo-irqs to dispatch requests and responses. */
 
     /* Power management */
     object_property_set_bool(OBJECT(s->power), true, "realized", &err);
@@ -260,7 +258,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_POWER<<4),
+    memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_POWER<<4,
                                 sysbus_mmio_get_region(s->power, 0));
     sysbus_connect_irq(s->power, 0, mbox_irq[MBOX_CHAN_POWER]);
 
@@ -275,7 +273,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_FB<<4),
+    memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_FB<<4,
                                 sysbus_mmio_get_region(s->fb, 0));
     sysbus_connect_irq(s->fb, 0, mbox_irq[MBOX_CHAN_FB]);
 
@@ -286,7 +284,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_PROPERTY<<4),
+    memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_PROPERTY<<4,
                                 sysbus_mmio_get_region(s->property, 0));
     sysbus_connect_irq(s->property, 0, mbox_irq[MBOX_CHAN_PROPERTY]);
 
@@ -297,7 +295,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    memory_region_add_subregion(&s->peri_mr, tmpoffset + (MBOX_CHAN_VCHIQ<<4),
+    memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_VCHIQ<<4,
                                 sysbus_mmio_get_region(s->vchiq, 0));
     sysbus_connect_irq(s->vchiq, 0, mbox_irq[MBOX_CHAN_VCHIQ]);
 
