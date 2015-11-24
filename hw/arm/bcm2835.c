@@ -58,7 +58,7 @@ static void bcm2835_realize(DeviceState *dev, Error **errp)
 }
 
 static Property bcm2835_props[] = {
-    DEFINE_PROP_SIZE("vcram-size", BCM2835State, vcram_size, DEFAULT_VCRAM_SIZE),
+    DEFINE_PROP_UINT32("vcram-size", BCM2835State, vcram_size, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 

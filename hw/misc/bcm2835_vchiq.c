@@ -5,7 +5,7 @@
 
 #include "hw/sysbus.h"
 
-#include "hw/arm/bcm2835_common.h"
+#include "hw/arm/bcm2835_mbox.h"
 
 #define TYPE_BCM2835_VCHIQ "bcm2835_vchiq"
 #define BCM2835_VCHIQ(obj) \
@@ -40,6 +40,7 @@ static uint64_t bcm2835_vchiq_read(void *opaque, hwaddr offset,
     }
     return res;
 }
+
 static void bcm2835_vchiq_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {

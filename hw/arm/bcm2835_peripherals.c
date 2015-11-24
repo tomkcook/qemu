@@ -9,13 +9,9 @@
  */
 
 #include "hw/arm/bcm2835_peripherals.h"
-#include "hw/arm/bcm2835_common.h"
+#include "hw/arm/bcm2835_mbox.h"
 #include "hw/arm/raspi_platform.h"
 #include "exec/address-spaces.h"
-
-// XXX: FIXME:
-MemoryRegion *bcm2835_peripheral_mr;
-AddressSpace *bcm2835_peripheral_as;
 
 static void bcm2835_peripherals_init(Object *obj)
 {
@@ -28,14 +24,12 @@ static void bcm2835_peripherals_init(Object *obj)
      * used internally. The latter requires an alias. */
     memory_region_init_io(&s->peri_mr, OBJECT(s), NULL, s,
                           "bcm2835_peripherals", 0x1000000);
+    object_property_add_child(obj, "peripheral_io", OBJECT(&s->peri_mr), NULL);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->peri_mr);
 
     memory_region_init_io(&s->gpu_bus_mr, OBJECT(s), NULL, s, "bcm2835_gpu_bus",
                           (uint64_t)1 << 32);
-
-    address_space_init(&s->gpu_bus_as, &s->gpu_bus_mr, "bcm2835_gpu_bus");
-    bcm2835_peripheral_mr = &s->gpu_bus_mr; // XXX
-    bcm2835_peripheral_as = &s->gpu_bus_as; // XXX
+    object_property_add_child(obj, "gpu_bus", OBJECT(&s->gpu_bus_mr), NULL);
 
     /* Interrupt Controller */
     s->ic = dev = SYS_BUS_DEVICE(object_new("bcm2835_ic"));
@@ -77,6 +71,9 @@ static void bcm2835_peripherals_init(Object *obj)
     object_property_add_child(obj, "sbm", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
+    object_property_add_const_link(OBJECT(dev), "dma_mr",
+                                   OBJECT(&s->gpu_bus_mr), &error_abort);
+
     /* Power management */
     s->power = dev = SYS_BUS_DEVICE(object_new("bcm2835_power"));
     object_property_add_child(obj, "power", OBJECT(dev), NULL);
@@ -87,10 +84,18 @@ static void bcm2835_peripherals_init(Object *obj)
     object_property_add_child(obj, "fb", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
+    object_property_add_const_link(OBJECT(dev), "dma_mr",
+                                   OBJECT(&s->gpu_bus_mr), &error_abort);
+
     /* Property channel */
     s->property = dev = SYS_BUS_DEVICE(object_new("bcm2835_property"));
     object_property_add_child(obj, "property", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+
+    object_property_add_const_link(OBJECT(dev), "bcm2835_fb",
+                                   OBJECT(s->fb), &error_abort);
+    object_property_add_const_link(OBJECT(dev), "dma_mr",
+                                   OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* VCHIQ */
     s->vchiq = dev = SYS_BUS_DEVICE(object_new("bcm2835_vchiq"));
@@ -106,6 +111,9 @@ static void bcm2835_peripherals_init(Object *obj)
     s->dma = dev = SYS_BUS_DEVICE(object_new("bcm2835_dma"));
     object_property_add_child(obj, "dma", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+
+    object_property_add_const_link(OBJECT(dev), "dma_mr",
+                                   OBJECT(&s->gpu_bus_mr), &error_abort);
 }
 
 static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
@@ -116,7 +124,29 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     qemu_irq mbox_irq[MBOX_CHAN_COUNT];
     hwaddr tmpoffset;
     Error *err = NULL;
+    size_t ram_size;
     int n;
+
+    /* Map peripherals and RAM into the GPU address space. */
+    memory_region_init_alias(&s->peri_mr_alias, OBJECT(s),
+                             "bcm2835_peripherals", &s->peri_mr, 0,
+                             memory_region_size(&s->peri_mr));
+
+    memory_region_add_subregion_overlap(&s->gpu_bus_mr, BCM2835_VC_PERI_BASE,
+                                        &s->peri_mr_alias, 1);
+
+    /* XXX: assume that RAM is contiguous and mapped at system address zero */
+    ram = memory_region_find(get_system_memory(), 0, 1).mr;
+    assert(ram != NULL && memory_region_size(ram) >= 128 * 1024 * 1024);
+    ram_size = memory_region_size(ram);
+
+    /* RAM is aliased four times (different cache configurations) on the GPU */
+    for (n = 0; n < 4; n++) {
+        memory_region_init_alias(&s->ram_alias[n], OBJECT(s),
+                                 "bcm2835_gpu_ram_alias[*]", ram, 0, ram_size);
+        memory_region_add_subregion_overlap(&s->gpu_bus_mr, (hwaddr)n << 30,
+                                            &s->ram_alias[n], 0);
+    }
 
     /* Interrupt Controller */
     object_property_set_bool(OBJECT(s->ic), true, "realized", &err);
@@ -235,6 +265,10 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->power, 0, mbox_irq[MBOX_CHAN_POWER]);
 
     /* Framebuffer */
+    object_property_set_int(OBJECT(s->fb), ram_size - s->vcram_size,
+                            "vcram-base", &err);
+    object_property_set_int(OBJECT(s->fb), s->vcram_size, "vcram-size", &err);
+
     object_property_set_bool(OBJECT(s->fb), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
@@ -303,33 +337,18 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->dma, 10, pic[INTERRUPT_DMA10]);
     sysbus_connect_irq(s->dma, 11, pic[INTERRUPT_DMA11]);
     sysbus_connect_irq(s->dma, 12, pic[INTERRUPT_DMA12]);
-
-    /* Map peripherals and RAM into the GPU address space. */
-    memory_region_init_alias(&s->peri_mr_alias, OBJECT(s),
-                             "bcm2835_peripherals", &s->peri_mr, 0,
-                             memory_region_size(&s->peri_mr));
-
-    memory_region_add_subregion_overlap(&s->gpu_bus_mr, BCM2835_VC_PERI_BASE,
-                                        &s->peri_mr_alias, 1);
-
-    /* XXX: assume that RAM is contiguous and mapped at system address zero */
-    ram = memory_region_find(get_system_memory(), 0, 1).mr;
-    assert(ram != NULL && memory_region_size(ram) >= 128 * 1024 * 1024);
-
-    /* RAM is aliased four times (different cache configurations) on the GPU */
-    for (n = 0; n < 4; n++) {
-        memory_region_init_alias(&s->ram_alias[n], OBJECT(s),
-                                 "bcm2835_gpu_ram_alias[*]", ram, 0,
-                                 memory_region_size(ram));
-        memory_region_add_subregion_overlap(&s->gpu_bus_mr, (hwaddr)n << 30,
-                                            &s->ram_alias[n], 0);
-    }
 }
+
+static Property bcm2835_peripherals_props[] = {
+    DEFINE_PROP_UINT32("vcram-size", BCM2835PeripheralState, vcram_size, 0),
+    DEFINE_PROP_END_OF_LIST()
+};
 
 static void bcm2835_peripherals_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
+    dc->props = bcm2835_peripherals_props;
     dc->realize = bcm2835_peripherals_realize;
 }
 

@@ -30,10 +30,8 @@
 #include "sysemu/sysemu.h"
 #include "exec/address-spaces.h"
 #include "hw/arm/raspi_platform.h"
-#include "hw/arm/bcm2835_common.h"
 
-/* Globals */
-hwaddr bcm2835_vcram_base;
+#define VCRAM_SIZE 0x4000000
 
 /* simple bootloader for pi1 */
 static const uint32_t bootloader_0_pi1[] = {
@@ -115,39 +113,27 @@ static void init_ram(Object *parent, ram_addr_t ram_size)
 {
     MemoryRegion *ram = g_new(MemoryRegion, 1);
 
-    bcm2835_vcram_base = ram_size - VCRAM_SIZE;
-
-    /* Write real RAM size in ATAG structure */
-    bootloader_100[7] = bcm2835_vcram_base;
-
     memory_region_allocate_system_memory(ram, parent, "ram", ram_size);
     memory_region_add_subregion_overlap(get_system_memory(), 0, ram, 0);
 }
 
-static void setup_boot(MachineState *machine, int board_id,
+static void setup_boot(MachineState *machine, int board_id, size_t ram_size,
                        const uint32_t *bootloader, size_t bootloader_len)
 {
     static struct arm_boot_info raspi_binfo;
     int n;
 
     raspi_binfo.board_id = board_id;
-    raspi_binfo.ram_size = bcm2835_vcram_base;
+    raspi_binfo.ram_size = ram_size;
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
        the normal Linux boot process */
     if (machine->firmware) {
-        /* XXX: Kludge for Windows support: put framebuffer in BGR
-         * mode. We need a config switch somewhere to enable this. It
-         * should ultimately be emulated by looking in config.txt (as
-         * the real firmware does) for the relevant options */
-        if (bootloader == bootloader_0_pi2) {
-            bcm2835_fb.pixo = 0;
-        }
-
         /* load the firmware image (typically kernel.img) at 0x8000 */
-        load_image_targphys(machine->firmware,
-                            0x8000,
-                            bcm2835_vcram_base - 0x8000);
+        load_image_targphys(machine->firmware, 0x8000, ram_size - 0x8000);
+
+        /* Write RAM size in ATAG structure */
+        bootloader_100[7] = ram_size;
 
         /* copy over the bootloader */
         for (n = 0; n < bootloader_len; n++) {
@@ -174,40 +160,54 @@ static void setup_boot(MachineState *machine, int board_id,
 
 static void raspi_init(MachineState *machine)
 {
-    Object *bcm2835;
+    Object *soc;
     Error *err = NULL;
 
     init_ram(OBJECT(machine), machine->ram_size);
 
-    bcm2835 = object_new(TYPE_BCM2835);
-    object_property_add_child(OBJECT(machine), "soc", bcm2835, &error_abort);
+    soc = object_new(TYPE_BCM2835);
+    object_property_add_child(OBJECT(machine), "soc", soc, &error_abort);
 
-    object_property_set_bool(bcm2835, true, "realized", &err);
+    object_property_set_int(soc, VCRAM_SIZE, "vcram-size", &err);
     if (err) {
         error_report("%s", error_get_pretty(err));
         exit(1);
     }
 
-    setup_boot(machine, 0xc42, bootloader_0_pi1, ARRAY_SIZE(bootloader_0_pi1));
+    object_property_set_bool(soc, true, "realized", &err);
+    if (err) {
+        error_report("%s", error_get_pretty(err));
+        exit(1);
+    }
+
+    setup_boot(machine, 0xc42, machine->ram_size - VCRAM_SIZE,
+               bootloader_0_pi1, ARRAY_SIZE(bootloader_0_pi1));
 }
 
 static void raspi2_init(MachineState *machine)
 {
-    Object *bcm2836;
+    Object *soc;
     Error *err = NULL;
 
     init_ram(OBJECT(machine), machine->ram_size);
 
-    bcm2836 = object_new(TYPE_BCM2836);
-    object_property_add_child(OBJECT(machine), "soc", bcm2836, &error_abort);
+    soc = object_new(TYPE_BCM2836);
+    object_property_add_child(OBJECT(machine), "soc", soc, &error_abort);
 
-    object_property_set_bool(bcm2836, true, "realized", &err);
+    object_property_set_int(soc, VCRAM_SIZE, "vcram-size", &err);
     if (err) {
         error_report("%s", error_get_pretty(err));
         exit(1);
     }
 
-    setup_boot(machine, 0xc43, bootloader_0_pi2, ARRAY_SIZE(bootloader_0_pi2));
+    object_property_set_bool(soc, true, "realized", &err);
+    if (err) {
+        error_report("%s", error_get_pretty(err));
+        exit(1);
+    }
+
+    setup_boot(machine, 0xc43, machine->ram_size - VCRAM_SIZE,
+               bootloader_0_pi2, ARRAY_SIZE(bootloader_0_pi2));
 }
 
 static void raspi_machine_init(MachineClass *mc)

@@ -28,7 +28,7 @@ typedef struct BCM2836State {
     SysBusDevice *ic;
     BCM2835PeripheralState peripherals;
 
-    uint64_t vcram_size;
+    uint32_t vcram_size;
 } BCM2836State;
 
 #endif /* BCM2836_H */

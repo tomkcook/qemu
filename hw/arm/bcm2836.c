@@ -14,8 +14,6 @@
 #include "sysemu/sysemu.h" /* for smp_cpus */
 #include "exec/address-spaces.h"
 
-#define DEFAULT_VCRAM_SIZE 0x4000000
-
 static void bcm2836_init(Object *obj)
 {
     BCM2836State *s = BCM2836(obj);
@@ -49,6 +47,13 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
     int n;
 
     /* common peripherals from bcm2835 */
+    object_property_set_int(OBJECT(&s->peripherals), s->vcram_size,
+                            "vcram-size", &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
     object_property_set_bool(OBJECT(&s->peripherals), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
@@ -110,7 +115,7 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
 }
 
 static Property bcm2836_props[] = {
-    DEFINE_PROP_SIZE("vcram-size", BCM2836State, vcram_size, DEFAULT_VCRAM_SIZE),
+    DEFINE_PROP_UINT32("vcram-size", BCM2836State, vcram_size, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 

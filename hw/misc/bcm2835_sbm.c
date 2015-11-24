@@ -6,17 +6,16 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 #include "hw/arm/raspi_platform.h"
-#include "hw/arm/bcm2835_common.h"
+#include "hw/arm/bcm2835_mbox.h"
 #include "hw/arm/bcm2835_arm_control.h"
 
 #define TYPE_BCM2835_SBM "bcm2835_sbm"
 #define BCM2835_SBM(obj) \
         OBJECT_CHECK(Bcm2835SbmState, (obj), TYPE_BCM2835_SBM)
 
-// XXX: FIXME:
-extern AddressSpace *bcm2835_peripheral_as;
-
 typedef struct {
+    MemoryRegion *dma_mr;
+    AddressSpace dma_as;
     uint32_t reg[MBOX_SIZE];
     int count;
     uint32_t status;
@@ -78,6 +77,8 @@ static void mbox_push(Bcm2835Mbox *mb, uint32_t val)
 
 typedef struct {
     SysBusDevice busdev;
+    MemoryRegion *dma_mr;
+    AddressSpace dma_as;
     MemoryRegion iomem;
     int mbox_irq_disabled;
     qemu_irq arm_irq;
@@ -103,7 +104,7 @@ static void bcm2835_sbm_update(Bcm2835SbmState *s)
         } else {
             for (n = 0; n < MBOX_CHAN_COUNT; n++) {
                 if (s->available[n]) {
-                    value = ldl_phys(bcm2835_peripheral_as,
+                    value = ldl_phys(&s->dma_as,
                                      BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (n<<4));
                     if (value != MBOX_INVALID_DATA) {
                         mbox_push(&s->mbox[0], value);
@@ -214,12 +215,12 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
         } else {
             ch = value & 0xf;
             if (ch < MBOX_CHAN_COUNT) {
-                if (ldl_phys(bcm2835_peripheral_as,
+                if (ldl_phys(&s->dma_as,
                              BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4) + 4)) {
                     /* Push delayed, push it in the arm->vc mbox */
                     mbox_push(&s->mbox[1], value);
                 } else {
-                    stl_phys(bcm2835_peripheral_as,
+                    stl_phys(&s->dma_as,
                              BCM2835_VC_PERI_BASE + ARMCTRL_0_SBM_OFFSET + 0x400 + (ch<<4), value);
                 }
             } else {
@@ -252,11 +253,28 @@ static const VMStateDescription vmstate_bcm2835_sbm = {
     }
 };
 
-static int bcm2835_sbm_init(SysBusDevice *sbd)
+static void bcm2835_sbm_init(Object *obj)
+{
+    Bcm2835SbmState *s = BCM2835_SBM(obj);
+    memory_region_init_io(&s->iomem, obj, &bcm2835_sbm_ops, s,
+                          TYPE_BCM2835_SBM, 0x400);
+}
+
+static void bcm2835_sbm_realize(DeviceState *dev, Error **errp)
 {
     int n;
-    DeviceState *dev = DEVICE(sbd);
     Bcm2835SbmState *s = BCM2835_SBM(dev);
+    Object *obj;
+    Error *err = NULL;
+
+    obj = object_property_get_link(OBJECT(dev), "dma_mr", &err);
+    if (err || obj == NULL) {
+        error_setg(errp, "bcm2835_sbm: required dma_mr link not found");
+        return;
+    }
+
+    s->dma_mr = MEMORY_REGION(obj);
+    address_space_init(&s->dma_as, s->dma_mr, NULL);
 
     mbox_init(&s->mbox[0]);
     mbox_init(&s->mbox[1]);
@@ -265,22 +283,18 @@ static int bcm2835_sbm_init(SysBusDevice *sbd)
         s->available[n] = 0;
     }
 
-    sysbus_init_irq(sbd, &s->arm_irq);
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->arm_irq);
     qdev_init_gpio_in(dev, bcm2835_sbm_set_irq, MBOX_CHAN_COUNT);
 
-    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_sbm_ops, s,
-        TYPE_BCM2835_SBM, 0x400);
-    sysbus_init_mmio(sbd, &s->iomem);
-    vmstate_register(dev, -1, &vmstate_bcm2835_sbm, s);
-
-    return 0;
+    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
 static void bcm2835_sbm_class_init(ObjectClass *klass, void *data)
 {
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
 
-    sdc->init = bcm2835_sbm_init;
+    dc->realize = bcm2835_sbm_realize;
+    dc->vmsd = &vmstate_bcm2835_sbm;
 }
 
 static TypeInfo bcm2835_sbm_info = {
@@ -288,6 +302,7 @@ static TypeInfo bcm2835_sbm_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(Bcm2835SbmState),
     .class_init    = bcm2835_sbm_class_init,
+    .instance_init = bcm2835_sbm_init,
 };
 
 static void bcm2835_sbm_register_types(void)
