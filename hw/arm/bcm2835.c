@@ -13,8 +13,6 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 
-#define DEFAULT_VCRAM_SIZE 0x4000000
-
 static void bcm2835_init(Object *obj)
 {
     BCM2835State *s = BCM2835(obj);
@@ -35,6 +33,13 @@ static void bcm2835_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     /* common peripherals from bcm2835 */
+    object_property_set_int(OBJECT(&s->peripherals), s->vcram_size,
+                            "vcram-size", &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
     object_property_set_bool(OBJECT(&s->peripherals), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
