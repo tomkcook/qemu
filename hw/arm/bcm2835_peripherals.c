@@ -319,7 +319,9 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
 
     memory_region_add_subregion(&s->peri_mr, DMA_OFFSET,
                                 sysbus_mmio_get_region(s->dma, 0));
-    memory_region_add_subregion(&s->peri_mr, 0xe05000, // XXX
+    /* XXX: this address was in the original raspi port.
+     * It's unclear where it is derived from. */
+    memory_region_add_subregion(&s->peri_mr, 0xe05000,
                                 sysbus_mmio_get_region(s->dma, 1));
 
     sysbus_connect_irq(s->dma, 0, pic[INTERRUPT_DMA0]);

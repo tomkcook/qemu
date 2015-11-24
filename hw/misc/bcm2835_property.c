@@ -372,7 +372,7 @@ static void bcm2835_property_realize(DeviceState *dev, Error **errp)
 
     obj = object_property_get_link(OBJECT(dev), "bcm2835_fb", &err);
     if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_property: required bcm2835_fb link not found");
+        error_setg(errp, "bcm2835_property: required bcm2835_fb link missing");
         return;
     }
 
