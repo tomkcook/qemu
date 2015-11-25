@@ -15,24 +15,7 @@
  * This code is licensed under the GPL.
  */
 
-#include "hw/sysbus.h"
-#include "sysemu/char.h"
-
-#define TYPE_BCM2835_AUX "bcm2835_aux"
-#define BCM2835_AUX(obj) OBJECT_CHECK(Bcm2835AuxState, (obj), TYPE_BCM2835_AUX)
-
-typedef struct {
-    SysBusDevice parent_obj;
-
-    MemoryRegion iomem;
-    uint32_t read_fifo[8];
-    bool rx_int_enable, tx_int_enable;
-    int read_pos;
-    int read_count;
-    CharDriverState *chr;
-    qemu_irq irq;
-    const unsigned char *id;
-} Bcm2835AuxState;
+#include "hw/char/bcm2835_aux.h"
 
 static void bcm2835_aux_update(Bcm2835AuxState *s)
 {
@@ -107,7 +90,7 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
 }
 
 static void bcm2835_aux_write(void *opaque, hwaddr offset,
-                        uint64_t value, unsigned size)
+                              uint64_t value, unsigned size)
 {
     Bcm2835AuxState *s = (Bcm2835AuxState *)opaque;
     unsigned char ch;
@@ -116,7 +99,8 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
     case 1: /* AUXENB */
         if (value != 1) {
             qemu_log_mask(LOG_GUEST_ERROR,
-                          "bcm2835_aux_write: Trying to enable SPI or disable UART. Not supported!\n");
+                          "bcm2835_aux_write: Trying to enable SPI or"
+                          " disable UART. Not supported!\n");
         }
         break;
 

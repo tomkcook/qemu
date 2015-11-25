@@ -42,10 +42,10 @@ static void bcm2835_peripherals_init(Object *obj)
     object_property_add_child(obj, "uart0", OBJECT(dev), NULL);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
-    /* UART1 */
-    s->uart1 = dev = SYS_BUS_DEVICE(object_new("bcm2835_aux"));
-    object_property_add_child(obj, "uart1", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    /* AUX / UART1 */
+    object_initialize(&s->aux, sizeof(s->aux), TYPE_BCM2835_AUX);
+    object_property_add_child(obj, "aux", OBJECT(&s->aux), NULL);
+    qdev_set_parent_bus(DEVICE(&s->aux), sysbus_get_default());
 
     /* System timer */
     s->systimer = dev = SYS_BUS_DEVICE(object_new("bcm2835_st"));
@@ -177,16 +177,16 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                                 sysbus_mmio_get_region(s->uart0, 0));
     sysbus_connect_irq(s->uart0, 0, pic[INTERRUPT_VC_UART]);
 
-    /* UART1 */
-    object_property_set_bool(OBJECT(s->uart1), true, "realized", &err);
+    /* AUX / UART1 */
+    object_property_set_bool(OBJECT(&s->aux), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, UART1_OFFSET,
-                                sysbus_mmio_get_region(s->uart1, 0));
-    sysbus_connect_irq(s->uart1, 0, pic[INTERRUPT_AUX]);
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->aux), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->aux), 0, pic[INTERRUPT_AUX]);
 
     /* System timer */
     object_property_set_bool(OBJECT(s->systimer), true, "realized", &err);
