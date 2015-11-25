@@ -15,7 +15,6 @@
 static void bcm2835_peripherals_init(Object *obj)
 {
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(obj);
-    SysBusDevice *dev;
 
     /* Memory region for peripheral devices, which we export to our parent */
     memory_region_init_io(&s->peri_mr, OBJECT(s), NULL, s,
@@ -38,9 +37,9 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->ic), sysbus_get_default());
 
     /* UART0 */
-    s->uart0 = dev = SYS_BUS_DEVICE(object_new("pl011"));
-    object_property_add_child(obj, "uart0", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    s->uart0 = SYS_BUS_DEVICE(object_new("pl011"));
+    object_property_add_child(obj, "uart0", OBJECT(s->uart0), NULL);
+    qdev_set_parent_bus(DEVICE(s->uart0), sysbus_get_default());
 
     /* AUX / UART1 */
     object_initialize(&s->aux, sizeof(s->aux), TYPE_BCM2835_AUX);
@@ -58,9 +57,12 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->timer), sysbus_get_default());
 
     /* USB controller */
-    s->usb = dev = SYS_BUS_DEVICE(object_new("bcm2835_usb"));
-    object_property_add_child(obj, "usb", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->usb, sizeof(s->usb), TYPE_BCM2835_USB);
+    object_property_add_child(obj, "usb", OBJECT(&s->usb), NULL);
+    qdev_set_parent_bus(DEVICE(&s->usb), sysbus_get_default());
+
+    object_property_add_const_link(OBJECT(&s->usb), "dma_mr",
+                                   OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* MPHI - Message-based Parallel Host Interface */
     object_initialize(&s->mphi, sizeof(s->mphi), TYPE_BCM2835_MPHI);
@@ -215,15 +217,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_ARM_TIMER));
 
     /* USB controller */
-    object_property_set_bool(OBJECT(s->usb), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->usb), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, USB_OFFSET,
-                                sysbus_mmio_get_region(s->usb, 0));
-    sysbus_connect_irq(s->usb, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->usb), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->usb), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_VC_USB));
 
     /* MPHI - Message-based Parallel Host Interface */
