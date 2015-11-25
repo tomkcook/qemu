@@ -3,32 +3,12 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
-#include "hw/display/framebuffer.h"
-#include "hw/sysbus.h"
-#include "ui/console.h"
-#include "ui/pixel_ops.h"
-#include "exec/address-spaces.h"
+#include "hw/misc/bcm2835_property.h"
 #include "hw/arm/bcm2835_mbox.h"
-#include "hw/display/bcm2835_fb.h"
-
-#define TYPE_BCM2835_PROPERTY "bcm2835_property"
-#define BCM2835_PROPERTY(obj) \
-        OBJECT_CHECK(Bcm2835PropertyState, (obj), TYPE_BCM2835_PROPERTY)
-
-typedef struct {
-    SysBusDevice busdev;
-    MemoryRegion *dma_mr;
-    AddressSpace dma_as;
-    BCM2835FbState *fbdev;
-    MemoryRegion iomem;
-    uint32_t addr;
-    int pending;
-    qemu_irq mbox_irq;
-} Bcm2835PropertyState;
 
 /* https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface */
 
-static void bcm2835_property_mbox_push(Bcm2835PropertyState *s, uint32_t value)
+static void bcm2835_property_mbox_push(BCM2835PropertyState *s, uint32_t value)
 {
     uint32_t tag;
     uint32_t bufsize;
@@ -299,7 +279,7 @@ static void bcm2835_property_mbox_push(Bcm2835PropertyState *s, uint32_t value)
 static uint64_t bcm2835_property_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    Bcm2835PropertyState *s = (Bcm2835PropertyState *)opaque;
+    BCM2835PropertyState *s = (BCM2835PropertyState *)opaque;
     uint32_t res = 0;
 
     switch (offset) {
@@ -322,7 +302,7 @@ static uint64_t bcm2835_property_read(void *opaque, hwaddr offset,
 static void bcm2835_property_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    Bcm2835PropertyState *s = (Bcm2835PropertyState *)opaque;
+    BCM2835PropertyState *s = (BCM2835PropertyState *)opaque;
     switch (offset) {
     case 0:
         if (!s->pending) {
@@ -359,14 +339,16 @@ static const VMStateDescription vmstate_bcm2835_property = {
 
 static void bcm2835_property_init(Object *obj)
 {
-    Bcm2835PropertyState *s = BCM2835_PROPERTY(obj);
+    BCM2835PropertyState *s = BCM2835_PROPERTY(obj);
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_property_ops, s,
         TYPE_BCM2835_PROPERTY, 0x10);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
+    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->mbox_irq);
 }
 
 static void bcm2835_property_realize(DeviceState *dev, Error **errp)
 {
-    Bcm2835PropertyState *s = BCM2835_PROPERTY(dev);
+    BCM2835PropertyState *s = BCM2835_PROPERTY(dev);
     Object *obj;
     Error *err = NULL;
 
@@ -388,9 +370,6 @@ static void bcm2835_property_realize(DeviceState *dev, Error **errp)
     address_space_init(&s->dma_as, s->dma_mr, NULL);
 
     s->pending = 0;
-
-    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->mbox_irq);
-    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
 static void bcm2835_property_class_init(ObjectClass *klass, void *data)
@@ -404,7 +383,7 @@ static void bcm2835_property_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_property_info = {
     .name          = TYPE_BCM2835_PROPERTY,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Bcm2835PropertyState),
+    .instance_size = sizeof(BCM2835PropertyState),
     .class_init    = bcm2835_property_class_init,
     .instance_init = bcm2835_property_init,
 };

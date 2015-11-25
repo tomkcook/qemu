@@ -91,13 +91,13 @@ static void bcm2835_peripherals_init(Object *obj)
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* Property channel */
-    s->property = dev = SYS_BUS_DEVICE(object_new("bcm2835_property"));
-    object_property_add_child(obj, "property", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->property, sizeof(s->property), TYPE_BCM2835_PROPERTY);
+    object_property_add_child(obj, "property", OBJECT(&s->property), NULL);
+    qdev_set_parent_bus(DEVICE(&s->property), sysbus_get_default());
 
-    object_property_add_const_link(OBJECT(dev), "bcm2835_fb",
+    object_property_add_const_link(OBJECT(&s->property), "bcm2835_fb",
                                    OBJECT(&s->fb), &error_abort);
-    object_property_add_const_link(OBJECT(dev), "dma_mr",
+    object_property_add_const_link(OBJECT(&s->property), "dma_mr",
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* VCHIQ */
@@ -288,15 +288,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_FB));
 
     /* Property channel */
-    object_property_set_bool(OBJECT(s->property), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->property), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_PROPERTY<<4,
-                                sysbus_mmio_get_region(s->property, 0));
-    sysbus_connect_irq(s->property, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->property), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->property), 0,
                        qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_PROPERTY));
 
     /* VCHIQ */
