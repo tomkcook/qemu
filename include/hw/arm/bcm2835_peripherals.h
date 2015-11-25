@@ -31,7 +31,7 @@ typedef struct BCM2835PeripheralState {
     MemoryRegion ram_alias[4];
     qemu_irq irq, fiq;
 
-    Bcm2835AuxState aux;
+    BCM2835AuxState aux;
     BCM2835FbState fb;
     BCM2835DmaState dma;
     SysBusDevice *ic, *uart0, *systimer, *armtimer, *usb, *mphi, *sbm,

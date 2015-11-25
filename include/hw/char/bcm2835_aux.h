@@ -12,7 +12,7 @@
 #include "sysemu/char.h"
 
 #define TYPE_BCM2835_AUX "bcm2835_aux"
-#define BCM2835_AUX(obj) OBJECT_CHECK(Bcm2835AuxState, (obj), TYPE_BCM2835_AUX)
+#define BCM2835_AUX(obj) OBJECT_CHECK(BCM2835AuxState, (obj), TYPE_BCM2835_AUX)
 
 typedef struct {
     SysBusDevice parent_obj;
@@ -25,6 +25,6 @@ typedef struct {
     CharDriverState *chr;
     qemu_irq irq;
     const unsigned char *id;
-} Bcm2835AuxState;
+} BCM2835AuxState;
 
 #endif
