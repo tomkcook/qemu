@@ -68,11 +68,11 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->mphi), sysbus_get_default());
 
     /* Semaphores / Doorbells / Mailboxes */
-    s->sbm = dev = SYS_BUS_DEVICE(object_new("bcm2835_sbm"));
-    object_property_add_child(obj, "sbm", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->sbm, sizeof(s->sbm), TYPE_BCM2835_SBM);
+    object_property_add_child(obj, "sbm", OBJECT(&s->sbm), NULL);
+    qdev_set_parent_bus(DEVICE(&s->sbm), sysbus_get_default());
 
-    object_property_add_const_link(OBJECT(dev), "mbox_mr",
+    object_property_add_const_link(OBJECT(&s->sbm), "mbox_mr",
                                    OBJECT(&s->mbox_mr), &error_abort);
 
     /* Power management */
@@ -239,15 +239,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_HOSTPORT));
 
     /* Semaphores / Doorbells / Mailboxes */
-    object_property_set_bool(OBJECT(s->sbm), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->sbm), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, ARMCTRL_0_SBM_OFFSET,
-                                sysbus_mmio_get_region(s->sbm, 0));
-    sysbus_connect_irq(s->sbm, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->sbm), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->sbm), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_ARM_MAILBOX));
 
     /* Mailbox-addressable peripherals use the private mbox_mr address space
@@ -263,7 +263,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_POWER<<4,
                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->power), 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->power), 0,
-                       qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_POWER));
+                       qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_POWER));
 
     /* Framebuffer */
     vcram_size = (uint32_t)object_property_get_int(OBJECT(s), "vcram-size",
@@ -285,7 +285,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_FB<<4,
                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->fb), 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->fb), 0,
-                       qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_FB));
+                       qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_FB));
 
     /* Property channel */
     object_property_set_bool(OBJECT(&s->property), true, "realized", &err);
@@ -297,7 +297,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_PROPERTY<<4,
                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->property), 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->property), 0,
-                       qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_PROPERTY));
+                       qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_PROPERTY));
 
     /* VCHIQ */
     object_property_set_bool(OBJECT(s->vchiq), true, "realized", &err);
@@ -309,7 +309,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_VCHIQ<<4,
                                 sysbus_mmio_get_region(s->vchiq, 0));
     sysbus_connect_irq(s->vchiq, 0,
-                       qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_VCHIQ));
+                       qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_VCHIQ));
 
     /* Extended Mass Media Controller */
     object_property_set_bool(OBJECT(s->emmc), true, "realized", &err);

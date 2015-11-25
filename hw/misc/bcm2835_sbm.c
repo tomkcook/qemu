@@ -3,27 +3,10 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
-#include "hw/sysbus.h"
-#include "exec/address-spaces.h"
-#include "hw/arm/raspi_platform.h"
-#include "hw/arm/bcm2835_mbox.h"
+#include "hw/misc/bcm2835_sbm.h"
 #include "hw/arm/bcm2835_arm_control.h"
 
-#define TYPE_BCM2835_SBM "bcm2835_sbm"
-#define BCM2835_SBM(obj) \
-        OBJECT_CHECK(Bcm2835SbmState, (obj), TYPE_BCM2835_SBM)
-
-typedef struct {
-    MemoryRegion *mbox_mr;
-    AddressSpace mbox_as;
-    uint32_t reg[MBOX_SIZE];
-    int count;
-    uint32_t status;
-    uint32_t config;
-} Bcm2835Mbox;
-
-
-static void mbox_update_status(Bcm2835Mbox *mb)
+static void mbox_update_status(BCM2835Mbox *mb)
 {
     if (mb->count == 0) {
         mb->status |= ARM_MS_EMPTY;
@@ -37,7 +20,7 @@ static void mbox_update_status(Bcm2835Mbox *mb)
     }
 }
 
-static void mbox_init(Bcm2835Mbox *mb)
+static void mbox_init(BCM2835Mbox *mb)
 {
     int n;
     mb->count = 0;
@@ -48,7 +31,7 @@ static void mbox_init(Bcm2835Mbox *mb)
     mbox_update_status(mb);
 }
 
-static uint32_t mbox_pull(Bcm2835Mbox *mb, int index)
+static uint32_t mbox_pull(BCM2835Mbox *mb, int index)
 {
     int n;
     uint32_t val;
@@ -68,25 +51,14 @@ static uint32_t mbox_pull(Bcm2835Mbox *mb, int index)
     return val;
 }
 
-static void mbox_push(Bcm2835Mbox *mb, uint32_t val)
+static void mbox_push(BCM2835Mbox *mb, uint32_t val)
 {
     assert(mb->count < MBOX_SIZE);
     mb->reg[mb->count++] = val;
     mbox_update_status(mb);
 }
 
-typedef struct {
-    SysBusDevice busdev;
-    MemoryRegion *mbox_mr;
-    AddressSpace mbox_as;
-    MemoryRegion iomem;
-    int mbox_irq_disabled;
-    qemu_irq arm_irq;
-    int available[MBOX_CHAN_COUNT];
-    Bcm2835Mbox mbox[2];
-} Bcm2835SbmState;
-
-static void bcm2835_sbm_update(Bcm2835SbmState *s)
+static void bcm2835_sbm_update(BCM2835SbmState *s)
 {
     int set;
     int done, n;
@@ -138,7 +110,7 @@ static void bcm2835_sbm_update(Bcm2835SbmState *s)
 
 static void bcm2835_sbm_set_irq(void *opaque, int irq, int level)
 {
-    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
+    BCM2835SbmState *s = (BCM2835SbmState *)opaque;
     s->available[irq] = level;
     if (!s->mbox_irq_disabled) {
         bcm2835_sbm_update(s);
@@ -148,7 +120,7 @@ static void bcm2835_sbm_set_irq(void *opaque, int irq, int level)
 static uint64_t bcm2835_sbm_read(void *opaque, hwaddr offset,
                            unsigned size)
 {
-    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
+    BCM2835SbmState *s = (BCM2835SbmState *)opaque;
     uint32_t res = 0;
 
     offset &= 0xff;
@@ -194,7 +166,7 @@ static void bcm2835_sbm_write(void *opaque, hwaddr offset,
 {
     int ch;
 
-    Bcm2835SbmState *s = (Bcm2835SbmState *)opaque;
+    BCM2835SbmState *s = (BCM2835SbmState *)opaque;
 
     offset &= 0xff;
 
@@ -252,15 +224,18 @@ static const VMStateDescription vmstate_bcm2835_sbm = {
 
 static void bcm2835_sbm_init(Object *obj)
 {
-    Bcm2835SbmState *s = BCM2835_SBM(obj);
+    BCM2835SbmState *s = BCM2835_SBM(obj);
     memory_region_init_io(&s->iomem, obj, &bcm2835_sbm_ops, s,
                           TYPE_BCM2835_SBM, 0x400);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
+    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->arm_irq);
+    qdev_init_gpio_in(DEVICE(s), bcm2835_sbm_set_irq, MBOX_CHAN_COUNT);
 }
 
 static void bcm2835_sbm_realize(DeviceState *dev, Error **errp)
 {
     int n;
-    Bcm2835SbmState *s = BCM2835_SBM(dev);
+    BCM2835SbmState *s = BCM2835_SBM(dev);
     Object *obj;
     Error *err = NULL;
 
@@ -279,11 +254,6 @@ static void bcm2835_sbm_realize(DeviceState *dev, Error **errp)
     for (n = 0; n < MBOX_CHAN_COUNT; n++) {
         s->available[n] = 0;
     }
-
-    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->arm_irq);
-    qdev_init_gpio_in(dev, bcm2835_sbm_set_irq, MBOX_CHAN_COUNT);
-
-    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
 static void bcm2835_sbm_class_init(ObjectClass *klass, void *data)
@@ -297,7 +267,7 @@ static void bcm2835_sbm_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_sbm_info = {
     .name          = TYPE_BCM2835_SBM,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Bcm2835SbmState),
+    .instance_size = sizeof(BCM2835SbmState),
     .class_init    = bcm2835_sbm_class_init,
     .instance_init = bcm2835_sbm_init,
 };
