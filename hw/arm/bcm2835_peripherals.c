@@ -111,11 +111,11 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
     /* DMA Channels */
-    s->dma = dev = SYS_BUS_DEVICE(object_new("bcm2835_dma"));
-    object_property_add_child(obj, "dma", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->dma, sizeof(s->dma), TYPE_BCM2835_DMA);
+    object_property_add_child(obj, "dma", OBJECT(&s->dma), NULL);
+    qdev_set_parent_bus(DEVICE(&s->dma), sysbus_get_default());
 
-    object_property_add_const_link(OBJECT(dev), "dma_mr",
+    object_property_add_const_link(OBJECT(&s->dma), "dma_mr",
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
 }
@@ -319,32 +319,32 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->emmc, 0, pic[INTERRUPT_VC_ARASANSDIO]);
 
     /* DMA Channels */
-    object_property_set_bool(OBJECT(s->dma), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->dma), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, DMA_OFFSET,
-                                sysbus_mmio_get_region(s->dma, 0));
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dma), 0));
     /* XXX: this address was in the original raspi port.
      * It's unclear where it is derived from. */
     memory_region_add_subregion(&s->peri_mr, 0xe05000,
-                                sysbus_mmio_get_region(s->dma, 1));
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dma), 1));
 
-    sysbus_connect_irq(s->dma, 0, pic[INTERRUPT_DMA0]);
-    sysbus_connect_irq(s->dma, 1, pic[INTERRUPT_DMA1]);
-    sysbus_connect_irq(s->dma, 2, pic[INTERRUPT_VC_DMA2]);
-    sysbus_connect_irq(s->dma, 3, pic[INTERRUPT_VC_DMA3]);
-    sysbus_connect_irq(s->dma, 4, pic[INTERRUPT_DMA4]);
-    sysbus_connect_irq(s->dma, 5, pic[INTERRUPT_DMA5]);
-    sysbus_connect_irq(s->dma, 6, pic[INTERRUPT_DMA6]);
-    sysbus_connect_irq(s->dma, 7, pic[INTERRUPT_DMA7]);
-    sysbus_connect_irq(s->dma, 8, pic[INTERRUPT_DMA8]);
-    sysbus_connect_irq(s->dma, 9, pic[INTERRUPT_DMA9]);
-    sysbus_connect_irq(s->dma, 10, pic[INTERRUPT_DMA10]);
-    sysbus_connect_irq(s->dma, 11, pic[INTERRUPT_DMA11]);
-    sysbus_connect_irq(s->dma, 12, pic[INTERRUPT_DMA12]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 0, pic[INTERRUPT_DMA0]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 1, pic[INTERRUPT_DMA1]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 2, pic[INTERRUPT_VC_DMA2]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 3, pic[INTERRUPT_VC_DMA3]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 4, pic[INTERRUPT_DMA4]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 5, pic[INTERRUPT_DMA5]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 6, pic[INTERRUPT_DMA6]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 7, pic[INTERRUPT_DMA7]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 8, pic[INTERRUPT_DMA8]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 9, pic[INTERRUPT_DMA9]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 10, pic[INTERRUPT_DMA10]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 11, pic[INTERRUPT_DMA11]);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->dma), 12, pic[INTERRUPT_DMA12]);
 }
 
 static void bcm2835_peripherals_class_init(ObjectClass *oc, void *data)
