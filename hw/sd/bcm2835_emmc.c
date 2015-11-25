@@ -3,10 +3,8 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
-#include "qemu/timer.h"
-#include "hw/sysbus.h"
-#include "hw/sd/sd.h"
 #include "sysemu/blockdev.h"
+#include "hw/sd/bcm2835_emmc.h"
 
 /*
  * Controller registers
@@ -294,51 +292,7 @@
 
 #define COMPLETION_DELAY (100000)
 
-#define TYPE_BCM2835_EMMC "bcm2835_emmc"
-#define BCM2835_EMMC(obj) \
-        OBJECT_CHECK(Bcm2835EmmcState, (obj), TYPE_BCM2835_EMMC)
-
-typedef struct {
-    SysBusDevice busdev;
-    MemoryRegion iomem;
-
-    SDState *card;
-
-    uint32_t arg2;
-    uint32_t blksizecnt;
-    uint32_t arg1;
-    uint32_t cmdtm;
-    uint32_t resp0;
-    uint32_t resp1;
-    uint32_t resp2;
-    uint32_t resp3;
-    uint32_t data;
-    uint32_t status;
-    uint32_t control0;
-    uint32_t control1;
-    uint32_t interrupt;
-    uint32_t irpt_mask;
-    uint32_t irpt_en;
-    uint32_t control2;
-    uint32_t force_irpt;
-    uint32_t spi_int_spt;
-    uint32_t slotisr_ver;
-    uint32_t caps;
-    uint32_t caps2;
-    uint32_t maxcurr;
-    uint32_t maxcurr2;
-
-    int acmd;
-    int write_op;
-
-    uint32_t bytecnt;
-
-    QEMUTimer *delay_timer;
-    qemu_irq irq;
-
-} Bcm2835EmmcState;
-
-static void bcm2835_emmc_set_irq(Bcm2835EmmcState *s)
+static void bcm2835_emmc_set_irq(BCM2835EmmcState *s)
 {
     /* the error bit must be set iff there are any other errors */
     assert(((s->interrupt & SDHCI_INT_ERROR) == 0)
@@ -351,7 +305,7 @@ static void bcm2835_emmc_set_irq(Bcm2835EmmcState *s)
     }
 }
 
-static void autocmd12(Bcm2835EmmcState *s)
+static void autocmd12(BCM2835EmmcState *s)
 {
     SDRequest request;
     uint8_t response[16];
@@ -366,7 +320,7 @@ static void autocmd12(Bcm2835EmmcState *s)
     sd_do_command(s->card, &request, response);
 }
 
-static void autocmd23(Bcm2835EmmcState *s)
+static void autocmd23(BCM2835EmmcState *s)
 {
     SDRequest request;
     uint8_t response[16];
@@ -383,7 +337,7 @@ static void autocmd23(Bcm2835EmmcState *s)
 
 static void delayed_completion(void *opaque)
 {
-    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
+    BCM2835EmmcState *s = (BCM2835EmmcState *)opaque;
 
     s->interrupt |= SDHCI_INT_DATA_END;
     autocmd12(s);
@@ -395,7 +349,7 @@ static void delayed_completion(void *opaque)
 static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
+    BCM2835EmmcState *s = (BCM2835EmmcState *)opaque;
     uint32_t res = 0;
     uint8_t tmp = 0;
     int set_irq = 0;
@@ -539,7 +493,7 @@ static uint64_t bcm2835_emmc_read(void *opaque, hwaddr offset,
 static void bcm2835_emmc_write(void *opaque, hwaddr offset,
                         uint64_t value, unsigned size)
 {
-    Bcm2835EmmcState *s = (Bcm2835EmmcState *)opaque;
+    BCM2835EmmcState *s = (BCM2835EmmcState *)opaque;
     uint8_t cmd;
     SDRequest request;
     uint8_t response[16];
@@ -763,16 +717,25 @@ static const VMStateDescription vmstate_bcm2835_emmc = {
     }
 };
 
-static int bcm2835_emmc_init(SysBusDevice *sbd)
+static void bcm2835_emmc_init(Object *obj)
 {
+    BCM2835EmmcState *s = BCM2835_EMMC(obj);
+
+    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_emmc_ops, s,
+                          TYPE_BCM2835_EMMC, 0x100000);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
+    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->irq);
+}
+
+static void bcm2835_emmc_realize(DeviceState *dev, Error **errp)
+{
+    BCM2835EmmcState *s = BCM2835_EMMC(dev);
     DriveInfo *dinfo;
-    DeviceState *dev = DEVICE(sbd);
-    Bcm2835EmmcState *s = BCM2835_EMMC(dev);
 
     dinfo = drive_get(IF_SD, 0, 0);
     if (!dinfo) {
-        fprintf(stderr, "bcm2835_emmc: missing SD card\n");
-        exit(1);
+        error_setg(errp, "bcm2835_emmc: missing SD card");
+        return;
     }
     s->card = sd_init(blk_by_legacy_dinfo(dinfo), 0);
 
@@ -811,29 +774,22 @@ static int bcm2835_emmc_init(SysBusDevice *sbd)
     s->write_op = 0;
 
     s->delay_timer = timer_new_us(QEMU_CLOCK_VIRTUAL, delayed_completion, s);
-
-    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_emmc_ops, s,
-        TYPE_BCM2835_EMMC, 0x100000);
-    sysbus_init_mmio(sbd, &s->iomem);
-    vmstate_register(dev, -1, &vmstate_bcm2835_emmc, s);
-
-    sysbus_init_irq(sbd, &s->irq);
-
-    return 0;
 }
 
 static void bcm2835_emmc_class_init(ObjectClass *klass, void *data)
 {
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
 
-    sdc->init = bcm2835_emmc_init;
+    dc->realize = bcm2835_emmc_realize;
+    dc->vmsd = &vmstate_bcm2835_emmc;
 }
 
 static TypeInfo bcm2835_emmc_info = {
     .name          = TYPE_BCM2835_EMMC,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Bcm2835EmmcState),
+    .instance_size = sizeof(BCM2835EmmcState),
     .class_init    = bcm2835_emmc_class_init,
+    .instance_init = bcm2835_emmc_init,
 };
 
 static void bcm2835_emmc_register_types(void)
