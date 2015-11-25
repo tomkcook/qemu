@@ -22,6 +22,7 @@
 #include "hw/misc/bcm2835_power.h"
 #include "hw/misc/bcm2835_property.h"
 #include "hw/misc/bcm2835_sbm.h"
+#include "hw/misc/bcm2835_vchiq.h"
 
 #define TYPE_BCM2835_PERIPHERALS "bcm2835_peripherals"
 #define BCM2835_PERIPHERALS(obj) \
@@ -44,7 +45,8 @@ typedef struct BCM2835PeripheralState {
     BCM2835PowerState power;
     BCM2835PropertyState property;
     BCM2835SbmState sbm;
-    SysBusDevice *uart0, *systimer, *armtimer, *usb, *vchiq, *emmc;
+    BCM2835VchiqState vchiq;
+    SysBusDevice *uart0, *systimer, *armtimer, *usb, *emmc;
 } BCM2835PeripheralState;
 
 #endif /* BCM2835_PERIPHERALS_H */

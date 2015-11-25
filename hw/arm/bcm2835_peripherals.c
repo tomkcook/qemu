@@ -101,9 +101,9 @@ static void bcm2835_peripherals_init(Object *obj)
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* VCHIQ */
-    s->vchiq = dev = SYS_BUS_DEVICE(object_new("bcm2835_vchiq"));
-    object_property_add_child(obj, "vchiq", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->vchiq, sizeof(s->vchiq), TYPE_BCM2835_VCHIQ);
+    object_property_add_child(obj, "vchiq", OBJECT(&s->vchiq), NULL);
+    qdev_set_parent_bus(DEVICE(&s->vchiq), sysbus_get_default());
 
     /* Extended Mass Media Controller */
     s->emmc = dev = SYS_BUS_DEVICE(object_new("bcm2835_emmc"));
@@ -300,15 +300,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_PROPERTY));
 
     /* VCHIQ */
-    object_property_set_bool(OBJECT(s->vchiq), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->vchiq), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_VCHIQ<<4,
-                                sysbus_mmio_get_region(s->vchiq, 0));
-    sysbus_connect_irq(s->vchiq, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->vchiq), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->vchiq), 0,
                        qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_VCHIQ));
 
     /* Extended Mass Media Controller */
