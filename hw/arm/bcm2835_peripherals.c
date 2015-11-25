@@ -76,9 +76,9 @@ static void bcm2835_peripherals_init(Object *obj)
                                    OBJECT(&s->mbox_mr), &error_abort);
 
     /* Power management */
-    s->power = dev = SYS_BUS_DEVICE(object_new("bcm2835_power"));
-    object_property_add_child(obj, "power", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->power, sizeof(s->power), TYPE_BCM2835_POWER);
+    object_property_add_child(obj, "power", OBJECT(&s->power), NULL);
+    qdev_set_parent_bus(DEVICE(&s->power), sysbus_get_default());
 
     /* Framebuffer */
     object_initialize(&s->fb, sizeof(s->fb), TYPE_BCM2835_FB);
@@ -254,15 +254,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
      * and pseudo-irqs to dispatch requests and responses. */
 
     /* Power management */
-    object_property_set_bool(OBJECT(s->power), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->power), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_POWER<<4,
-                                sysbus_mmio_get_region(s->power, 0));
-    sysbus_connect_irq(s->power, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->power), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->power), 0,
                        qdev_get_gpio_in(DEVICE(s->sbm), MBOX_CHAN_POWER));
 
     /* Framebuffer */
