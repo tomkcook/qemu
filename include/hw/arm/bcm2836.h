@@ -12,7 +12,8 @@
 #define BCM2836_H
 
 #include "hw/arm/arm.h"
-#include "bcm2835_peripherals.h"
+#include "hw/arm/bcm2835_peripherals.h"
+#include "hw/intc/bcm2836_control.h"
 
 #define TYPE_BCM2836 "bcm2836"
 #define BCM2836(obj) OBJECT_CHECK(BCM2836State, (obj), TYPE_BCM2836)
@@ -25,7 +26,7 @@ typedef struct BCM2836State {
     /*< public >*/
 
     ARMCPU cpus[BCM2836_NCPUS];
-    SysBusDevice *ic;
+    BCM2836ControlState ic;
     BCM2835PeripheralState peripherals;
 } BCM2836State;
 

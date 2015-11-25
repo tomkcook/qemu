@@ -17,7 +17,6 @@
 static void bcm2836_init(Object *obj)
 {
     BCM2836State *s = BCM2836(obj);
-    SysBusDevice *dev;
     int n;
 
     /* TODO: probably shouldn't be using smp_cpus here */
@@ -29,9 +28,9 @@ static void bcm2836_init(Object *obj)
                                   &error_abort);
     }
 
-    s->ic = dev = SYS_BUS_DEVICE(object_new("bcm2836_control"));
-    object_property_add_child(obj, "ic", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->ic, sizeof(s->ic), TYPE_BCM2836_CONTROL);
+    object_property_add_child(obj, "ic", OBJECT(&s->ic), NULL);
+    qdev_set_parent_bus(DEVICE(&s->ic), sysbus_get_default());
 
     object_initialize(&s->peripherals, sizeof(s->peripherals),
                       TYPE_BCM2835_PERIPHERALS);
@@ -59,18 +58,18 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
                             BCM2836_PERI_BASE, 1);
 
     /* bcm2836 interrupt controller (and mailboxes, etc.) */
-    object_property_set_bool(OBJECT(s->ic), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->ic), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(s->ic), 0, BCM2836_CONTROL_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(&s->ic), 0, BCM2836_CONTROL_BASE);
 
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->peripherals), 0,
-                       qdev_get_gpio_in_named(DEVICE(s->ic), "gpu_irq", 0));
+                       qdev_get_gpio_in_named(DEVICE(&s->ic), "gpu_irq", 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->peripherals), 1,
-                       qdev_get_gpio_in_named(DEVICE(s->ic), "gpu_fiq", 0));
+                       qdev_get_gpio_in_named(DEVICE(&s->ic), "gpu_fiq", 0));
 
     /* TODO: probably shouldn't be using smp_cpus here */
     assert(smp_cpus <= BCM2836_NCPUS);
@@ -94,18 +93,18 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
         }
 
         /* Connect irq/fiq outputs from the interrupt controller. */
-        qdev_connect_gpio_out_named(DEVICE(s->ic), "irq", n,
+        qdev_connect_gpio_out_named(DEVICE(&s->ic), "irq", n,
                                     qdev_get_gpio_in(DEVICE(&s->cpus[n]),
                                                      ARM_CPU_IRQ));
-        qdev_connect_gpio_out_named(DEVICE(s->ic), "fiq", n,
+        qdev_connect_gpio_out_named(DEVICE(&s->ic), "fiq", n,
                                     qdev_get_gpio_in(DEVICE(&s->cpus[n]),
                                                      ARM_CPU_FIQ));
 
         /* Connect timers from the CPU to the interrupt controller */
         s->cpus[n].gt_timer_outputs[GTIMER_PHYS]
-            = qdev_get_gpio_in_named(DEVICE(s->ic), "cntpsirq", 0);
+            = qdev_get_gpio_in_named(DEVICE(&s->ic), "cntpsirq", 0);
         s->cpus[n].gt_timer_outputs[GTIMER_VIRT]
-            = qdev_get_gpio_in_named(DEVICE(s->ic), "cntvirq", 0);
+            = qdev_get_gpio_in_named(DEVICE(&s->ic), "cntvirq", 0);
     }
 }
 

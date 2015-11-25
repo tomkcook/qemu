@@ -28,11 +28,7 @@
  * This code is licensed under the GPL.
  */
 
-#include "hw/sysbus.h"
-
-/* 4 mailboxes per core, for 16 total */
-#define NCORES 4
-#define MBPERCORE 4
+#include "hw/intc/bcm2836_control.h"
 
 #define ROUTE_CORE(x) ((x) & 0x3)
 #define ROUTE_FIQ(x)  (((x) & 0x4) != 0)
@@ -54,37 +50,8 @@
 #define IRQ_TIMER       11
 #define IRQ_MAX         IRQ_TIMER
 
-#define TYPE_BCM2836_CONTROL "bcm2836_control"
-#define BCM2836_CONTROL(obj) \
-    OBJECT_CHECK(Bcm2836ControlState, (obj), TYPE_BCM2836_CONTROL)
-
-typedef struct Bcm2836ControlState {
-    SysBusDevice busdev;
-    MemoryRegion iomem;
-
-    /* interrupt status registers (not directly visible to user) */
-    bool gpu_irq, gpu_fiq;
-    uint32_t localirqs[NCORES];
-
-    /* mailboxes */
-    uint32_t mailboxes[NCORES * MBPERCORE];
-
-    /* interrupt routing/control registers */
-    uint8_t route_gpu_irq, route_gpu_fiq;
-    uint32_t timercontrol[NCORES];
-    uint32_t mailboxcontrol[NCORES];
-
-    /* interrupt source registers, post-routing (visible) */
-    uint32_t irqsrc[NCORES];
-    uint32_t fiqsrc[NCORES];
-
-    /* outputs to CPU cores */
-    qemu_irq irq[NCORES];
-    qemu_irq fiq[NCORES];
-} Bcm2836ControlState;
-
 /* Update interrupts.  */
-static void bcm2836_control_update(Bcm2836ControlState *s)
+static void bcm2836_control_update(BCM2836ControlState *s)
 {
     int i, j;
 
@@ -92,7 +59,7 @@ static void bcm2836_control_update(Bcm2836ControlState *s)
      * reset pending IRQs/FIQs
      */
 
-    for (i = 0; i < NCORES; i++) {
+    for (i = 0; i < BCM2836_NCORES; i++) {
         s->irqsrc[i] = s->fiqsrc[i] = 0;
     }
 
@@ -101,16 +68,16 @@ static void bcm2836_control_update(Bcm2836ControlState *s)
      */
 
     if (s->gpu_irq) {
-        assert(s->route_gpu_irq < NCORES);
+        assert(s->route_gpu_irq < BCM2836_NCORES);
         s->irqsrc[s->route_gpu_irq] |= (uint32_t)1 << IRQ_GPU;
     }
 
     if (s->gpu_fiq) {
-        assert(s->route_gpu_fiq < NCORES);
+        assert(s->route_gpu_fiq < BCM2836_NCORES);
         s->fiqsrc[s->route_gpu_fiq] |= (uint32_t)1 << IRQ_GPU;
     }
 
-    for (i = 0; i < NCORES; i++) {
+    for (i = 0; i < BCM2836_NCORES; i++) {
         /* handle local interrupts for this core */
         if (s->localirqs[i]) {
             assert(s->localirqs[i] < (1 << IRQ_MAILBOX0));
@@ -131,8 +98,8 @@ static void bcm2836_control_update(Bcm2836ControlState *s)
         }
 
         /* handle mailboxes for this core */
-        for (j = 0; j < MBPERCORE; j++) {
-            if (s->mailboxes[i * MBPERCORE + j] != 0) {
+        for (j = 0; j < BCM2836_MBPERCORE; j++) {
+            if (s->mailboxes[i * BCM2836_MBPERCORE + j] != 0) {
                 /* mailbox j is set */
                 if (FIQ_BIT(s->mailboxcontrol[i], j)) {
                     /* deliver a FIQ */
@@ -151,7 +118,7 @@ static void bcm2836_control_update(Bcm2836ControlState *s)
      * call set_irq appropriately for each output
      */
 
-    for (i = 0; i < NCORES; i++) {
+    for (i = 0; i < BCM2836_NCORES; i++) {
         qemu_set_irq(s->irq[i], s->irqsrc[i] != 0);
         qemu_set_irq(s->fiq[i], s->fiqsrc[i] != 0);
     }
@@ -160,9 +127,9 @@ static void bcm2836_control_update(Bcm2836ControlState *s)
 static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
                                           int level)
 {
-    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
+    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
 
-    assert(core >= 0 && core < NCORES);
+    assert(core >= 0 && core < BCM2836_NCORES);
     assert(local_irq >= 0 && local_irq <= IRQ_CNTVIRQ);
 
     if (level) {
@@ -201,7 +168,7 @@ static void bcm2836_control_set_local_irq3(void *opaque, int core, int level)
 
 static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 {
-    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
+    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
 
     s->gpu_irq = level;
 
@@ -210,7 +177,7 @@ static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 
 static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
 {
-    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
+    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
 
     s->gpu_fiq = level;
 
@@ -220,11 +187,12 @@ static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
 static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
+    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
-        assert(s->route_gpu_fiq < NCORES && s->route_gpu_irq < NCORES);
+        assert(s->route_gpu_fiq < BCM2836_NCORES
+               && s->route_gpu_irq < BCM2836_NCORES);
         return ((uint32_t)s->route_gpu_fiq << 2) | s->route_gpu_irq;
     } else if (offset >= 0x40 && offset < 0x50) {
         /* Timer interrupt control registers */
@@ -251,7 +219,7 @@ static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
 static void bcm2836_control_write(void *opaque, hwaddr offset,
     uint64_t val, unsigned size)
 {
-    Bcm2836ControlState *s = (Bcm2836ControlState *)opaque;
+    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
@@ -286,51 +254,53 @@ static const MemoryRegionOps bcm2836_control_ops = {
 
 static void bcm2836_control_reset(DeviceState *d)
 {
-    Bcm2836ControlState *s = BCM2836_CONTROL(d);
+    BCM2836ControlState *s = BCM2836_CONTROL(d);
     int i;
 
     s->route_gpu_irq = s->route_gpu_fiq = 0;
 
-    for (i = 0; i < NCORES; i++) {
+    for (i = 0; i < BCM2836_NCORES; i++) {
         s->timercontrol[i] = 0;
         s->mailboxcontrol[i] = 0;
     }
 
-    for (i = 0; i < NCORES * MBPERCORE; i++) {
+    for (i = 0; i < BCM2836_NCORES * BCM2836_MBPERCORE; i++) {
         s->mailboxes[i] = 0;
     }
 }
 
-static int bcm2836_control_init(SysBusDevice *sbd)
+static void bcm2836_control_init(Object *obj)
 {
-    DeviceState *dev = DEVICE(sbd);
-    Bcm2836ControlState *s = BCM2836_CONTROL(dev);
+    BCM2836ControlState *s = BCM2836_CONTROL(obj);
+    DeviceState *dev = DEVICE(obj);
 
-    memory_region_init_io(&s->iomem, OBJECT(s), &bcm2836_control_ops, s,
-        TYPE_BCM2836_CONTROL, 0x100);
-    sysbus_init_mmio(sbd, &s->iomem);
+    memory_region_init_io(&s->iomem, obj, &bcm2836_control_ops, s,
+                          TYPE_BCM2836_CONTROL, 0x100);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
 
     /* inputs from each CPU core */
     qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq0, "cntpsirq",
-                            NCORES);
+                            BCM2836_NCORES);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq1, "cntpnsirq",
-                            NCORES);
+                            BCM2836_NCORES);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq2, "cnthpirq",
-                            NCORES);
+                            BCM2836_NCORES);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq3, "cntvirq",
-                            NCORES);
+                            BCM2836_NCORES);
     /* qdev_init_gpio_in_named(dev, bcm2836_control_set_pmu_irq, "pmuirq",
-                            NCORES); */
+                            BCM2836_NCORES); */
 
     /* IRQ and FIQ inputs from upstream bcm2835 controller */
     qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_irq, "gpu_irq", 1);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_fiq, "gpu_fiq", 1);
 
     /* outputs to CPU cores */
-    qdev_init_gpio_out_named(dev, s->irq, "irq", NCORES);
-    qdev_init_gpio_out_named(dev, s->fiq, "fiq", NCORES);
+    qdev_init_gpio_out_named(dev, s->irq, "irq", BCM2836_NCORES);
+    qdev_init_gpio_out_named(dev, s->fiq, "fiq", BCM2836_NCORES);
+}
 
-    return 0;
+static void bcm2836_control_realize(DeviceState *dev, Error **errp)
+{
 }
 
 static const VMStateDescription vmstate_bcm2836_control = {
@@ -338,12 +308,13 @@ static const VMStateDescription vmstate_bcm2836_control = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(mailboxes, Bcm2836ControlState,
-                             NCORES * MBPERCORE),
-        VMSTATE_UINT8(route_gpu_irq, Bcm2836ControlState),
-        VMSTATE_UINT8(route_gpu_fiq, Bcm2836ControlState),
-        VMSTATE_UINT32_ARRAY(timercontrol, Bcm2836ControlState, NCORES),
-        VMSTATE_UINT32_ARRAY(mailboxcontrol, Bcm2836ControlState, NCORES),
+        VMSTATE_UINT32_ARRAY(mailboxes, BCM2836ControlState,
+                             BCM2836_NCORES * BCM2836_MBPERCORE),
+        VMSTATE_UINT8(route_gpu_irq, BCM2836ControlState),
+        VMSTATE_UINT8(route_gpu_fiq, BCM2836ControlState),
+        VMSTATE_UINT32_ARRAY(timercontrol, BCM2836ControlState, BCM2836_NCORES),
+        VMSTATE_UINT32_ARRAY(mailboxcontrol, BCM2836ControlState,
+                             BCM2836_NCORES),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -351,9 +322,8 @@ static const VMStateDescription vmstate_bcm2836_control = {
 static void bcm2836_control_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    k->init = bcm2836_control_init;
+    dc->realize = bcm2836_control_realize;
     dc->reset = bcm2836_control_reset;
     dc->vmsd = &vmstate_bcm2836_control;
 }
@@ -361,8 +331,9 @@ static void bcm2836_control_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2836_control_info = {
     .name          = TYPE_BCM2836_CONTROL,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Bcm2836ControlState),
+    .instance_size = sizeof(BCM2836ControlState),
     .class_init    = bcm2836_control_class_init,
+    .instance_init = bcm2836_control_init,
 };
 
 static void bcm2836_control_register_types(void)
