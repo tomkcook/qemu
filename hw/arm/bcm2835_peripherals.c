@@ -48,9 +48,9 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->aux), sysbus_get_default());
 
     /* System timer */
-    s->systimer = dev = SYS_BUS_DEVICE(object_new("bcm2835_st"));
-    object_property_add_child(obj, "systimer", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->st, sizeof(s->st), TYPE_BCM2835_ST);
+    object_property_add_child(obj, "systimer", OBJECT(&s->st), NULL);
+    qdev_set_parent_bus(DEVICE(&s->st), sysbus_get_default());
 
     /* ARM timer */
     s->armtimer = dev = SYS_BUS_DEVICE(object_new("bcm2835_timer"));
@@ -185,21 +185,21 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_AUX));
 
     /* System timer */
-    object_property_set_bool(OBJECT(s->systimer), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->st), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, ST_OFFSET,
-                                sysbus_mmio_get_region(s->systimer, 0));
-    sysbus_connect_irq(s->systimer, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->st), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->st), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_TIMER0));
-    sysbus_connect_irq(s->systimer, 1,
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->st), 1,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_TIMER1));
-    sysbus_connect_irq(s->systimer, 2,
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->st), 2,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_TIMER2));
-    sysbus_connect_irq(s->systimer, 3,
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->st), 3,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_TIMER3));
 
     /* ARM timer */
