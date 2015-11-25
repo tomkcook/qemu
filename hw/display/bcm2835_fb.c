@@ -36,14 +36,14 @@
 
 static void fb_invalidate_display(void *opaque)
 {
-    Bcm2835FbState *s = BCM2835_FB(opaque);
+    BCM2835FbState *s = BCM2835_FB(opaque);
     s->invalidate = true;
 }
 
 static void draw_line_src16(void *opaque, uint8_t *dst, const uint8_t *src,
                             int width, int deststep)
 {
-    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
+    BCM2835FbState *s = (BCM2835FbState *)opaque;
     uint16_t rgb565;
     uint32_t rgb888;
     uint8_t r, g, b;
@@ -124,7 +124,7 @@ static void draw_line_src16(void *opaque, uint8_t *dst, const uint8_t *src,
 
 static void fb_update_display(void *opaque)
 {
-    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
+    BCM2835FbState *s = (BCM2835FbState *)opaque;
     int first = 0;
     int last = 0;
     drawfn fn;
@@ -205,7 +205,7 @@ static void fb_update_display(void *opaque)
     s->invalidate = false;
 }
 
-static void bcm2835_fb_mbox_push(Bcm2835FbState *s, uint32_t value)
+static void bcm2835_fb_mbox_push(BCM2835FbState *s, uint32_t value)
 {
     value &= ~0xf;
 
@@ -237,7 +237,7 @@ static void bcm2835_fb_mbox_push(Bcm2835FbState *s, uint32_t value)
     s->lock = false;
 }
 
-void bcm2835_fb_reconfigure(Bcm2835FbState *s, uint32_t *xres, uint32_t *yres,
+void bcm2835_fb_reconfigure(BCM2835FbState *s, uint32_t *xres, uint32_t *yres,
                             uint32_t *xoffset, uint32_t *yoffset, uint32_t *bpp,
                             uint32_t *pixo, uint32_t *alpha)
 {
@@ -279,7 +279,7 @@ void bcm2835_fb_reconfigure(Bcm2835FbState *s, uint32_t *xres, uint32_t *yres,
 static uint64_t bcm2835_fb_read(void *opaque, hwaddr offset,
     unsigned size)
 {
-    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
+    BCM2835FbState *s = (BCM2835FbState *)opaque;
     uint32_t res = 0;
 
     switch (offset) {
@@ -302,7 +302,7 @@ static uint64_t bcm2835_fb_read(void *opaque, hwaddr offset,
 static void bcm2835_fb_write(void *opaque, hwaddr offset,
     uint64_t value, unsigned size)
 {
-    Bcm2835FbState *s = (Bcm2835FbState *)opaque;
+    BCM2835FbState *s = (BCM2835FbState *)opaque;
     switch (offset) {
     case 0:
         if (!s->pending) {
@@ -340,7 +340,7 @@ static const GraphicHwOps vgafb_ops = {
 
 static void bcm2835_fb_init(Object *obj)
 {
-    Bcm2835FbState *s = BCM2835_FB(obj);
+    BCM2835FbState *s = BCM2835_FB(obj);
     memory_region_init_io(&s->iomem, obj, &bcm2835_fb_ops, s, TYPE_BCM2835_FB,
                           0x10);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
@@ -349,7 +349,7 @@ static void bcm2835_fb_init(Object *obj)
 
 static void bcm2835_fb_realize(DeviceState *dev, Error **errp)
 {
-    Bcm2835FbState *s = BCM2835_FB(dev);
+    BCM2835FbState *s = BCM2835_FB(dev);
     Error *err = NULL;
     Object *obj;
 
@@ -387,14 +387,14 @@ static void bcm2835_fb_realize(DeviceState *dev, Error **errp)
 }
 
 static Property bcm2835_fb_props[] = {
-    DEFINE_PROP_UINT32("vcram-base", Bcm2835FbState, vcram_base, 0),/*required*/
-    DEFINE_PROP_UINT32("vcram-size", Bcm2835FbState, vcram_size,
+    DEFINE_PROP_UINT32("vcram-base", BCM2835FbState, vcram_base, 0),/*required*/
+    DEFINE_PROP_UINT32("vcram-size", BCM2835FbState, vcram_size,
                        DEFAULT_VCRAM_SIZE),
-    DEFINE_PROP_UINT32("xres", Bcm2835FbState, xres, 640),
-    DEFINE_PROP_UINT32("yres", Bcm2835FbState, yres, 480),
-    DEFINE_PROP_UINT32("bpp", Bcm2835FbState, bpp, 16),
-    DEFINE_PROP_UINT32("pixo", Bcm2835FbState, pixo, 1), /* 1=RGB, 0=BGR */
-    DEFINE_PROP_UINT32("alpha", Bcm2835FbState, alpha, 2), /* alpha ignored */
+    DEFINE_PROP_UINT32("xres", BCM2835FbState, xres, 640),
+    DEFINE_PROP_UINT32("yres", BCM2835FbState, yres, 480),
+    DEFINE_PROP_UINT32("bpp", BCM2835FbState, bpp, 16),
+    DEFINE_PROP_UINT32("pixo", BCM2835FbState, pixo, 1), /* 1=RGB, 0=BGR */
+    DEFINE_PROP_UINT32("alpha", BCM2835FbState, alpha, 2), /* alpha ignored */
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -410,7 +410,7 @@ static void bcm2835_fb_class_init(ObjectClass *klass, void *data)
 static TypeInfo bcm2835_fb_info = {
     .name          = TYPE_BCM2835_FB,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Bcm2835FbState),
+    .instance_size = sizeof(BCM2835FbState),
     .class_init    = bcm2835_fb_class_init,
     .instance_init = bcm2835_fb_init,
 };

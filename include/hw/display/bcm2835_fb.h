@@ -16,7 +16,7 @@
 #include "ui/console.h"
 
 #define TYPE_BCM2835_FB "bcm2835_fb"
-#define BCM2835_FB(obj) OBJECT_CHECK(Bcm2835FbState, (obj), TYPE_BCM2835_FB)
+#define BCM2835_FB(obj) OBJECT_CHECK(BCM2835FbState, (obj), TYPE_BCM2835_FB)
 
 typedef struct {
     SysBusDevice busdev;
@@ -39,9 +39,9 @@ typedef struct {
 
     int pending;
     qemu_irq mbox_irq;
-} Bcm2835FbState;
+} BCM2835FbState;
 
-void bcm2835_fb_reconfigure(Bcm2835FbState *s, uint32_t *xres, uint32_t *yres,
+void bcm2835_fb_reconfigure(BCM2835FbState *s, uint32_t *xres, uint32_t *yres,
                             uint32_t *xoffset, uint32_t *yoffset, uint32_t *bpp,
                             uint32_t *pixo, uint32_t *alpha);
 

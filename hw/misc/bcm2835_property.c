@@ -19,7 +19,7 @@ typedef struct {
     SysBusDevice busdev;
     MemoryRegion *dma_mr;
     AddressSpace dma_as;
-    Bcm2835FbState *fbdev;
+    BCM2835FbState *fbdev;
     MemoryRegion iomem;
     uint32_t addr;
     int pending;
