@@ -18,6 +18,7 @@
 #include "hw/display/bcm2835_fb.h"
 #include "hw/dma/bcm2835_dma.h"
 #include "hw/intc/bcm2835_ic.h"
+#include "hw/misc/bcm2835_mphi.h"
 
 #define TYPE_BCM2835_PERIPHERALS "bcm2835_peripherals"
 #define BCM2835_PERIPHERALS(obj) \
@@ -36,7 +37,8 @@ typedef struct BCM2835PeripheralState {
     BCM2835FbState fb;
     BCM2835DmaState dma;
     BCM2835IcState ic;
-    SysBusDevice *uart0, *systimer, *armtimer, *usb, *mphi, *sbm,
+    BCM2835MphiState mphi;
+    SysBusDevice *uart0, *systimer, *armtimer, *usb, *sbm,
         *power, *property, *vchiq, *emmc;
 } BCM2835PeripheralState;
 

@@ -63,9 +63,9 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
     /* MPHI - Message-based Parallel Host Interface */
-    s->mphi = dev = SYS_BUS_DEVICE(object_new("bcm2835_mphi"));
-    object_property_add_child(obj, "mphi", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->mphi, sizeof(s->mphi), TYPE_BCM2835_MPHI);
+    object_property_add_child(obj, "mphi", OBJECT(&s->mphi), NULL);
+    qdev_set_parent_bus(DEVICE(&s->mphi), sysbus_get_default());
 
     /* Semaphores / Doorbells / Mailboxes */
     s->sbm = dev = SYS_BUS_DEVICE(object_new("bcm2835_sbm"));
@@ -227,15 +227,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_VC_USB));
 
     /* MPHI - Message-based Parallel Host Interface */
-    object_property_set_bool(OBJECT(s->mphi), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->mphi), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, MPHI_OFFSET,
-                                sysbus_mmio_get_region(s->mphi, 0));
-    sysbus_connect_irq(s->mphi, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->mphi), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->mphi), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_HOSTPORT));
 
     /* Semaphores / Doorbells / Mailboxes */
