@@ -53,9 +53,9 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->st), sysbus_get_default());
 
     /* ARM timer */
-    s->armtimer = dev = SYS_BUS_DEVICE(object_new("bcm2835_timer"));
-    object_property_add_child(obj, "armtimer", OBJECT(dev), NULL);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    object_initialize(&s->timer, sizeof(s->timer), TYPE_BCM2835_TIMER);
+    object_property_add_child(obj, "armtimer", OBJECT(&s->timer), NULL);
+    qdev_set_parent_bus(DEVICE(&s->timer), sysbus_get_default());
 
     /* USB controller */
     s->usb = dev = SYS_BUS_DEVICE(object_new("bcm2835_usb"));
@@ -203,15 +203,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_TIMER3));
 
     /* ARM timer */
-    object_property_set_bool(OBJECT(s->armtimer), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->timer), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, ARMCTRL_TIMER0_1_OFFSET,
-                                sysbus_mmio_get_region(s->armtimer, 0));
-    sysbus_connect_irq(s->armtimer, 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->timer), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->timer), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic), INTERRUPT_ARM_TIMER));
 
     /* USB controller */
