@@ -12,7 +12,9 @@
 #define BCM2835_PERIPHERALS_H
 
 #include "qemu-common.h"
+#include "exec/address-spaces.h"
 #include "hw/sysbus.h"
+#include "hw/display/bcm2835_fb.h"
 
 #define TYPE_BCM2835_PERIPHERALS "bcm2835_peripherals"
 #define BCM2835_PERIPHERALS(obj) \
@@ -27,8 +29,9 @@ typedef struct BCM2835PeripheralState {
     MemoryRegion ram_alias[4];
     qemu_irq irq, fiq;
 
+    Bcm2835FbState fb;
     SysBusDevice *ic, *uart0, *uart1, *systimer, *armtimer, *usb, *mphi, *sbm,
-        *power, *fb, *property, *vchiq, *emmc, *dma;
+        *power, *property, *vchiq, *emmc, *dma;
 } BCM2835PeripheralState;
 
 #endif /* BCM2835_PERIPHERALS_H */

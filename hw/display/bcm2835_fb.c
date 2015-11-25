@@ -25,14 +25,10 @@
  *
  */
 
-#include "hw/sysbus.h"
-#include "exec/address-spaces.h"
-#include "exec/cpu-common.h"
+#include "hw/display/bcm2835_fb.h"
 #include "hw/display/framebuffer.h"
-#include "ui/console.h"
 #include "ui/pixel_ops.h"
 #include "hw/arm/bcm2835_mbox.h"
-#include "hw/display/bcm2835_fb.h"
 
 #define DEFAULT_VCRAM_SIZE 0x4000000
 #define BCM2835_FB_OFFSET  0x00100000
@@ -347,6 +343,8 @@ static void bcm2835_fb_init(Object *obj)
     Bcm2835FbState *s = BCM2835_FB(obj);
     memory_region_init_io(&s->iomem, obj, &bcm2835_fb_ops, s, TYPE_BCM2835_FB,
                           0x10);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
+    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->mbox_irq);
 }
 
 static void bcm2835_fb_realize(DeviceState *dev, Error **errp)
@@ -382,19 +380,14 @@ static void bcm2835_fb_realize(DeviceState *dev, Error **errp)
     s->size = s->yres * s->pitch;
 
     s->invalidate = true;
-    s->lock = true;
-
-    sysbus_init_irq(SYS_BUS_DEVICE(s), &s->mbox_irq);
+    s->lock = false;
 
     s->con = graphic_console_init(dev, 0, &vgafb_ops, s);
     qemu_console_resize(s->con, s->xres, s->yres);
-    s->lock = false;
-
-    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
 }
 
 static Property bcm2835_fb_props[] = {
-    DEFINE_PROP_UINT32("vcram-base", Bcm2835FbState, vcram_base, 0), /* required */
+    DEFINE_PROP_UINT32("vcram-base", Bcm2835FbState, vcram_base, 0),/*required*/
     DEFINE_PROP_UINT32("vcram-size", Bcm2835FbState, vcram_size,
                        DEFAULT_VCRAM_SIZE),
     DEFINE_PROP_UINT32("xres", Bcm2835FbState, xres, 640),

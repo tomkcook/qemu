@@ -11,7 +11,6 @@
 #include "hw/arm/bcm2835_peripherals.h"
 #include "hw/arm/bcm2835_mbox.h"
 #include "hw/arm/raspi_platform.h"
-#include "exec/address-spaces.h"
 
 static void bcm2835_peripherals_init(Object *obj)
 {
@@ -82,13 +81,13 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
     /* Framebuffer */
-    s->fb = dev = SYS_BUS_DEVICE(object_new("bcm2835_fb"));
-    object_property_add_child(obj, "fb", OBJECT(dev), NULL);
-    object_property_add_alias(obj, "vcram-size", OBJECT(dev), "vcram-size",
+    object_initialize(&s->fb, sizeof(s->fb), TYPE_BCM2835_FB);
+    object_property_add_child(obj, "fb", OBJECT(&s->fb), NULL);
+    object_property_add_alias(obj, "vcram-size", OBJECT(&s->fb), "vcram-size",
                               &error_abort);
-    qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
+    qdev_set_parent_bus(DEVICE(&s->fb), sysbus_get_default());
 
-    object_property_add_const_link(OBJECT(dev), "dma_mr",
+    object_property_add_const_link(OBJECT(&s->fb), "dma_mr",
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
     /* Property channel */
@@ -97,7 +96,7 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
     object_property_add_const_link(OBJECT(dev), "bcm2835_fb",
-                                   OBJECT(s->fb), &error_abort);
+                                   OBJECT(&s->fb), &error_abort);
     object_property_add_const_link(OBJECT(dev), "dma_mr",
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
 
@@ -273,18 +272,18 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    object_property_set_int(OBJECT(s->fb), ram_size - vcram_size,
+    object_property_set_int(OBJECT(&s->fb), ram_size - vcram_size,
                             "vcram-base", &err);
 
-    object_property_set_bool(OBJECT(s->fb), true, "realized", &err);
+    object_property_set_bool(OBJECT(&s->fb), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->mbox_mr, MBOX_CHAN_FB<<4,
-                                sysbus_mmio_get_region(s->fb, 0));
-    sysbus_connect_irq(s->fb, 0, mbox_irq[MBOX_CHAN_FB]);
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->fb), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->fb), 0, mbox_irq[MBOX_CHAN_FB]);
 
     /* Property channel */
     object_property_set_bool(OBJECT(s->property), true, "realized", &err);
