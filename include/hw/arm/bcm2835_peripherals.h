@@ -26,7 +26,6 @@ typedef struct BCM2835PeripheralState {
     MemoryRegion peri_mr, peri_mr_alias, gpu_bus_mr, mbox_mr;
     MemoryRegion ram_alias[4];
     qemu_irq irq, fiq;
-    uint32_t vcram_size;
 
     SysBusDevice *ic, *uart0, *uart1, *systimer, *armtimer, *usb, *mphi, *sbm,
         *power, *fb, *property, *vchiq, *emmc, *dma;

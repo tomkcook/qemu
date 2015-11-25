@@ -31,7 +31,14 @@
 #include "exec/address-spaces.h"
 #include "hw/arm/raspi_platform.h"
 
-#define VCRAM_SIZE 0x4000000
+typedef struct RaspiMachineState {
+    union {
+        Object obj;
+        BCM2835State pi1;
+        BCM2836State pi2;
+    } soc;
+    MemoryRegion ram;
+} RaspiMachineState;
 
 /* simple bootloader for pi1 */
 static const uint32_t bootloader_0_pi1[] = {
@@ -109,14 +116,6 @@ static uint32_t bootloader_100[] = {
     0x00000000  /* ATAG_NONE */
 };
 
-static void init_ram(Object *parent, ram_addr_t ram_size)
-{
-    MemoryRegion *ram = g_new(MemoryRegion, 1);
-
-    memory_region_allocate_system_memory(ram, parent, "ram", ram_size);
-    memory_region_add_subregion_overlap(get_system_memory(), 0, ram, 0);
-}
-
 static void setup_boot(MachineState *machine, int board_id, size_t ram_size,
                        const uint32_t *bootloader, size_t bootloader_len)
 {
@@ -158,65 +157,74 @@ static void setup_boot(MachineState *machine, int board_id, size_t ram_size,
     arm_load_kernel(ARM_CPU(first_cpu), &raspi_binfo);
 }
 
-static void raspi_init(MachineState *machine)
+static void raspi_machine_init(MachineState *machine, int version)
 {
-    Object *soc;
+    RaspiMachineState *s = g_new0(RaspiMachineState, 1);
+    uint32_t vcram_size;
     Error *err = NULL;
 
-    init_ram(OBJECT(machine), machine->ram_size);
+    /* Initialise the relevant SOC */
+    assert(version == 1 || version == 2);
+    switch (version) {
+    case 1:
+        object_initialize(&s->soc.pi1, sizeof(s->soc.pi1), TYPE_BCM2835);
+        break;
+    case 2:
+        object_initialize(&s->soc.pi2, sizeof(s->soc.pi2), TYPE_BCM2836);
+        break;
+    }
 
-    soc = object_new(TYPE_BCM2835);
-    object_property_add_child(OBJECT(machine), "soc", soc, &error_abort);
+    object_property_add_child(OBJECT(machine), "soc", &s->soc.obj,
+                              &error_abort);
 
-    object_property_set_int(soc, VCRAM_SIZE, "vcram-size", &err);
+    /* Allocate and map RAM */
+    memory_region_allocate_system_memory(&s->ram, OBJECT(machine), "ram",
+                                         machine->ram_size);
+    memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
+
+    /* Setup the SOC */
+    object_property_set_bool(&s->soc.obj, true, "realized", &err);
     if (err) {
         error_report("%s", error_get_pretty(err));
         exit(1);
     }
 
-    object_property_set_bool(soc, true, "realized", &err);
+    vcram_size = object_property_get_int(&s->soc.obj, "vcram-size", &err);
     if (err) {
         error_report("%s", error_get_pretty(err));
         exit(1);
     }
 
-    setup_boot(machine, 0xc42, machine->ram_size - VCRAM_SIZE,
-               bootloader_0_pi1, ARRAY_SIZE(bootloader_0_pi1));
+    /* Boot! */
+    switch (version) {
+    case 1:
+        setup_boot(machine, 0xc42, machine->ram_size - vcram_size,
+                   bootloader_0_pi1, ARRAY_SIZE(bootloader_0_pi1));
+        break;
+    case 2:
+        setup_boot(machine, 0xc43, machine->ram_size - vcram_size,
+                   bootloader_0_pi2, ARRAY_SIZE(bootloader_0_pi2));
+        break;
+    }
+}
+
+static void raspi1_init(MachineState *machine)
+{
+    raspi_machine_init(machine, 1);
 }
 
 static void raspi2_init(MachineState *machine)
 {
-    Object *soc;
-    Error *err = NULL;
-
-    init_ram(OBJECT(machine), machine->ram_size);
-
-    soc = object_new(TYPE_BCM2836);
-    object_property_add_child(OBJECT(machine), "soc", soc, &error_abort);
-
-    object_property_set_int(soc, VCRAM_SIZE, "vcram-size", &err);
-    if (err) {
-        error_report("%s", error_get_pretty(err));
-        exit(1);
-    }
-
-    object_property_set_bool(soc, true, "realized", &err);
-    if (err) {
-        error_report("%s", error_get_pretty(err));
-        exit(1);
-    }
-
-    setup_boot(machine, 0xc43, machine->ram_size - VCRAM_SIZE,
-               bootloader_0_pi2, ARRAY_SIZE(bootloader_0_pi2));
+    raspi_machine_init(machine, 2);
 }
 
-static void raspi_machine_init(MachineClass *mc)
+static void raspi1_machine_init(MachineClass *mc)
 {
     mc->desc = "Raspberry Pi";
-    mc->init = raspi_init;
+    mc->init = raspi1_init;
     mc->block_default_type = IF_SD;
 };
-DEFINE_MACHINE("raspi", raspi_machine_init)
+DEFINE_MACHINE("raspi", raspi1_machine_init)
 
 static void raspi2_machine_init(MachineClass *mc)
 {

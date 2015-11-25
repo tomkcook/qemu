@@ -84,6 +84,8 @@ static void bcm2835_peripherals_init(Object *obj)
     /* Framebuffer */
     s->fb = dev = SYS_BUS_DEVICE(object_new("bcm2835_fb"));
     object_property_add_child(obj, "fb", OBJECT(dev), NULL);
+    object_property_add_alias(obj, "vcram-size", OBJECT(dev), "vcram-size",
+                              &error_abort);
     qdev_set_parent_bus(DEVICE(dev), sysbus_get_default());
 
     object_property_add_const_link(OBJECT(dev), "dma_mr",
@@ -116,6 +118,7 @@ static void bcm2835_peripherals_init(Object *obj)
 
     object_property_add_const_link(OBJECT(dev), "dma_mr",
                                    OBJECT(&s->gpu_bus_mr), &error_abort);
+
 }
 
 static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
@@ -125,7 +128,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     qemu_irq pic[72];
     qemu_irq mbox_irq[MBOX_CHAN_COUNT];
     Error *err = NULL;
-    size_t ram_size;
+    uint32_t ram_size, vcram_size;
     int n;
 
     /* Map peripherals and RAM into the GPU address space. */
@@ -263,9 +266,15 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->power, 0, mbox_irq[MBOX_CHAN_POWER]);
 
     /* Framebuffer */
-    object_property_set_int(OBJECT(s->fb), ram_size - s->vcram_size,
+    vcram_size = (uint32_t)object_property_get_int(OBJECT(s), "vcram-size",
+                                                   &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
+    object_property_set_int(OBJECT(s->fb), ram_size - vcram_size,
                             "vcram-base", &err);
-    object_property_set_int(OBJECT(s->fb), s->vcram_size, "vcram-size", &err);
 
     object_property_set_bool(OBJECT(s->fb), true, "realized", &err);
     if (err) {
@@ -339,16 +348,10 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(s->dma, 12, pic[INTERRUPT_DMA12]);
 }
 
-static Property bcm2835_peripherals_props[] = {
-    DEFINE_PROP_UINT32("vcram-size", BCM2835PeripheralState, vcram_size, 0),
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static void bcm2835_peripherals_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
-    dc->props = bcm2835_peripherals_props;
     dc->realize = bcm2835_peripherals_realize;
 }
 

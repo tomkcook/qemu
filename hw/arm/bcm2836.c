@@ -37,6 +37,8 @@ static void bcm2836_init(Object *obj)
                       TYPE_BCM2835_PERIPHERALS);
     object_property_add_child(obj, "peripherals", OBJECT(&s->peripherals),
                               &error_abort);
+    object_property_add_alias(obj, "vcram-size", OBJECT(&s->peripherals),
+                              "vcram-size", &error_abort);
     qdev_set_parent_bus(DEVICE(&s->peripherals), sysbus_get_default());
 }
 
@@ -47,13 +49,6 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
     int n;
 
     /* common peripherals from bcm2835 */
-    object_property_set_int(OBJECT(&s->peripherals), s->vcram_size,
-                            "vcram-size", &err);
-    if (err) {
-        error_propagate(errp, err);
-        return;
-    }
-
     object_property_set_bool(OBJECT(&s->peripherals), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
@@ -114,16 +109,10 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static Property bcm2836_props[] = {
-    DEFINE_PROP_UINT32("vcram-size", BCM2836State, vcram_size, 0),
-    DEFINE_PROP_END_OF_LIST()
-};
-
 static void bcm2836_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
-    dc->props = bcm2836_props;
     dc->realize = bcm2836_realize;
 
     /*
