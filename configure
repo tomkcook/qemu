@@ -1946,6 +1946,23 @@ EOF
   elif
       cat > $TMPC <<EOF &&
 #include <xenctrl.h>
+#include <stdint.h>
+int main(void) {
+  xc_interface *xc = NULL;
+  xen_domain_handle_t handle;
+  xc_domain_create(xc, 0, handle, 0, NULL, NULL);
+  return 0;
+}
+EOF
+      compile_prog "" "$xen_libs"
+    then
+    xen_ctrl_version=470
+    xen=yes
+
+  # Xen 4.6
+  elif
+      cat > $TMPC <<EOF &&
+#include <xenctrl.h>
 #include <xenstore.h>
 #include <stdint.h>
 #include <xen/hvm/hvm_info_table.h>
@@ -5681,6 +5698,7 @@ case "$target_name" in
       echo "CONFIG_KVM=y" >> $config_target_mak
       if test "$vhost_net" = "yes" ; then
         echo "CONFIG_VHOST_NET=y" >> $config_target_mak
+        echo "CONFIG_VHOST_NET_TEST_$target_name=y" >> $config_host_mak
       fi
     fi
 esac
