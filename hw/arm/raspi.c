@@ -129,7 +129,11 @@ static void setup_boot(MachineState *machine, int board_id, size_t ram_size,
        the normal Linux boot process */
     if (machine->firmware) {
         /* load the firmware image (typically kernel.img) at 0x8000 */
-        load_image_targphys(machine->firmware, 0x8000, ram_size - 0x8000);
+        n = load_image_targphys(machine->firmware, 0x8000, ram_size - 0x8000);
+        if (n < 0) {
+            error_report("Failed to load firmware from %s", machine->firmware);
+            exit(1);
+        }
 
         /* Write RAM size in ATAG structure */
         bootloader_100[7] = ram_size;
