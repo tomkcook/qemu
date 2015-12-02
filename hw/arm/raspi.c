@@ -28,8 +28,10 @@
 #include "sysemu/sysemu.h"
 #include "hw/arm/raspi_platform.h"
 
-#define SMPBOOT_ADDR 0x1d0
-#define FIRMWARE_ADDR 0x8000
+#define SMPBOOT_ADDR    0x300 /* this should leave enough space for ATAGS */
+#define MVBAR_ADDR      0x400 /* secure vectors */
+#define BOARDSETUP_ADDR (MVBAR_ADDR + 0x20) /* board setup code */
+#define FIRMWARE_ADDR   0x8000 /* Pi loads kernel.img here by default */
 
 /* Table of Linux board IDs for different Pi versions */
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
@@ -58,8 +60,35 @@ static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
         0x400000CC, /* (constant: mailbox 3 read/clear base) */
     };
 
+    assert(SMPBOOT_ADDR + sizeof(smpboot) <= MVBAR_ADDR);
     rom_add_blob_fixed("raspi_smpboot", smpboot, sizeof(smpboot),
                        info->smp_loader_start);
+}
+
+static void write_board_setup(ARMCPU *cpu, const struct arm_boot_info *info)
+{
+    static const uint32_t board_setup[] = {
+        /* MVBAR_ADDR: secure monitor vectors */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xE1B0F00E, /* movs pc, lr ;SMC exception return */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        /* BOARDSETUP_ADDR */
+        0xE3A00B01, /* mov     r0, #0x400             ;MVBAR_ADDR */
+        0xEE0C0F30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
+        0xE3000131, /* movw    r0, #0x131             ;enable HVC, AW, FW, NS */
+        0xEE010F11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
+        0xE1A0100E, /* mov     r1, lr                 ;save LR across SMC */
+        0xE1600070, /* smc     #0                     ;monitor call */
+        0xE1A0F001, /* mov     pc, r1                 ;return */
+    };
+
+    rom_add_blob_fixed("raspi_boardsetup", board_setup, sizeof(board_setup),
+                       MVBAR_ADDR);
 }
 
 static void reset_secondary(ARMCPU *cpu, const struct arm_boot_info *info)
@@ -68,17 +97,26 @@ static void reset_secondary(ARMCPU *cpu, const struct arm_boot_info *info)
     cpu_set_pc(cs, info->smp_loader_start);
 }
 
-static void setup_boot(MachineState *machine, int board_id, size_t ram_size)
+static void setup_boot(MachineState *machine, int version, size_t ram_size)
 {
-    static struct arm_boot_info binfo;
+    static struct arm_boot_info binfo = {
+        .loader_start = 0,
+        .smp_loader_start = SMPBOOT_ADDR,
+        .write_secondary_boot = write_smpboot,
+        .secondary_cpu_reset_hook = reset_secondary,
+    };
     int r;
 
-    binfo.board_id = board_id;
+    binfo.board_id = raspi_boardid[version];
     binfo.ram_size = ram_size;
     binfo.nb_cpus = smp_cpus;
-    binfo.smp_loader_start = SMPBOOT_ADDR;
-    binfo.write_secondary_boot = write_smpboot;
-    binfo.secondary_cpu_reset_hook = reset_secondary;
+
+    /* Pi2 supports security extensions, which require special setup code */
+    if (version == 2) {
+        binfo.board_setup_addr = BOARDSETUP_ADDR;
+        binfo.write_board_setup = write_board_setup;
+        binfo.secure_board_setup = true;
+    }
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
        the normal Linux boot process */
@@ -92,7 +130,6 @@ static void setup_boot(MachineState *machine, int board_id, size_t ram_size)
         }
 
         /* set variables so arm_load_kernel does the right thing */
-        binfo.is_linux = false;
         binfo.entry = FIRMWARE_ADDR;
         binfo.firmware_loaded = true;
     } else {
@@ -136,7 +173,7 @@ static void raspi_machine_init(MachineState *machine, int version)
                                          &error_abort);
 
     /* Boot! */
-    setup_boot(machine, raspi_boardid[version], machine->ram_size - vcram_size);
+    setup_boot(machine, version, machine->ram_size - vcram_size);
 }
 
 static void raspi1_init(MachineState *machine)
