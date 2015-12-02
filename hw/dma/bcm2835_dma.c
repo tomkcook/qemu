@@ -23,9 +23,11 @@
 #define BCM2708_DMA_D_INC       (1 << 4)
 #define BCM2708_DMA_D_WIDTH     (1 << 5)
 #define BCM2708_DMA_D_DREQ      (1 << 6)
+#define BCM2708_DMA_D_IGNORE    (1 << 7)
 #define BCM2708_DMA_S_INC       (1 << 8)
 #define BCM2708_DMA_S_WIDTH     (1 << 9)
 #define BCM2708_DMA_S_DREQ      (1 << 10)
+#define BCM2708_DMA_S_IGNORE    (1 << 11)
 
 #define BCM2708_DMA_BURST(x)    (((x)&0xf) << 12)
 #define BCM2708_DMA_PER_MAP(x)  ((x) << 16)
@@ -49,7 +51,8 @@
 static void bcm2835_dma_update(BCM2835DmaState *s, int c)
 {
     BCM2835DmaChan *ch = &s->chan[c];
-    uint32_t data;
+    uint32_t data, xlen, ylen;
+    int16_t dst_stride, src_stride;
 
     if (!(s->enable & (1 << c))) {
         return;
@@ -64,28 +67,54 @@ static void bcm2835_dma_update(BCM2835DmaState *s, int c)
         ch->stride = ldl_phys(&s->dma_as, ch->conblk_ad + 16);
         ch->nextconbk = ldl_phys(&s->dma_as, ch->conblk_ad + 20);
 
-        assert(!(ch->ti & BCM2708_DMA_TDMODE));
+        if (ch->ti & BCM2708_DMA_TDMODE) {
+            /* 2D transfer mode */
+            ylen = (ch->txfr_len >> 16) & 0x3fff;
+            xlen = ch->txfr_len & 0xffff;
+            dst_stride = ch->stride >> 16;
+            src_stride = ch->stride & 0xffff;
+        } else {
+            ylen = 1;
+            xlen = ch->txfr_len;
+            dst_stride = 0;
+            src_stride = 0;
+        }
 
-        while (ch->txfr_len != 0) {
-            data = 0;
-            if (ch->ti & (1 << 11)) {
-                /* Ignore reads */
-            } else {
-                data = ldl_phys(&s->dma_as, ch->source_ad);
-            }
-            if (ch->ti & BCM2708_DMA_S_INC) {
-                ch->source_ad += 4;
+        while (ylen != 0) {
+            /* Normal transfer mode */
+            while (xlen != 0) {
+                if (ch->ti & BCM2708_DMA_S_IGNORE) {
+                    /* Ignore reads */
+                    data = 0;
+                } else {
+                    data = ldl_phys(&s->dma_as, ch->source_ad);
+                }
+                if (ch->ti & BCM2708_DMA_S_INC) {
+                    ch->source_ad += 4;
+                }
+
+                if (ch->ti & BCM2708_DMA_D_IGNORE) {
+                    /* Ignore writes */
+                } else {
+                    stl_phys(&s->dma_as, ch->dest_ad, data);
+                }
+                if (ch->ti & BCM2708_DMA_D_INC) {
+                    ch->dest_ad += 4;
+                }
+
+                /* update remaining transfer length */
+                xlen -= 4;
+                if (ch->ti & BCM2708_DMA_TDMODE) {
+                    ch->txfr_len = (ylen << 16) | xlen;
+                } else {
+                    ch->txfr_len = xlen;
+                }
             }
 
-            if (ch->ti & (1 << 7)) {
-                /* Ignore writes */
-            } else {
-                stl_phys(&s->dma_as, ch->dest_ad, data);
+            if (--ylen != 0) {
+                ch->source_ad += src_stride;
+                ch->dest_ad += dst_stride;
             }
-            if (ch->ti & BCM2708_DMA_D_INC) {
-                ch->dest_ad += 4;
-            }
-            ch->txfr_len -= 4;
         }
         ch->cs |= BCM2708_DMA_END;
         if (ch->ti & BCM2708_DMA_INT_EN) {
