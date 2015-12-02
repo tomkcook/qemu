@@ -48,10 +48,11 @@ static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
     static const uint32_t smpboot[] = {
         0xEE100FB0, /*    mrc     p15, 0, r0, c0, c0, 5;get core ID */
         0xE7E10050, /*    ubfx    r0, r0, #0, #2       ;extract LSB */
-        0xE59F5010, /*    ldr     r5, =0x400000CC      ;load mbox base */
-        0xE7953200, /* 1: ldr     r3, [r5, r0, lsl #4] ;read mbox for our core*/
+        0xE59F5014, /*    ldr     r5, =0x400000CC      ;load mbox base */
+        0xE320F001, /* 1: yield */
+        0xE7953200, /*    ldr     r3, [r5, r0, lsl #4] ;read mbox for our core*/
         0xE3530000, /*    cmp     r3, #0               ;spin while zero */
-        0x0AFFFFFC, /*    beq     1b */
+        0x0AFFFFFB, /*    beq     1b */
         0xE7853200, /*    str     r3, [r5, r0, lsl #4] ;clear mbox */
         0xE12FFF13, /*    bx      r3                   ;jump to target */
         0x400000CC, /* (constant: mailbox 3 read/clear base) */
