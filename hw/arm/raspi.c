@@ -192,14 +192,19 @@ static void raspi1_machine_init(MachineClass *mc)
     mc->desc = "Raspberry Pi";
     mc->init = raspi1_init;
     mc->block_default_type = IF_SD;
+    mc->no_parallel = 1;
+    mc->no_floppy = 1;
+    mc->no_cdrom = 1;
+    mc->default_ram_size = 512 * 1024 * 1024;
 };
 DEFINE_MACHINE("raspi", raspi1_machine_init)
 
 static void raspi2_machine_init(MachineClass *mc)
 {
+    raspi1_machine_init(mc);
     mc->desc = "Raspberry Pi 2";
     mc->init = raspi2_init;
-    mc->block_default_type = IF_SD;
     mc->max_cpus = BCM2836_NCPUS;
+    mc->default_ram_size = 1024 * 1024 * 1024;
 };
 DEFINE_MACHINE("raspi2", raspi2_machine_init)
