@@ -48,6 +48,8 @@ typedef struct RaspiMachineState {
 static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
 {
     static const uint32_t smpboot[] = {
+        0xE1A0E00F, /*    mov     lr, pc */
+        0xE3A0FE42, /*    mov     pc, #0x420           ;call BOARDSETUP_ADDR */
         0xEE100FB0, /*    mrc     p15, 0, r0, c0, c0, 5;get core ID */
         0xE7E10050, /*    ubfx    r0, r0, #0, #2       ;extract LSB */
         0xE59F5014, /*    ldr     r5, =0x400000CC      ;load mbox base */
@@ -99,12 +101,7 @@ static void reset_secondary(ARMCPU *cpu, const struct arm_boot_info *info)
 
 static void setup_boot(MachineState *machine, int version, size_t ram_size)
 {
-    static struct arm_boot_info binfo = {
-        .loader_start = 0,
-        .smp_loader_start = SMPBOOT_ADDR,
-        .write_secondary_boot = write_smpboot,
-        .secondary_cpu_reset_hook = reset_secondary,
-    };
+    static struct arm_boot_info binfo;
     int r;
 
     binfo.board_id = raspi_boardid[version];
@@ -113,9 +110,13 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
 
     /* Pi2 supports security extensions, which require special setup code */
     if (version == 2) {
+        binfo.smp_loader_start = SMPBOOT_ADDR,
+        binfo.write_secondary_boot = write_smpboot,
+        binfo.secondary_cpu_reset_hook = reset_secondary,
         binfo.board_setup_addr = BOARDSETUP_ADDR;
         binfo.write_board_setup = write_board_setup;
         binfo.secure_board_setup = true;
+        binfo.secure_boot = true;
     }
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
