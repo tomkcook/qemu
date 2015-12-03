@@ -126,7 +126,40 @@ void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
         raise_exception(env, exc, syn, target_el);
     }
 }
-#endif
+
+/* Raise a data fault alignment exception for the specified virtual address */
+void arm_cpu_do_unaligned_access(CPUState *cs, vaddr vaddr, int is_write,
+                                 int is_user, uintptr_t retaddr)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+    int target_el;
+    bool same_el;
+
+    if (retaddr) {
+        /* now we have a real cpu fault */
+        cpu_restore_state(cs, retaddr);
+    }
+
+    target_el = exception_target_el(env);
+    same_el = (arm_current_el(env) == target_el);
+
+    env->exception.vaddress = vaddr;
+
+    /* the DFSR for an alignment fault depends on whether we're using
+     * the LPAE long descriptor format, or the short descriptor format */
+    if (arm_regime_using_lpae_format(env, cpu_mmu_index(env, false))) {
+        env->exception.fsr = 0x21;
+    } else {
+        env->exception.fsr = 0x1;
+    }
+
+    raise_exception(env, EXCP_DATA_ABORT,
+                    syn_data_abort(same_el, 0, 0, 0, 0, 0x21),
+                    target_el);
+}
+
+#endif /* !defined(CONFIG_USER_ONLY) */
 
 uint32_t HELPER(add_setq)(CPUARMState *env, uint32_t a, uint32_t b)
 {
@@ -374,27 +407,6 @@ void HELPER(exception_with_syndrome)(CPUARMState *env, uint32_t excp,
                                      uint32_t syndrome, uint32_t target_el)
 {
     raise_exception(env, excp, syndrome, target_el);
-}
-
-/* Raise a data fault alignment exception for the specified virtual address */
-void HELPER(alignment_exception)(CPUARMState *env, target_ulong vaddr)
-{
-    int target_el = exception_target_el(env);
-    bool same_el = (arm_current_el(env) != target_el);
-
-    env->exception.vaddress = vaddr;
-
-    /* the DFSR for an alignment fault depends on whether we're using
-     * the LPAE long descriptor format, or the short descriptor format */
-    if (arm_regime_using_lpae_format(env, cpu_mmu_index(env, false))) {
-        env->exception.fsr = 0x21;
-    } else {
-        env->exception.fsr = 0x1;
-    }
-
-    raise_exception(env, EXCP_DATA_ABORT,
-                    syn_data_abort(same_el, 0, 0, 0, 0, 0x21),
-                    target_el);
 }
 
 uint32_t HELPER(cpsr_read)(CPUARMState *env)

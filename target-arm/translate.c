@@ -37,7 +37,6 @@
 
 #include "trace-tcg.h"
 
-#define CONFIG_ALIGNMENT_EXCEPTIONS 1
 
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_dc_feature(s, ARM_FEATURE_V5)
@@ -927,13 +926,13 @@ static inline void store_reg_from_load(DisasContext *s, int reg, TCGv_i32 var)
 #define DO_GEN_LD(SUFF, OPC)                                             \
 static inline void gen_aa32_ld##SUFF(TCGv_i32 val, TCGv_i32 addr, int index) \
 {                                                                        \
-    tcg_gen_qemu_ld_i32(val, addr, index, OPC);                          \
+    tcg_gen_qemu_ld_i32(val, addr, index, (OPC));                        \
 }
 
 #define DO_GEN_ST(SUFF, OPC)                                             \
 static inline void gen_aa32_st##SUFF(TCGv_i32 val, TCGv_i32 addr, int index) \
 {                                                                        \
-    tcg_gen_qemu_st_i32(val, addr, index, OPC);                          \
+    tcg_gen_qemu_st_i32(val, addr, index, (OPC));                        \
 }
 
 static inline void gen_aa32_ld64(TCGv_i64 val, TCGv_i32 addr, int index)
@@ -989,6 +988,9 @@ DO_GEN_LD(8u, MO_UB)
 DO_GEN_LD(16s, MO_TESW)
 DO_GEN_LD(16u, MO_TEUW)
 DO_GEN_LD(32u, MO_TEUL)
+/* 'a' variants include an alignment check */
+DO_GEN_LD(16ua, MO_TEUW | MO_ALIGN)
+DO_GEN_LD(32ua, MO_TEUL | MO_ALIGN)
 DO_GEN_ST(8, MO_UB)
 DO_GEN_ST(16, MO_TEUW)
 DO_GEN_ST(32, MO_TEUL)
@@ -1057,28 +1059,6 @@ static void gen_exception_insn(DisasContext *s, int offset, int excp,
     gen_set_pc_im(s, s->pc - offset);
     gen_exception(excp, syn, target_el);
     s->is_jmp = DISAS_JUMP;
-}
-
-/* Emit an inline alignment check, which raises an exception if the given
- * address is not aligned according to "size" (which must be a power of 2). */
-static void gen_alignment_check(DisasContext *s, int pc_offset,
-                                target_ulong size, TCGv addr)
-{
-#ifdef CONFIG_ALIGNMENT_EXCEPTIONS
-    TCGLabel *alignok_label = gen_new_label();
-    TCGv tmp = tcg_temp_new();
-
-    /* check alignment, branch to alignok_label if aligned */
-    tcg_gen_andi_tl(tmp, addr, size - 1);
-    tcg_gen_brcondi_tl(TCG_COND_EQ, tmp, 0, alignok_label);
-
-    /* emit alignment exception */
-    gen_set_pc_im(s, s->pc - pc_offset);
-    gen_helper_alignment_exception(cpu_env, addr);
-
-    gen_set_label(alignok_label);
-    tcg_temp_free(tmp);
-#endif
 }
 
 /* Force a TB lookup after an instruction that changes the CPU state.  */
@@ -7453,22 +7433,16 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
 
     s->is_ldex = true;
 
-    /* emit alignment check if needed */
-    if (size != 0) {
-        /* NB: all LDREX variants (incl. thumb) occupy 4 bytes */
-        gen_alignment_check(s, 4, (target_ulong)1 << size, addr);
-    }
-
     switch (size) {
     case 0:
         gen_aa32_ld8u(tmp, addr, get_mem_index(s));
         break;
     case 1:
-        gen_aa32_ld16u(tmp, addr, get_mem_index(s));
+        gen_aa32_ld16ua(tmp, addr, get_mem_index(s));
         break;
     case 2:
     case 3:
-        gen_aa32_ld32u(tmp, addr, get_mem_index(s));
+        gen_aa32_ld32ua(tmp, addr, get_mem_index(s));
         break;
     default:
         abort();
