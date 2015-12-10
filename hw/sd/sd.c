@@ -94,7 +94,6 @@ struct SDState {
     uint64_t size;
     uint32_t blk_len;
     uint32_t multi_blk_cnt;
-    bool multi_blk_active;
     uint32_t erase_start;
     uint32_t erase_end;
     uint8_t pwd[16];
@@ -440,7 +439,6 @@ static void sd_reset(SDState *sd)
     sd->pwd_len = 0;
     sd->expecting_acmd = false;
     sd->multi_blk_cnt = 0;
-    sd->multi_blk_active = false;
 }
 
 static void sd_cardchange(void *opaque, bool load)
@@ -475,7 +473,6 @@ static const VMStateDescription sd_vmstate = {
         VMSTATE_BITMAP(wp_groups, SDState, 0, wpgrps_size),
         VMSTATE_UINT32(blk_len, SDState),
         VMSTATE_UINT32(multi_blk_cnt, SDState),
-        VMSTATE_BOOL(multi_blk_active, SDState),
         VMSTATE_UINT32(erase_start, SDState),
         VMSTATE_UINT32(erase_end, SDState),
         VMSTATE_UINT8_ARRAY(pwd, SDState, 16),
@@ -693,8 +690,8 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
 
     /* CMD23 (set block count) must be immediately followed by CMD18 or CMD25
      * if not, its effects are cancelled */
-    if (sd->multi_blk_active && !(req.cmd == 18 || req.cmd == 25)) {
-        sd->multi_blk_active = false;
+    if (sd->multi_blk_cnt != 0 && !(req.cmd == 18 || req.cmd == 25)) {
+        sd->multi_blk_cnt = 0;
     }
 
     DPRINTF("CMD%d 0x%08x state %d\n", req.cmd, req.arg, sd->state);
@@ -996,7 +993,6 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
         switch (sd->state) {
         case sd_transfer_state:
             sd->multi_blk_cnt = req.arg;
-            sd->multi_blk_active = req.arg != 0;
             return sd_r1;
 
         default:
@@ -1588,11 +1584,6 @@ void sd_write_data(SDState *sd, uint8_t value)
         break;
 
     case 25:	/* CMD25:  WRITE_MULTIPLE_BLOCK */
-        if (sd->multi_blk_active && sd->multi_blk_cnt == 0) {
-            /* just ignore this write -- we've overrun the block count */
-            fprintf(stderr, "sd_write_data: overrun of multi-block transfer\n");
-            break;
-        }
         if (sd->data_offset == 0) {
             /* Start of the block - let's check the address is valid */
             if (sd->data_start + sd->blk_len > sd->size) {
@@ -1614,9 +1605,12 @@ void sd_write_data(SDState *sd, uint8_t value)
             sd->data_offset = 0;
             sd->csd[14] |= 0x40;
 
-            if (sd->multi_blk_active) {
-                assert(sd->multi_blk_cnt > 0);
-                sd->multi_blk_cnt--;
+            if (sd->multi_blk_cnt != 0) {
+                if (--sd->multi_blk_cnt == 0) {
+                    /* Stop! */
+                    sd->state = sd_transfer_state;
+                    break;
+                }
             }
 
             /* Bzzzzzzztt .... Operation complete.  */
@@ -1759,12 +1753,6 @@ uint8_t sd_read_data(SDState *sd)
         break;
 
     case 18:	/* CMD18:  READ_MULTIPLE_BLOCK */
-        if (sd->multi_blk_active && sd->multi_blk_cnt == 0) {
-            /* we've overrun the block count */
-            fprintf(stderr, "sd_read_data: overrun of multi-block transfer\n");
-            ret = 0;
-            break;
-        }
         if (sd->data_offset == 0)
             BLK_READ_BLOCK(sd->data_start, io_len);
         ret = sd->data[sd->data_offset ++];
@@ -1773,9 +1761,10 @@ uint8_t sd_read_data(SDState *sd)
             sd->data_start += io_len;
             sd->data_offset = 0;
 
-            if (sd->multi_blk_active) {
-                assert(sd->multi_blk_cnt > 0);
+            if (sd->multi_blk_cnt != 0) {
                 if (--sd->multi_blk_cnt == 0) {
+                    /* Stop! */
+                    sd->state = sd_transfer_state;
                     break;
                 }
             }
