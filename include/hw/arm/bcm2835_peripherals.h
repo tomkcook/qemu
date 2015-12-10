@@ -23,7 +23,7 @@
 #include "hw/misc/bcm2835_property.h"
 #include "hw/misc/bcm2835_sbm.h"
 #include "hw/misc/bcm2835_vchiq.h"
-#include "hw/sd/bcm2835_emmc.h"
+#include "hw/sd/sdhci.h"
 #include "hw/timer/bcm2835_st.h"
 #include "hw/timer/bcm2835_timer.h"
 #include "hw/usb/bcm2835_usb.h"
@@ -51,7 +51,7 @@ typedef struct BCM2835PeripheralState {
     BCM2835PropertyState property;
     BCM2835SbmState sbm;
     BCM2835VchiqState vchiq;
-    BCM2835EmmcState emmc;
+    SDHCIState sdhci;
     BCM2835StState st;
     BCM2835TimerState timer;
     BCM2835UsbState usb;

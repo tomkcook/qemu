@@ -12,6 +12,9 @@
 #include "hw/arm/bcm2835_mbox.h"
 #include "hw/arm/raspi_platform.h"
 
+/* Capabilities for SD controller: no DMA, high-speed, default clocks etc. */
+#define BCM2835_SDHC_CAPAREG 0x52034b4
+
 static void bcm2835_peripherals_init(Object *obj)
 {
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(obj);
@@ -108,9 +111,9 @@ static void bcm2835_peripherals_init(Object *obj)
     qdev_set_parent_bus(DEVICE(&s->vchiq), sysbus_get_default());
 
     /* Extended Mass Media Controller */
-    object_initialize(&s->emmc, sizeof(s->emmc), TYPE_BCM2835_EMMC);
-    object_property_add_child(obj, "emmc", OBJECT(&s->emmc), NULL);
-    qdev_set_parent_bus(DEVICE(&s->emmc), sysbus_get_default());
+    object_initialize(&s->sdhci, sizeof(s->sdhci), TYPE_SYSBUS_SDHCI);
+    object_property_add_child(obj, "sdhci", OBJECT(&s->sdhci), NULL);
+    qdev_set_parent_bus(DEVICE(&s->sdhci), sysbus_get_default());
 
     /* DMA Channels */
     object_initialize(&s->dma, sizeof(s->dma), TYPE_BCM2835_DMA);
@@ -314,15 +317,28 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(DEVICE(&s->sbm), MBOX_CHAN_VCHIQ));
 
     /* Extended Mass Media Controller */
-    object_property_set_bool(OBJECT(&s->emmc), true, "realized", &err);
+    object_property_set_int(OBJECT(&s->sdhci), BCM2835_SDHC_CAPAREG, "capareg",
+                            &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
+    object_property_set_bool(OBJECT(&s->sdhci), true, "noeject-quirk", &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
+    object_property_set_bool(OBJECT(&s->sdhci), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
 
     memory_region_add_subregion(&s->peri_mr, EMMC_OFFSET,
-                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->emmc), 0));
-    sysbus_connect_irq(SYS_BUS_DEVICE(&s->emmc), 0,
+                sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->sdhci), 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->sdhci), 0,
                        qdev_get_gpio_in(DEVICE(&s->ic),
                                         INTERRUPT_VC_ARASANSDIO));
 
