@@ -33,6 +33,7 @@
 #include "sysemu/block-backend.h"
 #include "hw/sd/sd.h"
 #include "qemu/bitmap.h"
+#include "qemu/timer.h"
 
 //#define DEBUG_SD 1
 
@@ -43,7 +44,9 @@ do { fprintf(stderr, "SD: " fmt , ## __VA_ARGS__); } while (0)
 #define DPRINTF(fmt, ...) do {} while(0)
 #endif
 
-#define ACMD41_ENQUIRY_MASK 0x00ffffff
+#define ACMD41_ENQUIRY_MASK     0x00ffffff
+#define OCR_POWER_UP            0x80000000
+#define OCR_POWERUP_DELAY       (get_ticks_per_sec() / 2000) /* 0.5ms */
 
 typedef enum {
     sd_r0 = 0,    /* no response */
@@ -80,7 +83,7 @@ struct SDState {
     uint32_t mode;    /* current card mode, one of SDCardModes */
     int32_t state;    /* current card state, one of SDCardStates */
     uint32_t ocr;
-    bool ocr_initdelay;
+    QEMUTimer *ocr_power_timer;
     uint8_t scr[8];
     uint8_t cid[16];
     uint8_t csd[16];
@@ -197,19 +200,26 @@ static void sd_set_ocr(SDState *sd)
 {
     /* All voltages OK, Standard Capacity SD Memory Card, not yet powered up */
     sd->ocr = 0x00ffff00;
-    sd->ocr_initdelay = false;
+    timer_del(sd->ocr_power_timer);
 }
 
-static bool sd_model_ocr_init_delay(SDState *sd)
+static uint32_t sd_get_ocr(SDState *sd)
 {
-    if (!sd->ocr_initdelay) {
-        sd->ocr_initdelay = true;
-        return false;
-    } else {
-        /* Set powered up bit in OCR */
-        sd->ocr |= 0x80000000;
-        return true;
+    if (!(sd->ocr & OCR_POWER_UP) && !timer_pending(sd->ocr_power_timer)) {
+        /* this is the first request since reset: set a timer for power up */
+        timer_mod(sd->ocr_power_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + OCR_POWERUP_DELAY);
     }
+    return sd->ocr;
+}
+
+static void sd_ocr_powerup(void *opaque)
+{
+    SDState *sd = opaque;
+
+    /* Set powered up bit in OCR */
+    assert(!(sd->ocr & OCR_POWER_UP));
+    sd->ocr |= OCR_POWER_UP;
 }
 
 static void sd_set_scr(SDState *sd)
@@ -368,10 +378,11 @@ static void sd_response_r1_make(SDState *sd, uint8_t *response)
 
 static void sd_response_r3_make(SDState *sd, uint8_t *response)
 {
-    response[0] = (sd->ocr >> 24) & 0xff;
-    response[1] = (sd->ocr >> 16) & 0xff;
-    response[2] = (sd->ocr >> 8) & 0xff;
-    response[3] = (sd->ocr >> 0) & 0xff;
+    uint32_t ocr = sd_get_ocr(sd);
+    response[0] = (ocr >> 24) & 0xff;
+    response[1] = (ocr >> 16) & 0xff;
+    response[2] = (ocr >> 8) & 0xff;
+    response[3] = (ocr >> 0) & 0xff;
 }
 
 static void sd_response_r6_make(SDState *sd, uint8_t *response)
@@ -463,7 +474,8 @@ static const VMStateDescription sd_vmstate = {
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(mode, SDState),
         VMSTATE_INT32(state, SDState),
-        VMSTATE_BOOL(ocr_initdelay, SDState),
+        VMSTATE_UINT32(ocr, SDState),
+        VMSTATE_TIMER_PTR(ocr_power_timer, SDState),
         VMSTATE_UINT8_ARRAY(cid, SDState, 16),
         VMSTATE_UINT8_ARRAY(csd, SDState, 16),
         VMSTATE_UINT16(rca, SDState),
@@ -508,6 +520,7 @@ SDState *sd_init(BlockBackend *blk, bool is_spi)
     sd->spi = is_spi;
     sd->enable = true;
     sd->blk = blk;
+    sd->ocr_power_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sd_ocr_powerup, sd);
     sd_reset(sd);
     if (sd->blk) {
         /* Attach dev if not already attached.  (This call ignores an
@@ -1311,17 +1324,10 @@ static sd_rsp_type_t sd_app_command(SDState *sd,
         case sd_idle_state:
             /* We accept any voltage.  10000 V is nothing.
              *
-             * We model an init "delay" of one polling cycle, as a
-             * workaround for around a bug in TianoCore EDK2 which
-             * sends an initial zero ACMD41, but nevertheless assumes
-             * that the card is in ready state as soon as it sees the
-             * power up bit set.
-             *
-             * Once we've delayed, we advance straight to ready state
+             * Once we're powered up, we advance straight to ready state
              * unless it's an enquiry ACMD41 (bits 23:0 == 0).
              */
-            if (sd_model_ocr_init_delay(sd)
-                && (req.arg & ACMD41_ENQUIRY_MASK)) {
+            if ((sd->ocr & OCR_POWER_UP) && (req.arg & ACMD41_ENQUIRY_MASK)) {
                 sd->state = sd_ready_state;
             }
 
