@@ -154,8 +154,12 @@ void arm_cpu_do_unaligned_access(CPUState *cs, vaddr vaddr, int is_write,
         env->exception.fsr = 0x1;
     }
 
+    if (is_write == 1 && arm_feature(env, ARM_FEATURE_V6)) {
+        env->exception.fsr |= (1 << 11);
+    }
+
     raise_exception(env, EXCP_DATA_ABORT,
-                    syn_data_abort(same_el, 0, 0, 0, 0, 0x21),
+                    syn_data_abort(same_el, 0, 0, 0, is_write == 1, 0x21),
                     target_el);
 }
 
