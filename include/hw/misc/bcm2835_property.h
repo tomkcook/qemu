@@ -15,13 +15,15 @@
         OBJECT_CHECK(BCM2835PropertyState, (obj), TYPE_BCM2835_PROPERTY)
 
 typedef struct {
+    /*< private >*/
     SysBusDevice busdev;
+    /*< public >*/
     MemoryRegion *dma_mr;
     AddressSpace dma_as;
     BCM2835FbState *fbdev;
     MemoryRegion iomem;
     uint32_t addr;
-    int pending;
+    bool pending;
     qemu_irq mbox_irq;
 } BCM2835PropertyState;
 

@@ -4,7 +4,7 @@
  */
 
 #include "hw/misc/bcm2835_vchiq.h"
-#include "hw/arm/bcm2835_mbox.h"
+#include "hw/misc/bcm2835_mbox_defs.h"
 
 static uint64_t bcm2835_vchiq_read(void *opaque, hwaddr offset,
     unsigned size)

@@ -22,7 +22,9 @@
     OBJECT_CHECK(BCM2836ControlState, (obj), TYPE_BCM2836_CONTROL)
 
 typedef struct BCM2836ControlState {
+    /*< private >*/
     SysBusDevice busdev;
+    /*< public >*/
     MemoryRegion iomem;
 
     /* interrupt status registers (not directly visible to user) */

@@ -4,7 +4,7 @@
  */
 
 #include "hw/misc/bcm2835_property.h"
-#include "hw/arm/bcm2835_mbox.h"
+#include "hw/misc/bcm2835_mbox_defs.h"
 
 /* https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface */
 
@@ -254,7 +254,7 @@ static void bcm2835_property_mbox_push(BCM2835PropertyState *s, uint32_t value)
 
         default:
             qemu_log_mask(LOG_GUEST_ERROR,
-                "bcm2835_property: unhandled tag %08x\n", tag);
+                          "bcm2835_property: unhandled tag %08x\n", tag);
             break;
         }
 
@@ -277,55 +277,60 @@ static void bcm2835_property_mbox_push(BCM2835PropertyState *s, uint32_t value)
 }
 
 static uint64_t bcm2835_property_read(void *opaque, hwaddr offset,
-    unsigned size)
+                                      unsigned size)
 {
-    BCM2835PropertyState *s = (BCM2835PropertyState *)opaque;
+    BCM2835PropertyState *s = opaque;
     uint32_t res = 0;
 
     switch (offset) {
-    case 0:
+    case MBOX_AS_DATA:
         res = MBOX_CHAN_PROPERTY | s->addr;
-        s->pending = 0;
+        s->pending = false;
         qemu_set_irq(s->mbox_irq, 0);
         break;
-    case 4:
+
+    case MBOX_AS_PENDING:
         res = s->pending;
         break;
+
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-            "bcm2835_property_read: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
         return 0;
     }
+
     return res;
 }
 
 static void bcm2835_property_write(void *opaque, hwaddr offset,
-    uint64_t value, unsigned size)
+                                   uint64_t value, unsigned size)
 {
-    BCM2835PropertyState *s = (BCM2835PropertyState *)opaque;
+    BCM2835PropertyState *s = opaque;
+
     switch (offset) {
-    case 0:
+    case MBOX_AS_DATA:
         if (!s->pending) {
-            s->pending = 1;
+            s->pending = true;
             bcm2835_property_mbox_push(s, value);
             qemu_set_irq(s->mbox_irq, 1);
         }
         break;
+
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-            "bcm2835_property_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
         return;
     }
 
 }
 
-
 static const MemoryRegionOps bcm2835_property_ops = {
     .read = bcm2835_property_read,
     .write = bcm2835_property_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid.min_access_size = 4,
+    .valid.max_access_size = 4,
 };
-
 
 static const VMStateDescription vmstate_bcm2835_property = {
     .name = TYPE_BCM2835_PROPERTY,
@@ -333,6 +338,8 @@ static const VMStateDescription vmstate_bcm2835_property = {
     .minimum_version_id = 1,
     .minimum_version_id_old = 1,
     .fields      = (VMStateField[]) {
+        VMSTATE_UINT32(addr, BCM2835PropertyState),
+        VMSTATE_BOOL(pending, BCM2835PropertyState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -341,9 +348,16 @@ static void bcm2835_property_init(Object *obj)
 {
     BCM2835PropertyState *s = BCM2835_PROPERTY(obj);
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_property_ops, s,
-        TYPE_BCM2835_PROPERTY, 0x10);
+                          TYPE_BCM2835_PROPERTY, 0x10);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
     sysbus_init_irq(SYS_BUS_DEVICE(s), &s->mbox_irq);
+}
+
+static void bcm2835_property_reset(DeviceState *dev)
+{
+    BCM2835PropertyState *s = BCM2835_PROPERTY(dev);
+
+    s->pending = false;
 }
 
 static void bcm2835_property_realize(DeviceState *dev, Error **errp)
@@ -353,23 +367,25 @@ static void bcm2835_property_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     obj = object_property_get_link(OBJECT(dev), "bcm2835_fb", &err);
-    if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_property: required bcm2835_fb link missing");
+    if (obj == NULL) {
+        error_setg(errp, "%s: required bcm2835_fb link not found: %s",
+                   __func__, error_get_pretty(err));
         return;
     }
 
     s->fbdev = BCM2835_FB(obj);
 
     obj = object_property_get_link(OBJECT(dev), "dma_mr", &err);
-    if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_property: required dma_mr link not found");
+    if (obj == NULL) {
+        error_setg(errp, "%s: required dma_mr link not found: %s",
+                   __func__, error_get_pretty(err));
         return;
     }
 
     s->dma_mr = MEMORY_REGION(obj);
     address_space_init(&s->dma_as, s->dma_mr, NULL);
 
-    s->pending = 0;
+    bcm2835_property_reset(dev);
 }
 
 static void bcm2835_property_class_init(ObjectClass *klass, void *data)

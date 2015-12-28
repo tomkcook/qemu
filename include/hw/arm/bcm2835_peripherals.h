@@ -21,7 +21,7 @@
 #include "hw/misc/bcm2835_mphi.h"
 #include "hw/misc/bcm2835_power.h"
 #include "hw/misc/bcm2835_property.h"
-#include "hw/misc/bcm2835_sbm.h"
+#include "hw/misc/bcm2835_mbox.h"
 #include "hw/misc/bcm2835_vchiq.h"
 #include "hw/sd/sdhci.h"
 #include "hw/timer/bcm2835_st.h"
@@ -45,11 +45,11 @@ typedef struct BCM2835PeripheralState {
     BCM2835AuxState aux;
     BCM2835FbState fb;
     BCM2835DmaState dma;
-    BCM2835IcState ic;
+    BCM2835ICState ic;
     BCM2835MphiState mphi;
     BCM2835PowerState power;
     BCM2835PropertyState property;
-    BCM2835SbmState sbm;
+    BCM2835MboxState mboxes;
     BCM2835VchiqState vchiq;
     SDHCIState sdhci;
     BCM2835StState st;

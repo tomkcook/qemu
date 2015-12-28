@@ -28,7 +28,7 @@
 #include "hw/display/bcm2835_fb.h"
 #include "hw/display/framebuffer.h"
 #include "ui/pixel_ops.h"
-#include "hw/arm/bcm2835_mbox.h"
+#include "hw/misc/bcm2835_mbox_defs.h"
 
 #define DEFAULT_VCRAM_SIZE 0x4000000
 #define BCM2835_FB_OFFSET  0x00100000

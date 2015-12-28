@@ -41,7 +41,7 @@
 #define IC0_OFFSET              0x2000
 #define ST_OFFSET               0x3000   /* System Timer */
 #define MPHI_OFFSET             0x6000   /* Message-based Parallel Host Intf. */
-#define DMA_OFFSET              0x7000   /* DMA controller */
+#define DMA_OFFSET              0x7000   /* DMA controller, channels 0-14 */
 #define ARM_OFFSET              0xB000   /* BCM2708 ARM control block */
 #define ARMCTRL_OFFSET          (ARM_OFFSET + 0x000)
 #define ARMCTRL_IC_OFFSET       (ARM_OFFSET + 0x200) /* Interrupt controller */
@@ -63,6 +63,7 @@
 #define SMI_OFFSET              0x600000 /* SMI */
 #define BSC1_OFFSET             0x804000 /* BSC1 I2C/TWI */
 #define USB_OFFSET              0x980000 /* DTC_OTG USB controller */
+#define DMA15_OFFSET            0xE05000 /* DMA controller, channel 15 */
 
 /*
  * Interrupt assignments

@@ -127,7 +127,7 @@ static void bcm2836_control_update(BCM2836ControlState *s)
 static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
                                           int level)
 {
-    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
+    BCM2836ControlState *s = opaque;
 
     assert(core >= 0 && core < BCM2836_NCORES);
     assert(local_irq >= 0 && local_irq <= IRQ_CNTVIRQ);
@@ -168,7 +168,7 @@ static void bcm2836_control_set_local_irq3(void *opaque, int core, int level)
 
 static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 {
-    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
+    BCM2836ControlState *s = opaque;
 
     s->gpu_irq = level;
 
@@ -177,17 +177,16 @@ static void bcm2836_control_set_gpu_irq(void *opaque, int irq, int level)
 
 static void bcm2836_control_set_gpu_fiq(void *opaque, int irq, int level)
 {
-    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
+    BCM2836ControlState *s = opaque;
 
     s->gpu_fiq = level;
 
     bcm2836_control_update(s);
 }
 
-static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
-    unsigned size)
+static uint64_t bcm2836_control_read(void *opaque, hwaddr offset, unsigned size)
 {
-    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
+    BCM2836ControlState *s = opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
@@ -210,16 +209,16 @@ static uint64_t bcm2836_control_read(void *opaque, hwaddr offset,
         /* Mailboxes */
         return s->mailboxes[(offset - 0xc0) >> 2];
     } else {
-        qemu_log_mask(LOG_GUEST_ERROR,
-            "bcm2836_control_read: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
         return 0;
     }
 }
 
 static void bcm2836_control_write(void *opaque, hwaddr offset,
-    uint64_t val, unsigned size)
+                                  uint64_t val, unsigned size)
 {
-    BCM2836ControlState *s = (BCM2836ControlState *)opaque;
+    BCM2836ControlState *s = opaque;
 
     if (offset == 0xc) {
         /* GPU interrupt routing */
@@ -238,8 +237,8 @@ static void bcm2836_control_write(void *opaque, hwaddr offset,
         /* Mailbox clear registers */
         s->mailboxes[(offset - 0xc0) >> 2] &= ~val;
     } else {
-        qemu_log_mask(LOG_GUEST_ERROR,
-            "bcm2836_control_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
         return;
     }
 
@@ -299,10 +298,6 @@ static void bcm2836_control_init(Object *obj)
     qdev_init_gpio_out_named(dev, s->fiq, "fiq", BCM2836_NCORES);
 }
 
-static void bcm2836_control_realize(DeviceState *dev, Error **errp)
-{
-}
-
 static const VMStateDescription vmstate_bcm2836_control = {
     .name = TYPE_BCM2836_CONTROL,
     .version_id = 1,
@@ -323,7 +318,6 @@ static void bcm2836_control_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->realize = bcm2836_control_realize;
     dc->reset = bcm2836_control_reset;
     dc->vmsd = &vmstate_bcm2836_control;
 }
