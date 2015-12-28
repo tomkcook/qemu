@@ -39,6 +39,7 @@
 #include "hw/loader.h"
 #include "hw/isa/isa.h"
 #include "hw/acpi/memory_hotplug.h"
+#include "hw/mem/nvdimm.h"
 #include "sysemu/tpm.h"
 #include "hw/acpi/tpm.h"
 #include "sysemu/tpm_backend.h"
@@ -361,7 +362,7 @@ build_fadt(GArray *table_data, GArray *linker, AcpiPmInfo *pm,
     fadt_setup(fadt, pm);
 
     build_header(linker, table_data,
-                 (void *)fadt, "FACP", sizeof(*fadt), 1);
+                 (void *)fadt, "FACP", sizeof(*fadt), 1, NULL);
 }
 
 static void
@@ -431,7 +432,7 @@ build_madt(GArray *table_data, GArray *linker, AcpiCpuInfo *cpu,
 
     build_header(linker, table_data,
                  (void *)(table_data->data + madt_start), "APIC",
-                 table_data->len - madt_start, 1);
+                 table_data->len - madt_start, 1, NULL);
 }
 
 /* Assign BSEL property to all buses.  In the future, this can be changed
@@ -469,7 +470,7 @@ static void build_append_pcihp_notify_entry(Aml *method, int slot)
     Aml *if_ctx;
     int32_t devfn = PCI_DEVFN(slot, 0);
 
-    if_ctx = aml_if(aml_and(aml_arg(0), aml_int(0x1U << slot)));
+    if_ctx = aml_if(aml_and(aml_arg(0), aml_int(0x1U << slot), NULL));
     aml_append(if_ctx, aml_notify(aml_name("S%.02X", devfn), aml_arg(1)));
     aml_append(method, if_ctx);
 }
@@ -487,7 +488,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
         int64_t bsel_val = qint_get_int(qobject_to_qint(bsel));
 
         aml_append(parent_scope, aml_name_decl("BSEL", aml_int(bsel_val)));
-        notify_method = aml_method("DVNT", 2);
+        notify_method = aml_method("DVNT", 2, AML_NOTSERIALIZED);
     }
 
     for (i = 0; i < ARRAY_SIZE(bus->devices); i += PCI_FUNC_MAX) {
@@ -503,7 +504,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
                 dev = aml_device("S%.02X", PCI_DEVFN(slot, 0));
                 aml_append(dev, aml_name_decl("_SUN", aml_int(slot)));
                 aml_append(dev, aml_name_decl("_ADR", aml_int(slot << 16)));
-                method = aml_method("_EJ0", 1);
+                method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
                 aml_append(method,
                     aml_call2("PCEJ", aml_name("BSEL"), aml_name("_SUN"))
                 );
@@ -546,22 +547,22 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
                 s3d = 0;
             }
 
-            method = aml_method("_S1D", 0);
+            method = aml_method("_S1D", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_return(aml_int(0)));
             aml_append(dev, method);
 
-            method = aml_method("_S2D", 0);
+            method = aml_method("_S2D", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_return(aml_int(0)));
             aml_append(dev, method);
 
-            method = aml_method("_S3D", 0);
+            method = aml_method("_S3D", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_return(aml_int(s3d)));
             aml_append(dev, method);
         } else if (hotplug_enabled_dev) {
             /* add _SUN/_EJ0 to make slot hotpluggable  */
             aml_append(dev, aml_name_decl("_SUN", aml_int(slot)));
 
-            method = aml_method("_EJ0", 1);
+            method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
             aml_append(method,
                 aml_call2("PCEJ", aml_name("BSEL"), aml_name("_SUN"))
             );
@@ -590,7 +591,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
     /* Append PCNT method to notify about events on local and child buses.
      * Add unconditionally for root since DSDT expects it.
      */
-    method = aml_method("PCNT", 0);
+    method = aml_method("PCNT", 0, AML_NOTSERIALIZED);
 
     /* If bus supports hotplug select it and notify about local events */
     if (bsel) {
@@ -651,7 +652,7 @@ static Aml *build_prt(void)
 {
     Aml *method, *while_ctx, *pin, *res;
 
-    method = aml_method("_PRT", 0);
+    method = aml_method("_PRT", 0, AML_NOTSERIALIZED);
     res = aml_local(0);
     pin = aml_local(1);
     aml_append(method, aml_store(aml_package(128), res));
@@ -666,10 +667,11 @@ static Aml *build_prt(void)
 
         /* slot = pin >> 2 */
         aml_append(while_ctx,
-                   aml_store(aml_shiftright(pin, aml_int(2)), slot));
+                   aml_store(aml_shiftright(pin, aml_int(2), NULL), slot));
         /* lnk_idx = (slot + pin) & 3 */
         aml_append(while_ctx,
-                   aml_store(aml_and(aml_add(pin, slot), aml_int(3)), lnk_idx));
+            aml_store(aml_and(aml_add(pin, slot, NULL), aml_int(3), NULL),
+                      lnk_idx));
 
         /* route[2] = "LNK[D|A|B|C]", selection based on pin % 3  */
         aml_append(while_ctx, initialize_route(route, "LNKD", lnk_idx, 0));
@@ -679,11 +681,13 @@ static Aml *build_prt(void)
 
         /* route[0] = 0x[slot]FFFF */
         aml_append(while_ctx,
-            aml_store(aml_or(aml_shiftleft(slot, aml_int(16)), aml_int(0xFFFF)),
+            aml_store(aml_or(aml_shiftleft(slot, aml_int(16)), aml_int(0xFFFF),
+                             NULL),
                       aml_index(route, aml_int(0))));
         /* route[1] = pin & 3 */
         aml_append(while_ctx,
-            aml_store(aml_and(pin, aml_int(3)), aml_index(route, aml_int(1))));
+            aml_store(aml_and(pin, aml_int(3), NULL),
+                      aml_index(route, aml_int(1))));
         /* res[pin] = route */
         aml_append(while_ctx, aml_store(route, aml_index(res, pin)));
         /* pin++ */
@@ -762,16 +766,59 @@ static void crs_replace_with_free_ranges(GPtrArray *ranges,
     g_ptr_array_free(free_ranges, false);
 }
 
+/*
+ * crs_range_merge - merges adjacent ranges in the given array.
+ * Array elements are deleted and replaced with the merged ranges.
+ */
+static void crs_range_merge(GPtrArray *range)
+{
+    GPtrArray *tmp =  g_ptr_array_new_with_free_func(crs_range_free);
+    CrsRangeEntry *entry;
+    uint64_t range_base, range_limit;
+    int i;
+
+    if (!range->len) {
+        return;
+    }
+
+    g_ptr_array_sort(range, crs_range_compare);
+
+    entry = g_ptr_array_index(range, 0);
+    range_base = entry->base;
+    range_limit = entry->limit;
+    for (i = 1; i < range->len; i++) {
+        entry = g_ptr_array_index(range, i);
+        if (entry->base - 1 == range_limit) {
+            range_limit = entry->limit;
+        } else {
+            crs_range_insert(tmp, range_base, range_limit);
+            range_base = entry->base;
+            range_limit = entry->limit;
+        }
+    }
+    crs_range_insert(tmp, range_base, range_limit);
+
+    g_ptr_array_set_size(range, 0);
+    for (i = 0; i < tmp->len; i++) {
+        entry = g_ptr_array_index(tmp, i);
+        crs_range_insert(range, entry->base, entry->limit);
+    }
+    g_ptr_array_free(tmp, true);
+}
+
 static Aml *build_crs(PCIHostState *host,
                       GPtrArray *io_ranges, GPtrArray *mem_ranges)
 {
     Aml *crs = aml_resource_template();
+    GPtrArray *host_io_ranges = g_ptr_array_new_with_free_func(crs_range_free);
+    GPtrArray *host_mem_ranges = g_ptr_array_new_with_free_func(crs_range_free);
+    CrsRangeEntry *entry;
     uint8_t max_bus = pci_bus_num(host->bus);
     uint8_t type;
     int devfn;
+    int i;
 
     for (devfn = 0; devfn < ARRAY_SIZE(host->bus->devices); devfn++) {
-        int i;
         uint64_t range_base, range_limit;
         PCIDevice *dev = host->bus->devices[devfn];
 
@@ -794,26 +841,9 @@ static Aml *build_crs(PCIHostState *host,
             }
 
             if (r->type & PCI_BASE_ADDRESS_SPACE_IO) {
-                aml_append(crs,
-                    aml_word_io(AML_MIN_FIXED, AML_MAX_FIXED,
-                                AML_POS_DECODE, AML_ENTIRE_RANGE,
-                                0,
-                                range_base,
-                                range_limit,
-                                0,
-                                range_limit - range_base + 1));
-                crs_range_insert(io_ranges, range_base, range_limit);
+                crs_range_insert(host_io_ranges, range_base, range_limit);
             } else { /* "memory" */
-                aml_append(crs,
-                    aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED,
-                                     AML_MAX_FIXED, AML_NON_CACHEABLE,
-                                     AML_READ_WRITE,
-                                     0,
-                                     range_base,
-                                     range_limit,
-                                     0,
-                                     range_limit - range_base + 1));
-                crs_range_insert(mem_ranges, range_base, range_limit);
+                crs_range_insert(host_mem_ranges, range_base, range_limit);
             }
         }
 
@@ -832,15 +862,7 @@ static Aml *build_crs(PCIHostState *host,
              * that do not support multiple root buses
              */
             if (range_base && range_base <= range_limit) {
-                aml_append(crs,
-                           aml_word_io(AML_MIN_FIXED, AML_MAX_FIXED,
-                                       AML_POS_DECODE, AML_ENTIRE_RANGE,
-                                       0,
-                                       range_base,
-                                       range_limit,
-                                       0,
-                                       range_limit - range_base + 1));
-                crs_range_insert(io_ranges, range_base, range_limit);
+                crs_range_insert(host_io_ranges, range_base, range_limit);
             }
 
             range_base =
@@ -853,16 +875,7 @@ static Aml *build_crs(PCIHostState *host,
              * that do not support multiple root buses
              */
             if (range_base && range_base <= range_limit) {
-                aml_append(crs,
-                           aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED,
-                                            AML_MAX_FIXED, AML_NON_CACHEABLE,
-                                            AML_READ_WRITE,
-                                            0,
-                                            range_base,
-                                            range_limit,
-                                            0,
-                                            range_limit - range_base + 1));
-                crs_range_insert(mem_ranges, range_base, range_limit);
+                crs_range_insert(host_mem_ranges, range_base, range_limit);
             }
 
             range_base =
@@ -875,19 +888,35 @@ static Aml *build_crs(PCIHostState *host,
              * that do not support multiple root buses
              */
             if (range_base && range_base <= range_limit) {
-                aml_append(crs,
-                           aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED,
-                                            AML_MAX_FIXED, AML_NON_CACHEABLE,
-                                            AML_READ_WRITE,
-                                            0,
-                                            range_base,
-                                            range_limit,
-                                            0,
-                                            range_limit - range_base + 1));
-                crs_range_insert(mem_ranges, range_base, range_limit);
+                crs_range_insert(host_mem_ranges, range_base, range_limit);
             }
         }
     }
+
+    crs_range_merge(host_io_ranges);
+    for (i = 0; i < host_io_ranges->len; i++) {
+        entry = g_ptr_array_index(host_io_ranges, i);
+        aml_append(crs,
+                   aml_word_io(AML_MIN_FIXED, AML_MAX_FIXED,
+                               AML_POS_DECODE, AML_ENTIRE_RANGE,
+                               0, entry->base, entry->limit, 0,
+                               entry->limit - entry->base + 1));
+        crs_range_insert(io_ranges, entry->base, entry->limit);
+    }
+    g_ptr_array_free(host_io_ranges, true);
+
+    crs_range_merge(host_mem_ranges);
+    for (i = 0; i < host_mem_ranges->len; i++) {
+        entry = g_ptr_array_index(host_mem_ranges, i);
+        aml_append(crs,
+                   aml_dword_memory(AML_POS_DECODE, AML_MIN_FIXED,
+                                    AML_MAX_FIXED, AML_NON_CACHEABLE,
+                                    AML_READ_WRITE,
+                                    0, entry->base, entry->limit, 0,
+                                    entry->limit - entry->base + 1));
+        crs_range_insert(mem_ranges, entry->base, entry->limit);
+    }
+    g_ptr_array_free(host_mem_ranges, true);
 
     aml_append(crs,
         aml_word_bus_number(AML_MIN_FIXED, AML_MAX_FIXED, AML_POS_DECODE,
@@ -925,8 +954,7 @@ build_ssdt(GArray *table_data, GArray *linker,
     /* Reserve space for header */
     acpi_data_push(ssdt->buf, sizeof(AcpiTableHeader));
 
-    /* Extra PCI root buses are implemented  only for i440fx */
-    bus = find_i440fx();
+    bus = PC_MACHINE(machine)->bus;
     if (bus) {
         QLIST_FOREACH(bus, &bus->child, sibling) {
             uint8_t bus_num = pci_bus_num(bus);
@@ -1105,19 +1133,19 @@ build_ssdt(GArray *table_data, GArray *linker,
 
         aml_append(dev, aml_operation_region("PEOR", AML_SYSTEM_IO,
                                               misc->pvpanic_port, 1));
-        field = aml_field("PEOR", AML_BYTE_ACC, AML_PRESERVE);
+        field = aml_field("PEOR", AML_BYTE_ACC, AML_NOLOCK, AML_PRESERVE);
         aml_append(field, aml_named_field("PEPT", 8));
         aml_append(dev, field);
 
         /* device present, functioning, decoding, shown in UI */
         aml_append(dev, aml_name_decl("_STA", aml_int(0xF)));
 
-        method = aml_method("RDPT", 0);
+        method = aml_method("RDPT", 0, AML_NOTSERIALIZED);
         aml_append(method, aml_store(aml_name("PEPT"), aml_local(0)));
         aml_append(method, aml_return(aml_local(0)));
         aml_append(dev, method);
 
-        method = aml_method("WRPT", 1);
+        method = aml_method("WRPT", 1, AML_NOTSERIALIZED);
         aml_append(method, aml_store(aml_arg(0), aml_name("PEPT")));
         aml_append(dev, method);
 
@@ -1145,7 +1173,7 @@ build_ssdt(GArray *table_data, GArray *linker,
         /* declare CPU hotplug MMIO region and PRS field to access it */
         aml_append(sb_scope, aml_operation_region(
             "PRST", AML_SYSTEM_IO, pm->cpu_hp_io_base, pm->cpu_hp_io_len));
-        field = aml_field("PRST", AML_BYTE_ACC, AML_PRESERVE);
+        field = aml_field("PRST", AML_BYTE_ACC, AML_NOLOCK, AML_PRESERVE);
         aml_append(field, aml_named_field("PRS", 256));
         aml_append(sb_scope, field);
 
@@ -1153,15 +1181,15 @@ build_ssdt(GArray *table_data, GArray *linker,
         for (i = 0; i < acpi_cpus; i++) {
             dev = aml_processor(i, 0, 0, "CP%.02X", i);
 
-            method = aml_method("_MAT", 0);
+            method = aml_method("_MAT", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_return(aml_call1("CPMA", aml_int(i))));
             aml_append(dev, method);
 
-            method = aml_method("_STA", 0);
+            method = aml_method("_STA", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_return(aml_call1("CPST", aml_int(i))));
             aml_append(dev, method);
 
-            method = aml_method("_EJ0", 1);
+            method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
             aml_append(method,
                 aml_return(aml_call2("CPEJ", aml_int(i), aml_arg(0)))
             );
@@ -1174,7 +1202,7 @@ build_ssdt(GArray *table_data, GArray *linker,
          *   Method(NTFY, 2) {If (LEqual(Arg0, 0x00)) {Notify(CP00, Arg1)} ...}
          */
         /* Arg0 = Processor ID = APIC ID */
-        method = aml_method("NTFY", 2);
+        method = aml_method("NTFY", 2, AML_NOTSERIALIZED);
         for (i = 0; i < acpi_cpus; i++) {
             ifctx = aml_if(aml_equal(aml_arg(0), aml_int(i)));
             aml_append(ifctx,
@@ -1220,7 +1248,7 @@ build_ssdt(GArray *table_data, GArray *linker,
         );
 
         field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_DWORD_ACC,
-                          AML_PRESERVE);
+                          AML_NOLOCK, AML_PRESERVE);
         aml_append(field, /* read only */
             aml_named_field(stringify(MEMORY_SLOT_ADDR_LOW), 32));
         aml_append(field, /* read only */
@@ -1234,7 +1262,7 @@ build_ssdt(GArray *table_data, GArray *linker,
         aml_append(scope, field);
 
         field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_BYTE_ACC,
-                          AML_WRITE_AS_ZEROS);
+                          AML_NOLOCK, AML_WRITE_AS_ZEROS);
         aml_append(field, aml_reserved_field(160 /* bits, Offset(20) */));
         aml_append(field, /* 1 if enabled, read only */
             aml_named_field(stringify(MEMORY_SLOT_ENABLED), 1));
@@ -1250,7 +1278,7 @@ build_ssdt(GArray *table_data, GArray *linker,
         aml_append(scope, field);
 
         field = aml_field(stringify(MEMORY_HOTPLUG_IO_REGION), AML_DWORD_ACC,
-                          AML_PRESERVE);
+                          AML_NOLOCK, AML_PRESERVE);
         aml_append(field, /* DIMM selector, write only */
             aml_named_field(stringify(MEMORY_SLOT_SLECTOR), 32));
         aml_append(field, /* _OST event code, write only */
@@ -1269,29 +1297,29 @@ build_ssdt(GArray *table_data, GArray *linker,
             aml_append(dev, aml_name_decl("_UID", aml_string("0x%02X", i)));
             aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0C80")));
 
-            method = aml_method("_CRS", 0);
+            method = aml_method("_CRS", 0, AML_NOTSERIALIZED);
             s = BASEPATH stringify(MEMORY_SLOT_CRS_METHOD);
             aml_append(method, aml_return(aml_call1(s, aml_name("_UID"))));
             aml_append(dev, method);
 
-            method = aml_method("_STA", 0);
+            method = aml_method("_STA", 0, AML_NOTSERIALIZED);
             s = BASEPATH stringify(MEMORY_SLOT_STATUS_METHOD);
             aml_append(method, aml_return(aml_call1(s, aml_name("_UID"))));
             aml_append(dev, method);
 
-            method = aml_method("_PXM", 0);
+            method = aml_method("_PXM", 0, AML_NOTSERIALIZED);
             s = BASEPATH stringify(MEMORY_SLOT_PROXIMITY_METHOD);
             aml_append(method, aml_return(aml_call1(s, aml_name("_UID"))));
             aml_append(dev, method);
 
-            method = aml_method("_OST", 3);
+            method = aml_method("_OST", 3, AML_NOTSERIALIZED);
             s = BASEPATH stringify(MEMORY_SLOT_OST_METHOD);
             aml_append(method, aml_return(aml_call4(
                 s, aml_name("_UID"), aml_arg(0), aml_arg(1), aml_arg(2)
             )));
             aml_append(dev, method);
 
-            method = aml_method("_EJ0", 1);
+            method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
             s = BASEPATH stringify(MEMORY_SLOT_EJECT_METHOD);
             aml_append(method, aml_return(aml_call2(
                        s, aml_name("_UID"), aml_arg(0))));
@@ -1303,7 +1331,8 @@ build_ssdt(GArray *table_data, GArray *linker,
         /* build Method(MEMORY_SLOT_NOTIFY_METHOD, 2) {
          *     If (LEqual(Arg0, 0x00)) {Notify(MP00, Arg1)} ... }
          */
-        method = aml_method(stringify(MEMORY_SLOT_NOTIFY_METHOD), 2);
+        method = aml_method(stringify(MEMORY_SLOT_NOTIFY_METHOD), 2,
+                            AML_NOTSERIALIZED);
         for (i = 0; i < nr_mem; i++) {
             ifctx = aml_if(aml_equal(aml_arg(0), aml_int(i)));
             aml_append(ifctx,
@@ -1349,7 +1378,7 @@ build_ssdt(GArray *table_data, GArray *linker,
     g_array_append_vals(table_data, ssdt->buf->data, ssdt->buf->len);
     build_header(linker, table_data,
         (void *)(table_data->data + table_data->len - ssdt->buf->len),
-        "SSDT", ssdt->buf->len, 1);
+        "SSDT", ssdt->buf->len, 1, NULL);
     free_aml_allocator();
 }
 
@@ -1365,7 +1394,7 @@ build_hpet(GArray *table_data, GArray *linker)
     hpet->timer_block_id = cpu_to_le32(0x8086a201);
     hpet->addr.address = cpu_to_le64(HPET_BASE);
     build_header(linker, table_data,
-                 (void *)hpet, "HPET", sizeof(*hpet), 1);
+                 (void *)hpet, "HPET", sizeof(*hpet), 1, NULL);
 }
 
 static void
@@ -1388,7 +1417,7 @@ build_tpm_tcpa(GArray *table_data, GArray *linker, GArray *tcpalog)
                                    sizeof(tcpa->log_area_start_address));
 
     build_header(linker, table_data,
-                 (void *)tcpa, "TCPA", sizeof(*tcpa), 2);
+                 (void *)tcpa, "TCPA", sizeof(*tcpa), 2, NULL);
 
     acpi_data_push(tcpalog, TPM_LOG_AREA_MINIMUM_SIZE);
 }
@@ -1405,7 +1434,7 @@ build_tpm2(GArray *table_data, GArray *linker)
     tpm2_ptr->start_method = cpu_to_le32(TPM2_START_METHOD_MMIO);
 
     build_header(linker, table_data,
-                 (void *)tpm2_ptr, "TPM2", sizeof(*tpm2_ptr), 4);
+                 (void *)tpm2_ptr, "TPM2", sizeof(*tpm2_ptr), 4, NULL);
 }
 
 typedef enum {
@@ -1519,7 +1548,7 @@ build_srat(GArray *table_data, GArray *linker, PcGuestInfo *guest_info)
     build_header(linker, table_data,
                  (void *)(table_data->data + srat_start),
                  "SRAT",
-                 table_data->len - srat_start, 1);
+                 table_data->len - srat_start, 1, NULL);
 }
 
 static void
@@ -1548,7 +1577,7 @@ build_mcfg_q35(GArray *table_data, GArray *linker, AcpiMcfgInfo *info)
     } else {
         sig = "MCFG";
     }
-    build_header(linker, table_data, (void *)mcfg, sig, len, 1);
+    build_header(linker, table_data, (void *)mcfg, sig, len, 1, NULL);
 }
 
 static void
@@ -1572,7 +1601,7 @@ build_dmar_q35(GArray *table_data, GArray *linker)
     drhd->address = cpu_to_le64(Q35_HOST_BRIDGE_IOMMU_ADDR);
 
     build_header(linker, table_data, (void *)(table_data->data + dmar_start),
-                 "DMAR", table_data->len - dmar_start, 1);
+                 "DMAR", table_data->len - dmar_start, 1, NULL);
 }
 
 static void
@@ -1587,7 +1616,7 @@ build_dsdt(GArray *table_data, GArray *linker, AcpiMiscInfo *misc)
 
     memset(dsdt, 0, sizeof *dsdt);
     build_header(linker, table_data, dsdt, "DSDT",
-                 misc->dsdt_size, 1);
+                 misc->dsdt_size, 1, NULL);
 }
 
 static GArray *
@@ -1656,6 +1685,13 @@ static bool acpi_has_iommu(void)
     intel_iommu = object_resolve_path_type("", TYPE_INTEL_IOMMU_DEVICE,
                                            &ambiguous);
     return intel_iommu && !ambiguous;
+}
+
+static bool acpi_has_nvdimm(void)
+{
+    PCMachineState *pcms = PC_MACHINE(qdev_get_machine());
+
+    return pcms->nvdimm;
 }
 
 static
@@ -1742,6 +1778,10 @@ void acpi_build(PcGuestInfo *guest_info, AcpiBuildTables *tables)
         build_dmar_q35(tables_blob, tables->linker);
     }
 
+    if (acpi_has_nvdimm()) {
+        nvdimm_build_acpi(table_offsets, tables_blob, tables->linker);
+    }
+
     /* Add tables supplied by user (if any) */
     for (u = acpi_table_first(); u; u = acpi_table_next(u)) {
         unsigned len = acpi_table_len(u);
@@ -1818,7 +1858,7 @@ static void acpi_ram_update(MemoryRegion *mr, GArray *data)
     memory_region_set_dirty(mr, 0, size);
 }
 
-static void acpi_build_update(void *build_opaque, uint32_t offset)
+static void acpi_build_update(void *build_opaque)
 {
     AcpiBuildState *build_state = build_opaque;
     AcpiBuildTables tables;

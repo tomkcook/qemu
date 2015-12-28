@@ -512,8 +512,6 @@ Arguments:
 - "data": data to write (json-string)
 - "format": data format (json-string, optional)
           - Possible values: "utf8" (default), "base64"
-            Bug: invalid base64 is currently not rejected.
-            Whitespace *is* invalid.
 
 Example:
 
@@ -2765,6 +2763,8 @@ Return a json-array. Each CPU is represented by a json-object, which contains:
 - "current": true if this is the current CPU, false otherwise (json-bool)
 - "halted": true if the cpu is halted, false otherwise (json-bool)
 - "qom_path": path to the CPU object in the QOM tree (json-str)
+- "arch": architecture of the cpu, which determines what additional
+          keys will be present (json-str)
 - Current program counter. The key's name depends on the architecture:
      "pc": i386/x86_64 (json-int)
      "nip": PPC (json-int)
@@ -2782,6 +2782,7 @@ Example:
             "current":true,
             "halted":false,
             "qom_path":"/machine/unattached/device[0]",
+            "arch":"x86",
             "pc":3227107138,
             "thread_id":3134
          },
@@ -2790,6 +2791,7 @@ Example:
             "current":false,
             "halted":true,
             "qom_path":"/machine/unattached/device[2]",
+            "arch":"x86",
             "pc":7108165,
             "thread_id":3135
          }
@@ -4203,19 +4205,22 @@ Example:
 EQMP
 
     {
-        .name       = "blockdev-remove-medium",
+        .name       = "x-blockdev-remove-medium",
         .args_type  = "device:s",
-        .mhandler.cmd_new = qmp_marshal_blockdev_remove_medium,
+        .mhandler.cmd_new = qmp_marshal_x_blockdev_remove_medium,
     },
 
 SQMP
-blockdev-remove-medium
-----------------------
+x-blockdev-remove-medium
+------------------------
 
 Removes a medium (a block driver state tree) from a block device. That block
 device's tray must currently be open (unless there is no attached guest device).
 
 If the tray is open and there is no medium inserted, this will be a no-op.
+
+This command is still a work in progress and is considered experimental.
+Stay away from it unless you want to help with its development.
 
 Arguments:
 
@@ -4223,7 +4228,7 @@ Arguments:
 
 Example:
 
--> { "execute": "blockdev-remove-medium",
+-> { "execute": "x-blockdev-remove-medium",
      "arguments": { "device": "ide1-cd0" } }
 
 <- { "error": { "class": "GenericError",
@@ -4240,7 +4245,7 @@ Example:
 
 <- { "return": {} }
 
--> { "execute": "blockdev-remove-medium",
+-> { "execute": "x-blockdev-remove-medium",
      "arguments": { "device": "ide1-cd0" } }
 
 <- { "return": {} }
@@ -4248,18 +4253,21 @@ Example:
 EQMP
 
     {
-        .name       = "blockdev-insert-medium",
+        .name       = "x-blockdev-insert-medium",
         .args_type  = "device:s,node-name:s",
-        .mhandler.cmd_new = qmp_marshal_blockdev_insert_medium,
+        .mhandler.cmd_new = qmp_marshal_x_blockdev_insert_medium,
     },
 
 SQMP
-blockdev-insert-medium
-----------------------
+x-blockdev-insert-medium
+------------------------
 
 Inserts a medium (a block driver state tree) into a block device. That block
 device's tray must currently be open (unless there is no attached guest device)
 and there must be no medium inserted already.
+
+This command is still a work in progress and is considered experimental.
+Stay away from it unless you want to help with its development.
 
 Arguments:
 
@@ -4276,7 +4284,7 @@ Example:
 
 <- { "return": {} }
 
--> { "execute": "blockdev-insert-medium",
+-> { "execute": "x-blockdev-insert-medium",
      "arguments": { "device": "ide1-cd0",
                     "node-name": "node0" } }
 

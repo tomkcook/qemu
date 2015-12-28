@@ -1776,21 +1776,23 @@
 # @BlkdebugEvent
 #
 # Trigger events supported by blkdebug.
+#
+# Since: 2.0
 ##
-{ 'enum': 'BlkdebugEvent',
-  'data': [ 'l1_update', 'l1_grow.alloc_table', 'l1_grow.write_table',
-            'l1_grow.activate_table', 'l2_load', 'l2_update',
-            'l2_update_compressed', 'l2_alloc.cow_read', 'l2_alloc.write',
+{ 'enum': 'BlkdebugEvent', 'prefix': 'BLKDBG',
+  'data': [ 'l1_update', 'l1_grow_alloc_table', 'l1_grow_write_table',
+            'l1_grow_activate_table', 'l2_load', 'l2_update',
+            'l2_update_compressed', 'l2_alloc_cow_read', 'l2_alloc_write',
             'read_aio', 'read_backing_aio', 'read_compressed', 'write_aio',
             'write_compressed', 'vmstate_load', 'vmstate_save', 'cow_read',
             'cow_write', 'reftable_load', 'reftable_grow', 'reftable_update',
             'refblock_load', 'refblock_update', 'refblock_update_part',
-            'refblock_alloc', 'refblock_alloc.hookup', 'refblock_alloc.write',
-            'refblock_alloc.write_blocks', 'refblock_alloc.write_table',
-            'refblock_alloc.switch_table', 'cluster_alloc',
+            'refblock_alloc', 'refblock_alloc_hookup', 'refblock_alloc_write',
+            'refblock_alloc_write_blocks', 'refblock_alloc_write_table',
+            'refblock_alloc_switch_table', 'cluster_alloc',
             'cluster_alloc_bytes', 'cluster_free', 'flush_to_os',
-            'flush_to_disk', 'pwritev_rmw.head', 'pwritev_rmw.after_head',
-            'pwritev_rmw.tail', 'pwritev_rmw.after_tail', 'pwritev',
+            'flush_to_disk', 'pwritev_rmw_head', 'pwritev_rmw_after_head',
+            'pwritev_rmw_tail', 'pwritev_rmw_after_tail', 'pwritev',
             'pwritev_zero', 'pwritev_done', 'empty_image_prepare' ] }
 
 ##
@@ -2081,7 +2083,7 @@
   'data': { 'device': 'str' } }
 
 ##
-# @blockdev-remove-medium:
+# @x-blockdev-remove-medium:
 #
 # Removes a medium (a block driver state tree) from a block device. That block
 # device's tray must currently be open (unless there is no attached guest
@@ -2089,19 +2091,25 @@
 #
 # If the tray is open and there is no medium inserted, this will be a no-op.
 #
+# This command is still a work in progress and is considered experimental.
+# Stay away from it unless you want to help with its development.
+#
 # @device: block device name
 #
 # Since: 2.5
 ##
-{ 'command': 'blockdev-remove-medium',
+{ 'command': 'x-blockdev-remove-medium',
   'data': { 'device': 'str' } }
 
 ##
-# @blockdev-insert-medium:
+# @x-blockdev-insert-medium:
 #
 # Inserts a medium (a block driver state tree) into a block device. That block
 # device's tray must currently be open (unless there is no attached guest
 # device) and there must be no medium inserted already.
+#
+# This command is still a work in progress and is considered experimental.
+# Stay away from it unless you want to help with its development.
 #
 # @device:    block device name
 #
@@ -2109,7 +2117,7 @@
 #
 # Since: 2.5
 ##
-{ 'command': 'blockdev-insert-medium',
+{ 'command': 'x-blockdev-insert-medium',
   'data': { 'device': 'str',
             'node-name': 'str'} }
 
@@ -2137,8 +2145,8 @@
 #
 # Changes the medium inserted into a block device by ejecting the current medium
 # and loading a new image file which is inserted as the new medium (this command
-# combines blockdev-open-tray, blockdev-remove-medium, blockdev-insert-medium
-# and blockdev-close-tray).
+# combines blockdev-open-tray, x-blockdev-remove-medium,
+# x-blockdev-insert-medium and blockdev-close-tray).
 #
 # @device:          block device name
 #

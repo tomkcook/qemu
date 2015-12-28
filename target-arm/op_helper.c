@@ -147,7 +147,8 @@ void arm_cpu_do_unaligned_access(CPUState *cs, vaddr vaddr, int is_write,
     env->exception.vaddress = vaddr;
 
     /* the DFSR for an alignment fault depends on whether we're using
-     * the LPAE long descriptor format, or the short descriptor format */
+     * the LPAE long descriptor format, or the short descriptor format
+     */
     if (arm_regime_using_lpae_format(env, cpu_mmu_index(env, false))) {
         env->exception.fsr = 0x21;
     } else {

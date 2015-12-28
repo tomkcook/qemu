@@ -65,6 +65,7 @@
 #include "hw/mem/pc-dimm.h"
 #include "qapi/visitor.h"
 #include "qapi-visit.h"
+#include "qom/cpu.h"
 
 /* debug PC/ISA interrupts */
 //#define DEBUG_IRQ
@@ -75,15 +76,6 @@
 #else
 #define DPRINTF(fmt, ...)
 #endif
-
-/* Leave a chunk of memory at the top of RAM for the BIOS ACPI tables
- * (128K) and other BIOS datastructures (less than 4K reported to be used at
- * the moment, 32K should be enough for a while).  */
-static unsigned acpi_data_size = 0x20000 + 0x8000;
-void pc_set_legacy_acpi_data_size(void)
-{
-    acpi_data_size = 0x10000;
-}
 
 #define BIOS_CFG_IOPORT 0x510
 #define FW_CFG_ACPI_TABLES (FW_CFG_ARCH_LOCAL + 0)
@@ -840,6 +832,7 @@ static void load_linux(PCMachineState *pcms,
     FILE *f;
     char *vmode;
     MachineState *machine = MACHINE(pcms);
+    PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
     const char *kernel_filename = machine->kernel_filename;
     const char *initrd_filename = machine->initrd_filename;
     const char *kernel_cmdline = machine->kernel_cmdline;
@@ -907,8 +900,8 @@ static void load_linux(PCMachineState *pcms,
         initrd_max = 0x37ffffff;
     }
 
-    if (initrd_max >= pcms->below_4g_mem_size - acpi_data_size) {
-        initrd_max = pcms->below_4g_mem_size - acpi_data_size - 1;
+    if (initrd_max >= pcms->below_4g_mem_size - pcmc->acpi_data_size) {
+        initrd_max = pcms->below_4g_mem_size - pcmc->acpi_data_size - 1;
     }
 
     fw_cfg_add_i32(fw_cfg, FW_CFG_CMDLINE_ADDR, cmdline_addr);
@@ -1174,7 +1167,7 @@ void pc_guest_info_machine_done(Notifier *notifier, void *data)
     PcGuestInfoState *guest_info_state = container_of(notifier,
                                                       PcGuestInfoState,
                                                       machine_done);
-    PCIBus *bus = find_i440fx();
+    PCIBus *bus = PC_MACHINE(qdev_get_machine())->bus;
 
     if (bus) {
         int extra_hosts = 0;
@@ -1302,6 +1295,7 @@ FWCfgState *pc_memory_init(PCMachineState *pcms,
     MemoryRegion *ram_below_4g, *ram_above_4g;
     FWCfgState *fw_cfg;
     MachineState *machine = MACHINE(pcms);
+    PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
 
     assert(machine->ram_size == pcms->below_4g_mem_size +
                                 pcms->above_4g_mem_size);
@@ -1363,7 +1357,7 @@ FWCfgState *pc_memory_init(PCMachineState *pcms,
         pcms->hotplug_memory.base =
             ROUND_UP(0x100000000ULL + pcms->above_4g_mem_size, 1ULL << 30);
 
-        if (pcms->enforce_aligned_dimm) {
+        if (pcmc->enforce_aligned_dimm) {
             /* size hotplug region assuming 1G page max alignment per slot */
             hotplug_mem_size += (1ULL << 30) * machine->ram_slots;
         }
@@ -1517,7 +1511,7 @@ void pc_basic_device_init(ISABus *isa_bus, qemu_irq *gsi,
     qemu_register_boot_set(pc_boot_set, *rtc_state);
 
     if (!xen_enabled()) {
-        if (kvm_irqchip_in_kernel()) {
+        if (kvm_pit_in_kernel()) {
             pit = kvm_pit_init(isa_bus, 0x40);
         } else {
             pit = pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
@@ -1592,7 +1586,7 @@ void ioapic_init_gsi(GSIState *gsi_state, const char *parent_name)
     SysBusDevice *d;
     unsigned int i;
 
-    if (kvm_irqchip_in_kernel()) {
+    if (kvm_ioapic_in_kernel()) {
         dev = qdev_create(NULL, "kvm-ioapic");
     } else {
         dev = qdev_create(NULL, "ioapic");
@@ -1616,12 +1610,13 @@ static void pc_dimm_plug(HotplugHandler *hotplug_dev,
     HotplugHandlerClass *hhc;
     Error *local_err = NULL;
     PCMachineState *pcms = PC_MACHINE(hotplug_dev);
+    PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
     PCDIMMDevice *dimm = PC_DIMM(dev);
     PCDIMMDeviceClass *ddc = PC_DIMM_GET_CLASS(dimm);
     MemoryRegion *mr = ddc->get_memory_region(dimm);
     uint64_t align = TARGET_PAGE_SIZE;
 
-    if (memory_region_get_alignment(mr) && pcms->enforce_aligned_dimm) {
+    if (memory_region_get_alignment(mr) && pcmc->enforce_aligned_dimm) {
         align = memory_region_get_alignment(mr);
     }
 
@@ -1870,11 +1865,18 @@ static void pc_machine_set_smm(Object *obj, Visitor *v, void *opaque,
     visit_type_OnOffAuto(v, &pcms->smm, name, errp);
 }
 
-static bool pc_machine_get_aligned_dimm(Object *obj, Error **errp)
+static bool pc_machine_get_nvdimm(Object *obj, Error **errp)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
 
-    return pcms->enforce_aligned_dimm;
+    return pcms->nvdimm;
+}
+
+static void pc_machine_set_nvdimm(Object *obj, bool value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->nvdimm = value;
 }
 
 static void pc_machine_initfn(Object *obj)
@@ -1912,10 +1914,10 @@ static void pc_machine_initfn(Object *obj)
                                     "Enable vmport (pc & q35)",
                                     &error_abort);
 
-    pcms->enforce_aligned_dimm = true;
-    object_property_add_bool(obj, PC_MACHINE_ENFORCE_ALIGNED_DIMM,
-                             pc_machine_get_aligned_dimm,
-                             NULL, &error_abort);
+    /* nvdimm is disabled on default. */
+    pcms->nvdimm = false;
+    object_property_add_bool(obj, PC_MACHINE_NVDIMM, pc_machine_get_nvdimm,
+                             pc_machine_set_nvdimm, &error_abort);
 }
 
 static void pc_machine_reset(void)
@@ -1952,6 +1954,18 @@ static void pc_machine_class_init(ObjectClass *oc, void *data)
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
 
     pcmc->get_hotplug_handler = mc->get_hotplug_handler;
+    pcmc->pci_enabled = true;
+    pcmc->has_acpi_build = true;
+    pcmc->rsdp_in_ram = true;
+    pcmc->smbios_defaults = true;
+    pcmc->smbios_uuid_encoded = true;
+    pcmc->gigabyte_align = true;
+    pcmc->has_reserved_memory = true;
+    pcmc->kvmclock_enabled = true;
+    pcmc->enforce_aligned_dimm = true;
+    /* BIOS ACPI tables: 128K. Other BIOS datastructures: less than 4K reported
+     * to be used at the moment, 32K should be enough for a while.  */
+    pcmc->acpi_data_size = 0x20000 + 0x8000;
     mc->get_hotplug_handler = pc_get_hotpug_handler;
     mc->cpu_index_to_socket_id = pc_cpu_index_to_socket_id;
     mc->default_boot_order = "cad";
