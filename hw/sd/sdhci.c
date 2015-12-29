@@ -1310,6 +1310,11 @@ static void sdhci_sysbus_realize(DeviceState *dev, Error ** errp)
     memory_region_init_io(&s->iomem, OBJECT(s), &sdhci_mmio_ops, s, "sdhci",
             SDHC_REGISTERS_MAP_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
+
+    /* XXX: kludge for Pi UEFI: set card insert at startup -AB */
+    if (s->noeject_quirk && (s->prnsts & SDHC_CARD_PRESENT)) {
+        s->norintsts |= SDHC_NIS_INSERT;
+    }
 }
 
 static void sdhci_sysbus_class_init(ObjectClass *klass, void *data)
