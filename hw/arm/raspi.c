@@ -82,7 +82,7 @@ static void write_board_setup(ARMCPU *cpu, const struct arm_boot_info *info)
         /* BOARDSETUP_ADDR */
         0xE3A00B01, /* mov     r0, #0x400             ;MVBAR_ADDR */
         0xEE0C0F30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
-        0xE3000131, /* movw    r0, #0x131             ;enable HVC, AW, FW, NS */
+        0xE3A00031, /* mov     r0, #0x31              ;enable AW, FW, NS */
         0xEE010F11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
         0xE1A0100E, /* mov     r1, lr                 ;save LR across SMC */
         0xE1600070, /* smc     #0                     ;monitor call */
@@ -107,16 +107,16 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     binfo.board_id = raspi_boardid[version];
     binfo.ram_size = ram_size;
     binfo.nb_cpus = smp_cpus;
+    binfo.board_setup_addr = BOARDSETUP_ADDR;
+    binfo.write_board_setup = write_board_setup;
+    binfo.secure_board_setup = true;
+    binfo.secure_boot = true;
 
-    /* Pi2 supports security extensions, which require special setup code */
+    /* Pi2 requires SMP setup code */
     if (version == 2) {
-        binfo.smp_loader_start = SMPBOOT_ADDR,
-        binfo.write_secondary_boot = write_smpboot,
-        binfo.secondary_cpu_reset_hook = reset_secondary,
-        binfo.board_setup_addr = BOARDSETUP_ADDR;
-        binfo.write_board_setup = write_board_setup;
-        binfo.secure_board_setup = true;
-        binfo.secure_boot = true;
+        binfo.smp_loader_start = SMPBOOT_ADDR;
+        binfo.write_secondary_boot = write_smpboot;
+        binfo.secondary_cpu_reset_hook = reset_secondary;
     }
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
