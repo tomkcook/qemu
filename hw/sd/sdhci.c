@@ -193,9 +193,7 @@ static void sdhci_reset(SDHCIState *s)
      * initialization */
     memset(&s->sdmasysad, 0, (uintptr_t)&s->capareg - (uintptr_t)&s->sdmasysad);
 
-    if (!s->noeject_quirk) {
-        sd_set_cb(s->card, s->ro_cb, s->eject_cb);
-    }
+    sd_set_cb(s->card, s->ro_cb, s->eject_cb);
     s->data_count = 0;
     s->stopped_state = sdhc_not_stopped;
 }
@@ -1210,7 +1208,6 @@ const VMStateDescription sdhci_vmstate = {
         VMSTATE_UINT16(data_count, SDHCIState),
         VMSTATE_UINT64(admasysaddr, SDHCIState),
         VMSTATE_UINT8(stopped_state, SDHCIState),
-        VMSTATE_BOOL(noeject_quirk, SDHCIState),
         VMSTATE_VBUFFER_UINT32(fifo_buffer, SDHCIState, 1, NULL, 0, buf_maxsz),
         VMSTATE_TIMER_PTR(insert_timer, SDHCIState),
         VMSTATE_TIMER_PTR(transfer_timer, SDHCIState),
