@@ -206,24 +206,6 @@ static void bcm2835_dma_write(BCM2835DmaState *s, hwaddr offset,
     case 0x4:
         ch->conblk_ad = value;
         break;
-    case 0x8:
-        ch->ti = value;
-        break;
-    case 0xc:
-        ch->source_ad = value;
-        break;
-    case 0x10:
-        ch->dest_ad = value;
-        break;
-    case 0x14:
-        ch->txfr_len = value;
-        break;
-    case 0x18:
-        ch->stride = value;
-        break;
-    case 0x1c:
-        ch->nextconbk = value;
-        break;
     case 0x20:
         ch->debug = value;
         break;
