@@ -892,7 +892,7 @@ static uint64_t sdhci_read(void *opaque, hwaddr offset, unsigned size)
         ret = s->clkcon | (s->timeoutcon << 16);
         break;
     case SDHC_NORINTSTS:
-        ret = s->norintsts | (s->errintsts << 16);
+        ret = (s->norintsts & s->norintstsen) | (s->errintsts << 16);
         break;
     case SDHC_NORINTSTSEN:
         ret = s->norintstsen | (s->errintstsen << 16);
@@ -1276,7 +1276,7 @@ static Property sdhci_sysbus_properties[] = {
     DEFINE_PROP_UINT32("capareg", SDHCIState, capareg,
             SDHC_CAPAB_REG_DEFAULT),
     DEFINE_PROP_UINT32("maxcurr", SDHCIState, maxcurr, 0),
-    DEFINE_PROP_BOOL("noeject-quirk", SDHCIState, noeject_quirk, false),
+    DEFINE_PROP_BOOL("bcm2835-quirk", SDHCIState, bcm2835_quirk, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1308,8 +1308,11 @@ static void sdhci_sysbus_realize(DeviceState *dev, Error ** errp)
             SDHC_REGISTERS_MAP_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
 
-    /* XXX: kludge for Pi UEFI: set card insert at startup -AB */
-    if (s->noeject_quirk && (s->prnsts & SDHC_CARD_PRESENT)) {
+    /* Quirk for Raspberry Pi: set the card insert interrupt status.
+     * Needed to boot UEFI, which enables and then polls this bit at
+     * boot time before proceeding with card I/O.
+     */
+    if (s->bcm2835_quirk && (s->prnsts & SDHC_CARD_PRESENT)) {
         s->norintsts |= SDHC_NIS_INSERT;
     }
 }

@@ -322,7 +322,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    object_property_set_bool(OBJECT(&s->sdhci), true, "noeject-quirk", &err);
+    object_property_set_bool(OBJECT(&s->sdhci), true, "bcm2835-quirk", &err);
     if (err) {
         error_propagate(errp, err);
         return;
