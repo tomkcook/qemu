@@ -309,9 +309,10 @@ static void bcm2835_dma_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
     Object *obj;
 
-    obj = object_property_get_link(OBJECT(dev), "dma_mr", &err);
-    if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_property: required dma_mr link not found");
+    obj = object_property_get_link(OBJECT(dev), "dma-mr", &err);
+    if (obj == NULL) {
+        error_setg(errp, "%s: required dma-mr link not found: %s",
+                   __func__, error_get_pretty(err));
         return;
     }
 

@@ -14,12 +14,15 @@
 #include "sysemu/sysemu.h" /* for smp_cpus */
 #include "exec/address-spaces.h"
 
+<<<<<<< HEAD
+=======
 /* Peripheral base address seen by the CPU */
 #define BCM2836_PERI_BASE       0x3F000000
 
 /* "QA7" (Pi2) interrupt controller and mailboxes etc. */
 #define BCM2836_CONTROL_BASE    0x40000000
 
+>>>>>>> upstreaming-raspi
 static void bcm2836_init(Object *obj)
 {
     BCM2836State *s = BCM2836(obj);
@@ -42,19 +45,27 @@ static void bcm2836_init(Object *obj)
                       TYPE_BCM2835_PERIPHERALS);
     object_property_add_child(obj, "peripherals", OBJECT(&s->peripherals),
                               &error_abort);
+<<<<<<< HEAD
     object_property_add_alias(obj, "vcram-size", OBJECT(&s->peripherals),
                               "vcram-size", &error_abort);
+=======
+>>>>>>> upstreaming-raspi
     qdev_set_parent_bus(DEVICE(&s->peripherals), sysbus_get_default());
 }
 
 static void bcm2836_realize(DeviceState *dev, Error **errp)
 {
     BCM2836State *s = BCM2836(dev);
+<<<<<<< HEAD
+=======
     Object *obj;
+>>>>>>> upstreaming-raspi
     Error *err = NULL;
     int n;
 
     /* common peripherals from bcm2835 */
+<<<<<<< HEAD
+=======
     obj = object_property_get_link(OBJECT(dev), "ram", &err);
     if (obj == NULL) {
         error_setg(errp, "%s: required ram link not found: %s",
@@ -68,6 +79,7 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+>>>>>>> upstreaming-raspi
     object_property_set_bool(OBJECT(&s->peripherals), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);

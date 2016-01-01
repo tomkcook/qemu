@@ -8,9 +8,14 @@
 
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
+<<<<<<< HEAD
 #include "hw/display/bcm2835_fb.h"
 
+#define TYPE_BCM2835_PROPERTY "bcm2835_property"
+=======
+
 #define TYPE_BCM2835_PROPERTY "bcm2835-property"
+>>>>>>> upstreaming-raspi
 #define BCM2835_PROPERTY(obj) \
         OBJECT_CHECK(BCM2835PropertyState, (obj), TYPE_BCM2835_PROPERTY)
 
@@ -20,11 +25,19 @@ typedef struct {
     /*< public >*/
     MemoryRegion *dma_mr;
     AddressSpace dma_as;
+<<<<<<< HEAD
     BCM2835FbState *fbdev;
     MemoryRegion iomem;
-    qemu_irq mbox_irq;
     uint32_t addr;
     bool pending;
+    qemu_irq mbox_irq;
+=======
+    MemoryRegion iomem;
+    qemu_irq mbox_irq;
+    uint32_t ram_size;
+    uint32_t addr;
+    bool pending;
+>>>>>>> upstreaming-raspi
 } BCM2835PropertyState;
 
 #endif

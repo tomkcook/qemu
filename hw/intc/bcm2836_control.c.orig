@@ -3,14 +3,38 @@
  * Copyright (c) 2015, Microsoft
  * Written by Andrew Baumann
  *
+<<<<<<< HEAD
+=======
  * Based on bcm2835_ic.c (Raspberry Pi emulation) (c) 2012 Gregory Estrade
  * This code is licensed under the GNU GPLv2 and later.
  *
+>>>>>>> upstreaming-raspi
  * At present, only implements interrupt routing, and mailboxes (i.e.,
  * not local timer, PMU interrupt, or AXI counters).
  *
  * Ref:
  * https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2836/QA7_rev3.4.pdf
+<<<<<<< HEAD
+ *
+ * Based on bcm2835_ic.c, terms below...
+ */
+
+/*
+ * Raspberry Pi emulation (c) 2012 Gregory Estrade
+ * This code is licensed under the GNU GPLv2 and later.
+ */
+
+/* Heavily based on pl190.c, copyright terms below. */
+
+/*
+ * Arm PrimeCell PL190 Vector Interrupt Controller
+ *
+ * Copyright (c) 2006 CodeSourcery.
+ * Written by Paul Brook
+ *
+ * This code is licensed under the GPL.
+=======
+>>>>>>> upstreaming-raspi
  */
 
 #include "hw/intc/bcm2836_control.h"
@@ -40,12 +64,26 @@ static void bcm2836_control_update(BCM2836ControlState *s)
 {
     int i, j;
 
+<<<<<<< HEAD
+    /*
+     * reset pending IRQs/FIQs
+     */
+
+=======
     /* reset pending IRQs/FIQs */
+>>>>>>> upstreaming-raspi
     for (i = 0; i < BCM2836_NCORES; i++) {
         s->irqsrc[i] = s->fiqsrc[i] = 0;
     }
 
+<<<<<<< HEAD
+    /*
+     * apply routing logic, update status regs
+     */
+
+=======
     /* apply routing logic, update status regs */
+>>>>>>> upstreaming-raspi
     if (s->gpu_irq) {
         assert(s->route_gpu_irq < BCM2836_NCORES);
         s->irqsrc[s->route_gpu_irq] |= (uint32_t)1 << IRQ_GPU;
@@ -59,7 +97,10 @@ static void bcm2836_control_update(BCM2836ControlState *s)
     for (i = 0; i < BCM2836_NCORES; i++) {
         /* handle local interrupts for this core */
         if (s->localirqs[i]) {
+<<<<<<< HEAD
+=======
             /* sanity check localirqs: mailboxes are handled below */
+>>>>>>> upstreaming-raspi
             assert(s->localirqs[i] < (1 << IRQ_MAILBOX0));
             for (j = 0; j < IRQ_MAILBOX0; j++) {
                 if ((s->localirqs[i] & (1 << j)) != 0) {
@@ -94,7 +135,14 @@ static void bcm2836_control_update(BCM2836ControlState *s)
         }
     }
 
+<<<<<<< HEAD
+    /*
+     * call set_irq appropriately for each output
+     */
+
+=======
     /* call set_irq appropriately for each output */
+>>>>>>> upstreaming-raspi
     for (i = 0; i < BCM2836_NCORES; i++) {
         qemu_set_irq(s->irq[i], s->irqsrc[i] != 0);
         qemu_set_irq(s->fiq[i], s->fiqsrc[i] != 0);
@@ -226,8 +274,11 @@ static const MemoryRegionOps bcm2836_control_ops = {
     .read = bcm2836_control_read,
     .write = bcm2836_control_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
+<<<<<<< HEAD
+=======
     .valid.min_access_size = 4,
     .valid.max_access_size = 4,
+>>>>>>> upstreaming-raspi
 };
 
 static void bcm2836_control_reset(DeviceState *d)

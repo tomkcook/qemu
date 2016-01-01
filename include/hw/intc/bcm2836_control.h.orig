@@ -17,7 +17,11 @@
 #define BCM2836_NCORES 4
 #define BCM2836_MBPERCORE 4
 
+<<<<<<< HEAD
+#define TYPE_BCM2836_CONTROL "bcm2836_control"
+=======
 #define TYPE_BCM2836_CONTROL "bcm2836-control"
+>>>>>>> upstreaming-raspi
 #define BCM2836_CONTROL(obj) \
     OBJECT_CHECK(BCM2836ControlState, (obj), TYPE_BCM2836_CONTROL)
 
@@ -29,7 +33,11 @@ typedef struct BCM2836ControlState {
 
     /* interrupt status registers (not directly visible to user) */
     bool gpu_irq, gpu_fiq;
+<<<<<<< HEAD
+    uint32_t localirqs[BCM2836_NCORES];
+=======
     uint8_t localirqs[BCM2836_NCORES];
+>>>>>>> upstreaming-raspi
 
     /* mailboxes */
     uint32_t mailboxes[BCM2836_NCORES * BCM2836_MBPERCORE];

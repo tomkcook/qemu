@@ -358,9 +358,9 @@ static void bcm2835_fb_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    obj = object_property_get_link(OBJECT(dev), "dma_mr", &err);
+    obj = object_property_get_link(OBJECT(dev), "dma-mr", &err);
     if (err || obj == NULL) {
-        error_setg(errp, "bcm2835_fb: required dma_mr property not found");
+        error_setg(errp, "bcm2835_fb: required dma-mr property not found");
         return;
     }
 

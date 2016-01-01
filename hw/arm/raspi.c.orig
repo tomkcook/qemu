@@ -19,13 +19,20 @@
  * This code is licensed under the GPL.
  */
 
+<<<<<<< HEAD
 #include "hw/arm/bcm2835.h"
+=======
+>>>>>>> upstreaming-raspi
 #include "hw/arm/bcm2836.h"
 #include "qemu/error-report.h"
 #include "hw/boards.h"
 #include "hw/loader.h"
 #include "hw/arm/arm.h"
 #include "sysemu/sysemu.h"
+<<<<<<< HEAD
+#include "hw/arm/raspi_platform.h"
+=======
+>>>>>>> upstreaming-raspi
 
 #define SMPBOOT_ADDR    0x300 /* this should leave enough space for ATAGS */
 #define MVBAR_ADDR      0x400 /* secure vectors */
@@ -38,7 +45,10 @@ static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 typedef struct RaspiMachineState {
     union {
         Object obj;
+<<<<<<< HEAD
         BCM2835State pi1;
+=======
+>>>>>>> upstreaming-raspi
         BCM2836State pi2;
     } soc;
     MemoryRegion ram;
@@ -111,7 +121,11 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     binfo.secure_board_setup = true;
     binfo.secure_boot = true;
 
+<<<<<<< HEAD
+    /* Pi2 requires SMP setup code */
+=======
     /* Pi2 requires SMP setup */
+>>>>>>> upstreaming-raspi
     if (version == 2) {
         binfo.smp_loader_start = SMPBOOT_ADDR;
         binfo.write_secondary_boot = write_smpboot;
@@ -142,6 +156,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     arm_load_kernel(ARM_CPU(first_cpu), &binfo);
 }
 
+<<<<<<< HEAD
 static void raspi_machine_init(MachineState *machine, int version)
 {
     RaspiMachineState *s = g_new0(RaspiMachineState, 1);
@@ -158,6 +173,14 @@ static void raspi_machine_init(MachineState *machine, int version)
         break;
     }
 
+=======
+static void raspi2_init(MachineState *machine)
+{
+    RaspiMachineState *s = g_new0(RaspiMachineState, 1);
+
+    /* Initialise the SOC */
+    object_initialize(&s->soc.pi2, sizeof(s->soc.pi2), TYPE_BCM2836);
+>>>>>>> upstreaming-raspi
     object_property_add_child(OBJECT(machine), "soc", &s->soc.obj,
                               &error_abort);
 
@@ -167,9 +190,9 @@ static void raspi_machine_init(MachineState *machine, int version)
     memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
 
     /* Setup the SOC */
-    object_property_add_const_link(&s->soc.obj, "ram", OBJECT(&s->ram),
-                                   &error_abort);
+<<<<<<< HEAD
     object_property_set_bool(&s->soc.obj, true, "realized", &error_abort);
+
     vcram_size = object_property_get_int(&s->soc.obj, "vcram-size",
                                          &error_abort);
 
@@ -191,10 +214,25 @@ static void raspi1_machine_init(MachineClass *mc)
 {
     mc->desc = "Raspberry Pi";
     mc->init = raspi1_init;
+=======
+    object_property_add_const_link(&s->soc.obj, "ram", OBJECT(&s->ram),
+                                   &error_abort);
+    object_property_set_bool(&s->soc.obj, true, "realized", &error_abort);
+
+    /* Boot! */
+    setup_boot(machine, 2, machine->ram_size);
+}
+
+static void raspi2_machine_init(MachineClass *mc)
+{
+    mc->desc = "Raspberry Pi 2";
+    mc->init = raspi2_init;
+>>>>>>> upstreaming-raspi
     mc->block_default_type = IF_SD;
     mc->no_parallel = 1;
     mc->no_floppy = 1;
     mc->no_cdrom = 1;
+<<<<<<< HEAD
     mc->default_ram_size = 512 * 1024 * 1024;
 };
 DEFINE_MACHINE("raspi", raspi1_machine_init)
@@ -206,5 +244,12 @@ static void raspi2_machine_init(MachineClass *mc)
     mc->init = raspi2_init;
     mc->max_cpus = BCM2836_NCPUS;
     mc->default_ram_size = 1024 * 1024 * 1024;
+=======
+    mc->max_cpus = BCM2836_NCPUS;
+    /* XXX: Temporary restriction in RAM size from the full 1GB. Since
+     * we do not yet support the framebuffer / GPU, we need to limit
+     * RAM usable by the OS to sit below the peripherals. */
+    mc->default_ram_size = 0x3F000000; /* BCM2836_PERI_BASE */
+>>>>>>> upstreaming-raspi
 };
 DEFINE_MACHINE("raspi2", raspi2_machine_init)

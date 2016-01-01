@@ -10,18 +10,26 @@
 
 #include "hw/misc/bcm2835_mbox.h"
 
+<<<<<<< HEAD
+/* Mailbox status register (...0x98) */
+=======
 #define MAIL0_PEEK   0x90
 #define MAIL0_SENDER 0x94
 #define MAIL1_STATUS 0xb8
 
 /* Mailbox status register */
 #define MAIL0_STATUS 0x98
+>>>>>>> upstreaming-raspi
 #define ARM_MS_FULL       0x80000000
 #define ARM_MS_EMPTY      0x40000000
 #define ARM_MS_LEVEL      0x400000FF /* Max. value depends on mailbox depth */
 
+<<<<<<< HEAD
+/* MAILBOX config/status register (...0x9C) */
+=======
 /* MAILBOX config/status register */
 #define MAIL0_CONFIG 0x9c
+>>>>>>> upstreaming-raspi
 /* ANY write to this register clears the error bits! */
 #define ARM_MC_IHAVEDATAIRQEN    0x00000001 /* mbox irq enable:  has data */
 #define ARM_MC_IHAVESPACEIRQEN   0x00000002 /* mbox irq enable:  has space */
@@ -45,7 +53,11 @@ static void mbox_update_status(BCM2835Mbox *mb)
     }
 }
 
+<<<<<<< HEAD
+static void mbox_init(BCM2835Mbox *mb)
+=======
 static void mbox_reset(BCM2835Mbox *mb)
+>>>>>>> upstreaming-raspi
 {
     int n;
 
@@ -90,6 +102,10 @@ static void bcm2835_mbox_update(BCM2835MboxState *s)
     bool set;
     int n;
 
+<<<<<<< HEAD
+    /* Avoid unwanted recursive calls */
+=======
+>>>>>>> upstreaming-raspi
     s->mbox_irq_disabled = true;
 
     /* Get pending responses and put them in the vc->arm mbox,
@@ -97,7 +113,14 @@ static void bcm2835_mbox_update(BCM2835MboxState *s)
     for (n = 0; n < MBOX_CHAN_COUNT; n++) {
         while (s->available[n] && !(s->mbox[0].status & ARM_MS_FULL)) {
             value = ldl_phys(&s->mbox_as, n << MBOX_AS_CHAN_SHIFT);
+<<<<<<< HEAD
+            if (value == MBOX_INVALID_DATA) {
+                /* Interrupt pending, but there's no data. Hmmm... */
+                hw_error("%s: spurious interrupt on channel %d", __func__, n);
+            }
+=======
             assert(value != MBOX_INVALID_DATA); /* Pending interrupt but no data */
+>>>>>>> upstreaming-raspi
             mbox_push(&s->mbox[0], value);
         }
     }
@@ -127,8 +150,12 @@ static void bcm2835_mbox_set_irq(void *opaque, int irq, int level)
     s->available[irq] = level;
 
     /* avoid recursively calling bcm2835_mbox_update when the interrupt
+<<<<<<< HEAD
+     * status changes due to the ldl_phys call within that function */
+=======
      * status changes due to the ldl_phys call within that function
      */
+>>>>>>> upstreaming-raspi
     if (!s->mbox_irq_disabled) {
         bcm2835_mbox_update(s);
     }
@@ -142,13 +169,33 @@ static uint64_t bcm2835_mbox_read(void *opaque, hwaddr offset, unsigned size)
     offset &= 0xff;
 
     switch (offset) {
+<<<<<<< HEAD
+    case 0x80 ... 0x8c:  /* MAIL0_READ */
+=======
     case 0x80 ... 0x8c: /* MAIL0_READ */
+>>>>>>> upstreaming-raspi
         if (s->mbox[0].status & ARM_MS_EMPTY) {
             res = MBOX_INVALID_DATA;
         } else {
             res = mbox_pull(&s->mbox[0], 0);
         }
         break;
+<<<<<<< HEAD
+    case 0x90:  /* MAIL0_PEEK */
+        res = s->mbox[0].reg[0];
+        break;
+    case 0x94:  /* MAIL0_SENDER */
+        break;
+    case 0x98:  /* MAIL0_STATUS */
+        res = s->mbox[0].status;
+        break;
+    case 0x9c:  /* MAIL0_CONFIG */
+        res = s->mbox[0].config;
+        break;
+    case 0xb8:  /* MAIL1_STATUS */
+        res = s->mbox[1].status;
+        break;
+=======
 
     case MAIL0_PEEK:
         res = s->mbox[0].reg[0];
@@ -169,6 +216,7 @@ static uint64_t bcm2835_mbox_read(void *opaque, hwaddr offset, unsigned size)
         res = s->mbox[1].status;
         break;
 
+>>>>>>> upstreaming-raspi
     default:
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
                       __func__, offset);
@@ -190,15 +238,26 @@ static void bcm2835_mbox_write(void *opaque, hwaddr offset,
     offset &= 0xff;
 
     switch (offset) {
+<<<<<<< HEAD
+    case 0x94:  /* MAIL0_SENDER */
+        break;
+
+    case 0x9c:  /* MAIL0_CONFIG */
+=======
     case MAIL0_SENDER:
         break;
 
     case MAIL0_CONFIG:
+>>>>>>> upstreaming-raspi
         s->mbox[0].config &= ~ARM_MC_IHAVEDATAIRQEN;
         s->mbox[0].config |= value & ARM_MC_IHAVEDATAIRQEN;
         break;
 
+<<<<<<< HEAD
+    case 0xa0 ... 0xac:
+=======
     case 0xa0 ... 0xac: /* MAIL1_WRITE */
+>>>>>>> upstreaming-raspi
         if (s->mbox[1].status & ARM_MS_FULL) {
             /* Mailbox full */
             qemu_log_mask(LOG_GUEST_ERROR, "%s: mailbox full\n", __func__);
@@ -269,7 +328,10 @@ static const VMStateDescription vmstate_bcm2835_mbox = {
 static void bcm2835_mbox_init(Object *obj)
 {
     BCM2835MboxState *s = BCM2835_MBOX(obj);
+<<<<<<< HEAD
+=======
 
+>>>>>>> upstreaming-raspi
     memory_region_init_io(&s->iomem, obj, &bcm2835_mbox_ops, s,
                           TYPE_BCM2835_MBOX, 0x400);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
@@ -282,8 +344,13 @@ static void bcm2835_mbox_reset(DeviceState *dev)
     BCM2835MboxState *s = BCM2835_MBOX(dev);
     int n;
 
+<<<<<<< HEAD
+    mbox_init(&s->mbox[0]);
+    mbox_init(&s->mbox[1]);
+=======
     mbox_reset(&s->mbox[0]);
     mbox_reset(&s->mbox[1]);
+>>>>>>> upstreaming-raspi
     s->mbox_irq_disabled = false;
     for (n = 0; n < MBOX_CHAN_COUNT; n++) {
         s->available[n] = false;
@@ -296,9 +363,15 @@ static void bcm2835_mbox_realize(DeviceState *dev, Error **errp)
     Object *obj;
     Error *err = NULL;
 
+<<<<<<< HEAD
+    obj = object_property_get_link(OBJECT(dev), "mbox_mr", &err);
+    if (obj == NULL) {
+        error_setg(errp, "%s: required mbox_mr link not found: %s",
+=======
     obj = object_property_get_link(OBJECT(dev), "mbox-mr", &err);
     if (obj == NULL) {
         error_setg(errp, "%s: required mbox-mr link not found: %s",
+>>>>>>> upstreaming-raspi
                    __func__, error_get_pretty(err));
         return;
     }

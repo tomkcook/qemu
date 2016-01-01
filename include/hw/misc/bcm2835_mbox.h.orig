@@ -10,7 +10,11 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 
+<<<<<<< HEAD
+#define TYPE_BCM2835_MBOX "bcm2835_mbox"
+=======
 #define TYPE_BCM2835_MBOX "bcm2835-mbox"
+>>>>>>> upstreaming-raspi
 #define BCM2835_MBOX(obj) \
         OBJECT_CHECK(BCM2835MboxState, (obj), TYPE_BCM2835_MBOX)
 
@@ -28,8 +32,13 @@ typedef struct {
     MemoryRegion *mbox_mr;
     AddressSpace mbox_as;
     MemoryRegion iomem;
+<<<<<<< HEAD
+    bool mbox_irq_disabled;
+    qemu_irq arm_irq;
+=======
     qemu_irq arm_irq;
     bool mbox_irq_disabled;
+>>>>>>> upstreaming-raspi
     bool available[MBOX_CHAN_COUNT];
     BCM2835Mbox mbox[2];
 } BCM2835MboxState;

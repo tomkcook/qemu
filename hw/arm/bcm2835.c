@@ -13,6 +13,9 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 
+/* Peripheral base address seen by the CPU */
+#define BCM2835_PERI_BASE       0x20000000
+
 static void bcm2835_init(Object *obj)
 {
     BCM2835State *s = BCM2835(obj);
@@ -32,9 +35,23 @@ static void bcm2835_init(Object *obj)
 static void bcm2835_realize(DeviceState *dev, Error **errp)
 {
     BCM2835State *s = BCM2835(dev);
+    Object *obj;
     Error *err = NULL;
 
     /* common peripherals from bcm2835 */
+    obj = object_property_get_link(OBJECT(dev), "ram", &err);
+    if (obj == NULL) {
+        error_setg(errp, "%s: required ram link not found: %s",
+                   __func__, error_get_pretty(err));
+        return;
+    }
+
+    object_property_add_const_link(OBJECT(&s->peripherals), "ram", obj, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
     object_property_set_bool(OBJECT(&s->peripherals), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);

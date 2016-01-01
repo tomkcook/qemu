@@ -1,6 +1,9 @@
 /*
  * Raspberry Pi emulation (c) 2012 Gregory Estrade
+<<<<<<< HEAD
+=======
  * Refactoring for Pi2 Copyright (c) 2015, Microsoft. Written by Andrew Baumann.
+>>>>>>> upstreaming-raspi
  * This code is licensed under the GNU GPLv2 and later.
  * Heavily based on pl190.c, copyright terms below:
  *
@@ -52,7 +55,10 @@ static void bcm2835_ic_update(BCM2835ICState *s)
 static void bcm2835_ic_set_gpu_irq(void *opaque, int irq, int level)
 {
     BCM2835ICState *s = opaque;
+<<<<<<< HEAD
+=======
 
+>>>>>>> upstreaming-raspi
     assert(irq >= 0 && irq < 64);
     s->gpu_irq_level = deposit64(s->gpu_irq_level, irq, 1, level != 0);
     bcm2835_ic_update(s);
@@ -61,7 +67,10 @@ static void bcm2835_ic_set_gpu_irq(void *opaque, int irq, int level)
 static void bcm2835_ic_set_arm_irq(void *opaque, int irq, int level)
 {
     BCM2835ICState *s = opaque;
+<<<<<<< HEAD
+=======
 
+>>>>>>> upstreaming-raspi
     assert(irq >= 0 && irq < 8);
     s->arm_irq_level = deposit32(s->arm_irq_level, irq, 1, level != 0);
     bcm2835_ic_update(s);
@@ -90,6 +99,33 @@ static uint64_t bcm2835_ic_read(void *opaque, hwaddr offset, unsigned size)
             res |= extract64(gpu_pending, irq_dups[i], 1) << (i + 10);
         }
         break;
+<<<<<<< HEAD
+    case IRQ_PENDING_1:  /* IRQ pending 1 */
+        res = gpu_pending;
+        break;
+    case IRQ_PENDING_2:  /* IRQ pending 2 */
+        res = gpu_pending >> 32;
+        break;
+    case FIQ_CONTROL:  /* FIQ register */
+        res = (s->fiq_enable << 7) | s->fiq_select;
+        break;
+    case IRQ_ENABLE_1:  /* Interrupt enable register 1 */
+        res = s->gpu_irq_enable;
+        break;
+    case IRQ_ENABLE_2:  /* Interrupt enable register 2 */
+        res = s->gpu_irq_enable >> 32;
+        break;
+    case IRQ_ENABLE_BASIC:  /* Base interrupt enable register */
+        res = s->arm_irq_enable;
+        break;
+    case IRQ_DISABLE_1:  /* Interrupt disable register 1 */
+        res = ~s->gpu_irq_enable;
+        break;
+    case IRQ_DISABLE_2:  /* Interrupt disable register 2 */
+        res = ~s->gpu_irq_enable >> 32;
+        break;
+    case IRQ_DISABLE_BASIC:  /* Base interrupt disable register */
+=======
     case IRQ_PENDING_1:
         res = gpu_pending;
         break;
@@ -115,6 +151,7 @@ static uint64_t bcm2835_ic_read(void *opaque, hwaddr offset, unsigned size)
         res = ~s->gpu_irq_enable >> 32;
         break;
     case IRQ_DISABLE_BASIC:
+>>>>>>> upstreaming-raspi
         res = ~s->arm_irq_enable;
         break;
     default:
@@ -133,8 +170,13 @@ static void bcm2835_ic_write(void *opaque, hwaddr offset, uint64_t val,
 
     switch (offset) {
     case FIQ_CONTROL:
+<<<<<<< HEAD
+        s->fiq_select = (val & 0x7f);
+        s->fiq_enable = (val >> 7) & 0x1;
+=======
         s->fiq_select = extract32(val, 0, 7);
         s->fiq_enable = extract32(val, 7, 1);
+>>>>>>> upstreaming-raspi
         break;
     case IRQ_ENABLE_1:
         s->gpu_irq_enable |= val;

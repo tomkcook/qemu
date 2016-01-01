@@ -24,7 +24,7 @@ typedef struct {
     qemu_irq irq;
 } BCM2835DmaChan;
 
-#define TYPE_BCM2835_DMA "bcm2835_dma"
+#define TYPE_BCM2835_DMA "bcm2835-dma"
 #define BCM2835_DMA(obj) \
         OBJECT_CHECK(BCM2835DmaState, (obj), TYPE_BCM2835_DMA)
 

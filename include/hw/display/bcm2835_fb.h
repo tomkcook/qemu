@@ -15,7 +15,7 @@
 #include "exec/address-spaces.h"
 #include "ui/console.h"
 
-#define TYPE_BCM2835_FB "bcm2835_fb"
+#define TYPE_BCM2835_FB "bcm2835-fb"
 #define BCM2835_FB(obj) OBJECT_CHECK(BCM2835FbState, (obj), TYPE_BCM2835_FB)
 
 typedef struct {
