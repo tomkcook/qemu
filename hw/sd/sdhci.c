@@ -196,6 +196,7 @@ static void sdhci_reset(SDHCIState *s)
     sd_set_cb(s->card, s->ro_cb, s->eject_cb);
     s->data_count = 0;
     s->stopped_state = sdhc_not_stopped;
+    s->pending_insert = false;
 }
 
 static void sdhci_data_transfer(void *opaque);
@@ -892,7 +893,7 @@ static uint64_t sdhci_read(void *opaque, hwaddr offset, unsigned size)
         ret = s->clkcon | (s->timeoutcon << 16);
         break;
     case SDHC_NORINTSTS:
-        ret = (s->norintsts & s->norintstsen) | (s->errintsts << 16);
+        ret = s->norintsts | (s->errintsts << 16);
         break;
     case SDHC_NORINTSTSEN:
         ret = s->norintstsen | (s->errintstsen << 16);
@@ -1087,6 +1088,12 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
         } else {
             s->norintsts &= ~SDHC_NIS_ERR;
         }
+        /* Quirk for Raspberry Pi: pending card insert interrupt
+         * appears when first enabled after power on */
+        if ((s->norintstsen & SDHC_NISEN_INSERT) && s->pending_insert) {
+            s->norintsts |= SDHC_NIS_INSERT;
+            s->pending_insert = false;
+        }
         sdhci_update_irq(s);
         break;
     case SDHC_NORINTSIGEN:
@@ -1180,7 +1187,7 @@ static void sdhci_uninitfn(SDHCIState *s)
 
 const VMStateDescription sdhci_vmstate = {
     .name = "sdhci",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(sdmasysad, SDHCIState),
@@ -1211,6 +1218,7 @@ const VMStateDescription sdhci_vmstate = {
         VMSTATE_VBUFFER_UINT32(fifo_buffer, SDHCIState, 1, NULL, 0, buf_maxsz),
         VMSTATE_TIMER_PTR(insert_timer, SDHCIState),
         VMSTATE_TIMER_PTR(transfer_timer, SDHCIState),
+        VMSTATE_BOOL(pending_insert, SDHCIState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -1276,7 +1284,8 @@ static Property sdhci_sysbus_properties[] = {
     DEFINE_PROP_UINT32("capareg", SDHCIState, capareg,
             SDHC_CAPAB_REG_DEFAULT),
     DEFINE_PROP_UINT32("maxcurr", SDHCIState, maxcurr, 0),
-    DEFINE_PROP_BOOL("bcm2835-quirk", SDHCIState, bcm2835_quirk, false),
+    DEFINE_PROP_BOOL("pending-insert-quirk", SDHCIState, pending_insert,
+                     false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1307,14 +1316,6 @@ static void sdhci_sysbus_realize(DeviceState *dev, Error ** errp)
     memory_region_init_io(&s->iomem, OBJECT(s), &sdhci_mmio_ops, s, "sdhci",
             SDHC_REGISTERS_MAP_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
-
-    /* Quirk for Raspberry Pi: set the card insert interrupt status.
-     * Needed to boot UEFI, which enables and then polls this bit at
-     * boot time before proceeding with card I/O.
-     */
-    if (s->bcm2835_quirk && (s->prnsts & SDHC_CARD_PRESENT)) {
-        s->norintsts |= SDHC_NIS_INSERT;
-    }
 }
 
 static void sdhci_sysbus_class_init(ObjectClass *klass, void *data)

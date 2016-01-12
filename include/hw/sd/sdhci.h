@@ -77,7 +77,7 @@ typedef struct SDHCIState {
     uint32_t buf_maxsz;
     uint16_t data_count;   /* current element in FIFO buffer */
     uint8_t  stopped_state;/* Current SDHC state */
-    bool     bcm2835_quirk;/* Quirk for Raspberry Pi card insert status */
+    bool     pending_insert;/* Quirk for Raspberry Pi card insert interrupt */
     /* Buffer Data Port Register - virtual access point to R and W buffers */
     /* Software Reset Register - always reads as 0 */
     /* Force Event Auto CMD12 Error Interrupt Reg - write only */
