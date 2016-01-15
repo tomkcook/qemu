@@ -8,17 +8,6 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
-/* Based on versatilepb.c, copyright terms below. */
-
-/*
- * ARM Versatile Platform/Application Baseboard System emulation.
- *
- * Copyright (c) 2005-2007 CodeSourcery.
- * Written by Paul Brook
- *
- * This code is licensed under the GPL.
- */
-
 #include "hw/arm/bcm2835.h"
 #include "hw/arm/bcm2836.h"
 #include "qemu/error-report.h"
@@ -35,20 +24,19 @@
 /* Table of Linux board IDs for different Pi versions */
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 
-typedef struct RaspiMachineState {
+typedef struct RaspiState {
     union {
-        Object obj;
         BCM2835State pi1;
         BCM2836State pi2;
     } soc;
     MemoryRegion ram;
-} RaspiMachineState;
+} RaspiState;
 
 static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
 {
     static const uint32_t smpboot[] = {
         0xE1A0E00F, /*    mov     lr, pc */
-        0xE3A0FE42, /*    mov     pc, #0x420           ;call BOARDSETUP_ADDR */
+        0xE3A0FE00 + (BOARDSETUP_ADDR >> 4), /* mov pc, BOARDSETUP_ADDR */
         0xEE100FB0, /*    mrc     p15, 0, r0, c0, c0, 5;get core ID */
         0xE7E10050, /*    ubfx    r0, r0, #0, #2       ;extract LSB */
         0xE59F5014, /*    ldr     r5, =0x400000CC      ;load mbox base */
@@ -61,35 +49,18 @@ static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
         0x400000CC, /* (constant: mailbox 3 read/clear base) */
     };
 
+    /* check that we don't overrun board setup vectors */
     assert(SMPBOOT_ADDR + sizeof(smpboot) <= MVBAR_ADDR);
+    /* check that board setup address is correctly relocated */
+    assert((BOARDSETUP_ADDR & 0xf) == 0 && (BOARDSETUP_ADDR >> 4) < 0x100);
+
     rom_add_blob_fixed("raspi_smpboot", smpboot, sizeof(smpboot),
                        info->smp_loader_start);
 }
 
 static void write_board_setup(ARMCPU *cpu, const struct arm_boot_info *info)
 {
-    static const uint32_t board_setup[] = {
-        /* MVBAR_ADDR: secure monitor vectors */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xE1B0F00E, /* movs pc, lr ;SMC exception return */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        /* BOARDSETUP_ADDR */
-        0xE3A00B01, /* mov     r0, #0x400             ;MVBAR_ADDR */
-        0xEE0C0F30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
-        0xE3A00031, /* mov     r0, #0x31              ;enable AW, FW, NS */
-        0xEE010F11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
-        0xE1A0100E, /* mov     r1, lr                 ;save LR across SMC */
-        0xE1600070, /* smc     #0                     ;monitor call */
-        0xE1A0F001, /* mov     pc, r1                 ;return */
-    };
-
-    rom_add_blob_fixed("raspi_boardsetup", board_setup, sizeof(board_setup),
-                       MVBAR_ADDR);
+    arm_write_secure_board_setup_dummy_smc(cpu, info, MVBAR_ADDR);
 }
 
 static void reset_secondary(ARMCPU *cpu, const struct arm_boot_info *info)
@@ -119,7 +90,8 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     }
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
-       the normal Linux boot process */
+     * the normal Linux boot process
+     */
     if (machine->firmware) {
         /* load the firmware image (typically kernel.img) */
         r = load_image_targphys(machine->firmware, FIRMWARE_ADDR,
@@ -144,7 +116,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
 
 static void raspi_machine_init(MachineState *machine, int version)
 {
-    RaspiMachineState *s = g_new0(RaspiMachineState, 1);
+    RaspiState *s = g_new0(RaspiState, 1);
     uint32_t vcram_size;
 
     /* Initialise the relevant SOC */
@@ -158,7 +130,7 @@ static void raspi_machine_init(MachineState *machine, int version)
         break;
     }
 
-    object_property_add_child(OBJECT(machine), "soc", &s->soc.obj,
+    object_property_add_child(OBJECT(machine), "soc", OBJECT(&s->soc),
                               &error_abort);
 
     /* Allocate and map RAM */
@@ -167,13 +139,15 @@ static void raspi_machine_init(MachineState *machine, int version)
     memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
 
     /* Setup the SOC */
-    object_property_add_const_link(&s->soc.obj, "ram", OBJECT(&s->ram),
+    object_property_add_const_link(OBJECT(&s->soc), "ram", OBJECT(&s->ram),
                                    &error_abort);
-    object_property_set_bool(&s->soc.obj, true, "realized", &error_abort);
-    vcram_size = object_property_get_int(&s->soc.obj, "vcram-size",
-                                         &error_abort);
+    object_property_set_int(OBJECT(&s->soc), smp_cpus, "enabled-cpus",
+                            &error_abort);
+    object_property_set_bool(OBJECT(&s->soc), true, "realized", &error_abort);
 
-    /* Boot! */
+    /* Prepare to boot */
+    vcram_size = object_property_get_int(OBJECT(&s->soc), "vcram-size",
+                                         &error_abort);
     setup_boot(machine, version, machine->ram_size - vcram_size);
 }
 

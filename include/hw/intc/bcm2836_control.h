@@ -29,7 +29,7 @@ typedef struct BCM2836ControlState {
 
     /* interrupt status registers (not directly visible to user) */
     bool gpu_irq, gpu_fiq;
-    uint8_t localirqs[BCM2836_NCORES];
+    uint8_t timerirqs[BCM2836_NCORES];
 
     /* mailboxes */
     uint32_t mailboxes[BCM2836_NCORES * BCM2836_MBPERCORE];

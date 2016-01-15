@@ -178,6 +178,59 @@ static void default_write_secondary(ARMCPU *cpu,
                      smpboot, fixupcontext);
 }
 
+void arm_write_secure_board_setup_dummy_smc(ARMCPU *cpu,
+                                            const struct arm_boot_info *info,
+                                            hwaddr mvbar_addr)
+{
+    int n;
+    uint32_t mvbar_blob[] = {
+        /* mvbar_addr: secure monitor vectors
+         * Default unimplemented and unused vectors to spin. Makes it
+         * easier to debug (as opposed to the CPU running away).
+         */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xE1B0F00E, /* movs pc, lr ;SMC exception return */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+        0xEAFFFFFE, /* (spin) */
+    };
+    uint32_t board_setup_blob[] = {
+        /* board setup addr */
+        0xE3A00E00 + (mvbar_addr >> 4), /* mov r0, #mvbar_addr */
+        0xEE0C0F30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
+        0xEE110F11, /* mrc     p15, 0, r0, c1 , c1, 0 ;read SCR */
+        0xE3800031, /* orr     r0, #0x31              ;enable AW, FW, NS */
+        0xEE010F11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
+        0xE1A0100E, /* mov     r1, lr                 ;save LR across SMC */
+        0xE1600070, /* smc     #0                     ;call monitor to flush SCR */
+        0xE1A0F001, /* mov     pc, r1                 ;return */
+    };
+
+    /* check that mvbar_addr is correctly aligned and relocatable (using MOV) */
+    assert((mvbar_addr & 0x1f) == 0 && (mvbar_addr >> 4) < 0x100);
+
+    /* check that these blobs don't overlap */
+    assert((mvbar_addr + sizeof(mvbar_blob) <= info->board_setup_addr)
+          || (info->board_setup_addr + sizeof(board_setup_blob) <= mvbar_addr));
+
+    for (n = 0; n < ARRAY_SIZE(mvbar_blob); n++) {
+        mvbar_blob[n] = tswap32(mvbar_blob[n]);
+    }
+    rom_add_blob_fixed("board-setup-mvbar", mvbar_blob, sizeof(mvbar_blob),
+                       mvbar_addr);
+
+    for (n = 0; n < ARRAY_SIZE(board_setup_blob); n++) {
+        board_setup_blob[n] = tswap32(board_setup_blob[n]);
+    }
+    rom_add_blob_fixed("board-setup", board_setup_blob,
+                       sizeof(board_setup_blob), info->board_setup_addr);
+}
+
+
+
 static void default_reset_secondary(ARMCPU *cpu,
                                     const struct arm_boot_info *info)
 {

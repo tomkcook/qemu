@@ -15,8 +15,14 @@
 
 #include "hw/intc/bcm2836_control.h"
 
-#define ROUTE_CORE(x) ((x) & 0x3)
-#define ROUTE_FIQ(x)  (((x) & 0x4) != 0)
+#define REG_GPU_ROUTE           0x0c
+#define REG_TIMERCONTROL        0x40
+#define REG_MBOXCONTROL         0x50
+#define REG_IRQSRC              0x60
+#define REG_FIQSRC              0x70
+#define REG_MBOX0_WR            0x80
+#define REG_MBOX0_RDCLR         0xc0
+#define REG_LIMIT              0x100
 
 #define IRQ_BIT(cntrl, num) (((cntrl) & (1 << (num))) != 0)
 #define FIQ_BIT(cntrl, num) (((cntrl) & (1 << ((num) + 4))) != 0)
@@ -34,6 +40,20 @@
 #define IRQ_AXI         10
 #define IRQ_TIMER       11
 #define IRQ_MAX         IRQ_TIMER
+
+static void deliver_local(BCM2836ControlState *s, uint8_t core, uint8_t irq,
+                          uint32_t controlreg, uint8_t controlidx)
+{
+    if (FIQ_BIT(controlreg, controlidx)) {
+        /* deliver a FIQ */
+        s->fiqsrc[core] |= (uint32_t)1 << irq;
+    } else if (IRQ_BIT(controlreg, controlidx)) {
+        /* deliver an IRQ */
+        s->irqsrc[core] |= (uint32_t)1 << irq;
+    } else {
+        /* the interrupt is masked */
+    }
+}
 
 /* Update interrupts.  */
 static void bcm2836_control_update(BCM2836ControlState *s)
@@ -57,22 +77,13 @@ static void bcm2836_control_update(BCM2836ControlState *s)
     }
 
     for (i = 0; i < BCM2836_NCORES; i++) {
-        /* handle local interrupts for this core */
-        if (s->localirqs[i]) {
-            /* sanity check localirqs: mailboxes are handled below */
-            assert(s->localirqs[i] < (1 << IRQ_MAILBOX0));
+        /* handle local timer interrupts for this core */
+        if (s->timerirqs[i]) {
+            assert(s->timerirqs[i] < (1 << IRQ_MAILBOX0)); /* sanity check */
             for (j = 0; j < IRQ_MAILBOX0; j++) {
-                if ((s->localirqs[i] & (1 << j)) != 0) {
+                if ((s->timerirqs[i] & (1 << j)) != 0) {
                     /* local interrupt j is set */
-                    if (FIQ_BIT(s->timercontrol[i], j)) {
-                        /* deliver a FIQ */
-                        s->fiqsrc[i] |= (uint32_t)1 << j;
-                    } else if (IRQ_BIT(s->timercontrol[i], j)) {
-                        /* deliver an IRQ */
-                        s->irqsrc[i] |= (uint32_t)1 << j;
-                    } else {
-                        /* the interrupt is masked */
-                    }
+                    deliver_local(s, i, j, s->timercontrol[i], j);
                 }
             }
         }
@@ -81,15 +92,7 @@ static void bcm2836_control_update(BCM2836ControlState *s)
         for (j = 0; j < BCM2836_MBPERCORE; j++) {
             if (s->mailboxes[i * BCM2836_MBPERCORE + j] != 0) {
                 /* mailbox j is set */
-                if (FIQ_BIT(s->mailboxcontrol[i], j)) {
-                    /* deliver a FIQ */
-                    s->fiqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
-                } else if (IRQ_BIT(s->mailboxcontrol[i], j)) {
-                    /* deliver an IRQ */
-                    s->irqsrc[i] |= (uint32_t)1 << (j + IRQ_MAILBOX0);
-                } else {
-                    /* the interrupt is masked */
-                }
+                deliver_local(s, i, j + IRQ_MAILBOX0, s->mailboxcontrol[i], j);
             }
         }
     }
@@ -109,11 +112,7 @@ static void bcm2836_control_set_local_irq(void *opaque, int core, int local_irq,
     assert(core >= 0 && core < BCM2836_NCORES);
     assert(local_irq >= 0 && local_irq <= IRQ_CNTVIRQ);
 
-    if (level) {
-        s->localirqs[core] |= 1 << local_irq;
-    } else {
-        s->localirqs[core] &= ~((uint32_t)1 << local_irq);
-    }
+    s->timerirqs[core] = deposit32(s->timerirqs[core], local_irq, 1, !!level);
 
     bcm2836_control_update(s);
 }
@@ -165,26 +164,20 @@ static uint64_t bcm2836_control_read(void *opaque, hwaddr offset, unsigned size)
 {
     BCM2836ControlState *s = opaque;
 
-    if (offset == 0xc) {
-        /* GPU interrupt routing */
+    if (offset == REG_GPU_ROUTE) {
         assert(s->route_gpu_fiq < BCM2836_NCORES
                && s->route_gpu_irq < BCM2836_NCORES);
         return ((uint32_t)s->route_gpu_fiq << 2) | s->route_gpu_irq;
-    } else if (offset >= 0x40 && offset < 0x50) {
-        /* Timer interrupt control registers */
-        return s->timercontrol[(offset - 0x40) >> 2];
-    } else if (offset >= 0x50 && offset < 0x60) {
-        /* Mailbox interrupt control registers */
-        return s->mailboxcontrol[(offset - 0x50) >> 2];
-    } else if (offset >= 0x60 && offset < 0x70) {
-        /* IRQ source registers */
-        return s->irqsrc[(offset - 0x60) >> 2];
-    } else if (offset >= 0x70 && offset < 0x80) {
-        /* FIQ source registers */
-        return s->fiqsrc[(offset - 0x70) >> 2];
-    } else if (offset >= 0xc0 && offset < 0x100) {
-        /* Mailboxes */
-        return s->mailboxes[(offset - 0xc0) >> 2];
+    } else if (offset >= REG_TIMERCONTROL && offset < REG_MBOXCONTROL) {
+        return s->timercontrol[(offset - REG_TIMERCONTROL) >> 2];
+    } else if (offset >= REG_MBOXCONTROL && offset < REG_IRQSRC) {
+        return s->mailboxcontrol[(offset - REG_MBOXCONTROL) >> 2];
+    } else if (offset >= REG_IRQSRC && offset < REG_FIQSRC) {
+        return s->irqsrc[(offset - REG_IRQSRC) >> 2];
+    } else if (offset >= REG_FIQSRC && offset < REG_MBOX0_WR) {
+        return s->fiqsrc[(offset - REG_FIQSRC) >> 2];
+    } else if (offset >= REG_MBOX0_RDCLR && offset < REG_LIMIT) {
+        return s->mailboxes[(offset - REG_MBOX0_RDCLR) >> 2];
     } else {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
                       __func__, offset);
@@ -197,22 +190,17 @@ static void bcm2836_control_write(void *opaque, hwaddr offset,
 {
     BCM2836ControlState *s = opaque;
 
-    if (offset == 0xc) {
-        /* GPU interrupt routing */
+    if (offset == REG_GPU_ROUTE) {
         s->route_gpu_irq = val & 0x3;
         s->route_gpu_fiq = (val >> 2) & 0x3;
-    } else if (offset >= 0x40 && offset < 0x50) {
-        /* Timer interrupt control registers */
-        s->timercontrol[(offset - 0x40) >> 2] = val & 0xff;
-    } else if (offset >= 0x50 && offset < 0x60) {
-        /* Mailbox interrupt control registers */
-        s->mailboxcontrol[(offset - 0x50) >> 2] = val & 0xff;
-    } else if (offset >= 0x80 && offset < 0xc0) {
-        /* Mailbox set registers */
-        s->mailboxes[(offset - 0x80) >> 2] |= val;
-    } else if (offset >= 0xc0 && offset < 0x100) {
-        /* Mailbox clear registers */
-        s->mailboxes[(offset - 0xc0) >> 2] &= ~val;
+    } else if (offset >= REG_TIMERCONTROL && offset < REG_MBOXCONTROL) {
+        s->timercontrol[(offset - REG_TIMERCONTROL) >> 2] = val & 0xff;
+    } else if (offset >= REG_MBOXCONTROL && offset < REG_IRQSRC) {
+        s->mailboxcontrol[(offset - REG_MBOXCONTROL) >> 2] = val & 0xff;
+    } else if (offset >= REG_MBOX0_WR && offset < REG_MBOX0_RDCLR) {
+        s->mailboxes[(offset - REG_MBOX0_WR) >> 2] |= val;
+    } else if (offset >= REG_MBOX0_RDCLR && offset < REG_LIMIT) {
+        s->mailboxes[(offset - REG_MBOX0_RDCLR) >> 2] &= ~val;
     } else {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
                       __func__, offset);
@@ -253,7 +241,7 @@ static void bcm2836_control_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
 
     memory_region_init_io(&s->iomem, obj, &bcm2836_control_ops, s,
-                          TYPE_BCM2836_CONTROL, 0x100);
+                          TYPE_BCM2836_CONTROL, REG_LIMIT);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
 
     /* inputs from each CPU core */
@@ -265,12 +253,10 @@ static void bcm2836_control_init(Object *obj)
                             BCM2836_NCORES);
     qdev_init_gpio_in_named(dev, bcm2836_control_set_local_irq3, "cntvirq",
                             BCM2836_NCORES);
-    /* qdev_init_gpio_in_named(dev, bcm2836_control_set_pmu_irq, "pmuirq",
-                            BCM2836_NCORES); */
 
     /* IRQ and FIQ inputs from upstream bcm2835 controller */
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_irq, "gpu_irq", 1);
-    qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_fiq, "gpu_fiq", 1);
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_irq, "gpu-irq", 1);
+    qdev_init_gpio_in_named(dev, bcm2836_control_set_gpu_fiq, "gpu-fiq", 1);
 
     /* outputs to CPU cores */
     qdev_init_gpio_out_named(dev, s->irq, "irq", BCM2836_NCORES);

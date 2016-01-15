@@ -8,6 +8,7 @@
 
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
+#include "net/net.h"
 #include "hw/display/bcm2835_fb.h"
 
 #define TYPE_BCM2835_PROPERTY "bcm2835-property"
@@ -23,6 +24,7 @@ typedef struct {
     BCM2835FbState *fbdev;
     MemoryRegion iomem;
     qemu_irq mbox_irq;
+    MACAddr macaddr;
     uint32_t addr;
     bool pending;
 } BCM2835PropertyState;

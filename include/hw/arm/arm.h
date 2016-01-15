@@ -126,4 +126,9 @@ void arm_load_kernel(ARMCPU *cpu, struct arm_boot_info *info);
    ticks.  */
 extern int system_clock_scale;
 
+/* Write a secure board setup routine with a dummy handler for SMCs */
+void arm_write_secure_board_setup_dummy_smc(ARMCPU *cpu,
+                                            const struct arm_boot_info *info,
+                                            hwaddr mvbar_addr);
+
 #endif /* !ARM_MISC_H */
