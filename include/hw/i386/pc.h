@@ -267,6 +267,8 @@ typedef void (*cpu_set_smm_t)(int smm, void *arg);
 
 void ioapic_init_gsi(GSIState *gsi_state, const char *parent_name);
 
+ISADevice *pc_find_fdc0(void);
+
 /* acpi_piix.c */
 
 I2CBus *piix4_pm_init(PCIBus *bus, int devfn, uint32_t smb_io_base,
@@ -854,14 +856,6 @@ bool e820_get_entry(int, uint32_t, uint64_t *, uint64_t *);
         type_register(&pc_machine_type_##suffix); \
     } \
     machine_init(pc_machine_init_##suffix)
-
-#define SET_MACHINE_COMPAT(m, COMPAT) do { \
-    static GlobalProperty props[] = { \
-        COMPAT \
-        { /* end of list */ } \
-    }; \
-    (m)->compat_props = props; \
-} while (0)
 
 extern void igd_passthrough_isa_bridge_create(PCIBus *bus, uint16_t gpu_dev_id);
 #endif
