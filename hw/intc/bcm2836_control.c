@@ -79,8 +79,8 @@ static void bcm2836_control_update(BCM2836ControlState *s)
     for (i = 0; i < BCM2836_NCORES; i++) {
         /* handle local timer interrupts for this core */
         if (s->timerirqs[i]) {
-            assert(s->timerirqs[i] < (1 << IRQ_MAILBOX0)); /* sanity check */
-            for (j = 0; j < IRQ_MAILBOX0; j++) {
+            assert(s->timerirqs[i] < (1 << (IRQ_CNTVIRQ + 1))); /* sane mask? */
+            for (j = 0; j <= IRQ_CNTVIRQ; j++) {
                 if ((s->timerirqs[i] & (1 << j)) != 0) {
                     /* local interrupt j is set */
                     deliver_local(s, i, j, s->timercontrol[i], j);

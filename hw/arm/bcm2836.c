@@ -125,10 +125,10 @@ static void bcm2836_realize(DeviceState *dev, Error **errp)
                 qdev_get_gpio_in(DEVICE(&s->cpus[n]), ARM_CPU_FIQ));
 
         /* Connect timers from the CPU to the interrupt controller */
-        s->cpus[n].gt_timer_outputs[GTIMER_PHYS]
-            = qdev_get_gpio_in_named(DEVICE(&s->control), "cntpsirq", 0);
-        s->cpus[n].gt_timer_outputs[GTIMER_VIRT]
-            = qdev_get_gpio_in_named(DEVICE(&s->control), "cntvirq", 0);
+        qdev_connect_gpio_out(DEVICE(&s->cpus[n]), GTIMER_PHYS,
+                qdev_get_gpio_in_named(DEVICE(&s->control), "cntpsirq", n));
+        qdev_connect_gpio_out(DEVICE(&s->cpus[n]), GTIMER_VIRT,
+                qdev_get_gpio_in_named(DEVICE(&s->control), "cntvirq", n));
     }
 }
 

@@ -29,6 +29,7 @@ typedef struct {
     AddressSpace mbox_as;
     MemoryRegion iomem;
     qemu_irq arm_irq;
+
     bool mbox_irq_disabled;
     bool available[MBOX_CHAN_COUNT];
     BCM2835Mbox mbox[2];

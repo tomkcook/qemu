@@ -188,25 +188,25 @@ void arm_write_secure_board_setup_dummy_smc(ARMCPU *cpu,
          * Default unimplemented and unused vectors to spin. Makes it
          * easier to debug (as opposed to the CPU running away).
          */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xE1B0F00E, /* movs pc, lr ;SMC exception return */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
-        0xEAFFFFFE, /* (spin) */
+        0xeafffffe, /* (spin) */
+        0xeafffffe, /* (spin) */
+        0xe1b0f00e, /* movs pc, lr ;SMC exception return */
+        0xeafffffe, /* (spin) */
+        0xeafffffe, /* (spin) */
+        0xeafffffe, /* (spin) */
+        0xeafffffe, /* (spin) */
+        0xeafffffe, /* (spin) */
     };
     uint32_t board_setup_blob[] = {
         /* board setup addr */
-        0xE3A00E00 + (mvbar_addr >> 4), /* mov r0, #mvbar_addr */
-        0xEE0C0F30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
-        0xEE110F11, /* mrc     p15, 0, r0, c1 , c1, 0 ;read SCR */
-        0xE3800031, /* orr     r0, #0x31              ;enable AW, FW, NS */
-        0xEE010F11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
-        0xE1A0100E, /* mov     r1, lr                 ;save LR across SMC */
-        0xE1600070, /* smc     #0                     ;call monitor to flush SCR */
-        0xE1A0F001, /* mov     pc, r1                 ;return */
+        0xe3a00e00 + (mvbar_addr >> 4), /* mov r0, #mvbar_addr */
+        0xee0c0f30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
+        0xee110f11, /* mrc     p15, 0, r0, c1 , c1, 0 ;read SCR */
+        0xe3800031, /* orr     r0, #0x31              ;enable AW, FW, NS */
+        0xee010f11, /* mcr     p15, 0, r0, c1, c1, 0  ;write SCR */
+        0xe1a0100e, /* mov     r1, lr                 ;save LR across SMC */
+        0xe1600070, /* smc     #0                     ;call monitor to flush SCR */
+        0xe1a0f001, /* mov     pc, r1                 ;return */
     };
 
     /* check that mvbar_addr is correctly aligned and relocatable (using MOV) */
@@ -228,8 +228,6 @@ void arm_write_secure_board_setup_dummy_smc(ARMCPU *cpu,
     rom_add_blob_fixed("board-setup", board_setup_blob,
                        sizeof(board_setup_blob), info->board_setup_addr);
 }
-
-
 
 static void default_reset_secondary(ARMCPU *cpu,
                                     const struct arm_boot_info *info)

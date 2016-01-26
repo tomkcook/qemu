@@ -93,7 +93,8 @@ static void bcm2835_mbox_update(BCM2835MboxState *s)
     s->mbox_irq_disabled = true;
 
     /* Get pending responses and put them in the vc->arm mbox,
-     * as long as it's not full */
+     * as long as it's not full
+     */
     for (n = 0; n < MBOX_CHAN_COUNT; n++) {
         while (s->available[n] && !(s->mbox[0].status & ARM_MS_FULL)) {
             value = ldl_phys(&s->mbox_as, n << MBOX_AS_CHAN_SHIFT);
@@ -102,8 +103,7 @@ static void bcm2835_mbox_update(BCM2835MboxState *s)
         }
     }
 
-    /* Try to push pending requests from the arm->vc mbox */
-    /* TODO (?) */
+    /* TODO (?): Try to push pending requests from the arm->vc mbox */
 
     /* Re-enable calls from the IRQ routine */
     s->mbox_irq_disabled = false;

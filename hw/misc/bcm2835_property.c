@@ -77,7 +77,8 @@ static void bcm2835_property_mbox_push(BCM2835PropertyState *s, uint32_t value)
             break;
         case 0x00028001: /* Set power state */
             /* Assume that whatever device they asked for exists,
-             * and we'll just claim we set it to the desired state */
+             * and we'll just claim we set it to the desired state
+             */
             tmp = ldl_phys(&s->dma_as, value + 16);
             stl_phys(&s->dma_as, value + 16, (tmp & 1));
             resplen = 8;

@@ -24,35 +24,36 @@
 /* Table of Linux board IDs for different Pi versions */
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 
-typedef struct RaspiState {
+typedef struct RasPiState {
     union {
         BCM2835State pi1;
         BCM2836State pi2;
     } soc;
     MemoryRegion ram;
-} RaspiState;
+} RasPiState;
 
 static void write_smpboot(ARMCPU *cpu, const struct arm_boot_info *info)
 {
     static const uint32_t smpboot[] = {
-        0xE1A0E00F, /*    mov     lr, pc */
-        0xE3A0FE00 + (BOARDSETUP_ADDR >> 4), /* mov pc, BOARDSETUP_ADDR */
-        0xEE100FB0, /*    mrc     p15, 0, r0, c0, c0, 5;get core ID */
-        0xE7E10050, /*    ubfx    r0, r0, #0, #2       ;extract LSB */
-        0xE59F5014, /*    ldr     r5, =0x400000CC      ;load mbox base */
-        0xE320F001, /* 1: yield */
-        0xE7953200, /*    ldr     r3, [r5, r0, lsl #4] ;read mbox for our core*/
-        0xE3530000, /*    cmp     r3, #0               ;spin while zero */
-        0x0AFFFFFB, /*    beq     1b */
-        0xE7853200, /*    str     r3, [r5, r0, lsl #4] ;clear mbox */
-        0xE12FFF13, /*    bx      r3                   ;jump to target */
-        0x400000CC, /* (constant: mailbox 3 read/clear base) */
+        0xe1a0e00f, /*    mov     lr, pc */
+        0xe3a0fe00 + (BOARDSETUP_ADDR >> 4), /* mov pc, BOARDSETUP_ADDR */
+        0xee100fb0, /*    mrc     p15, 0, r0, c0, c0, 5;get core ID */
+        0xe7e10050, /*    ubfx    r0, r0, #0, #2       ;extract LSB */
+        0xe59f5014, /*    ldr     r5, =0x400000CC      ;load mbox base */
+        0xe320f001, /* 1: yield */
+        0xe7953200, /*    ldr     r3, [r5, r0, lsl #4] ;read mbox for our core*/
+        0xe3530000, /*    cmp     r3, #0               ;spin while zero */
+        0x0afffffb, /*    beq     1b */
+        0xe7853200, /*    str     r3, [r5, r0, lsl #4] ;clear mbox */
+        0xe12fff13, /*    bx      r3                   ;jump to target */
+        0x400000cc, /* (constant: mailbox 3 read/clear base) */
     };
 
     /* check that we don't overrun board setup vectors */
-    assert(SMPBOOT_ADDR + sizeof(smpboot) <= MVBAR_ADDR);
+    QEMU_BUILD_BUG_ON(SMPBOOT_ADDR + sizeof(smpboot) > MVBAR_ADDR);
     /* check that board setup address is correctly relocated */
-    assert((BOARDSETUP_ADDR & 0xf) == 0 && (BOARDSETUP_ADDR >> 4) < 0x100);
+    QEMU_BUILD_BUG_ON((BOARDSETUP_ADDR & 0xf) != 0
+                      || (BOARDSETUP_ADDR >> 4) >= 0x100);
 
     rom_add_blob_fixed("raspi_smpboot", smpboot, sizeof(smpboot),
                        info->smp_loader_start);
@@ -101,11 +102,9 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
             exit(1);
         }
 
-        /* set variables so arm_load_kernel does the right thing */
         binfo.entry = FIRMWARE_ADDR;
         binfo.firmware_loaded = true;
     } else {
-        /* Just let arm_load_kernel do everything for us... */
         binfo.kernel_filename = machine->kernel_filename;
         binfo.kernel_cmdline = machine->kernel_cmdline;
         binfo.initrd_filename = machine->initrd_filename;
@@ -116,7 +115,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
 
 static void raspi_machine_init(MachineState *machine, int version)
 {
-    RaspiState *s = g_new0(RaspiState, 1);
+    RasPiState *s = g_new0(RasPiState, 1);
     uint32_t vcram_size;
 
     /* Initialise the relevant SOC */
@@ -136,6 +135,7 @@ static void raspi_machine_init(MachineState *machine, int version)
     /* Allocate and map RAM */
     memory_region_allocate_system_memory(&s->ram, OBJECT(machine), "ram",
                                          machine->ram_size);
+    /* FIXME: Remove when we have custom CPU address space support */
     memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
 
     /* Setup the SOC */

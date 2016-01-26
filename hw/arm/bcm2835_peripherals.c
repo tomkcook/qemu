@@ -23,8 +23,7 @@ static void bcm2835_peripherals_init(Object *obj)
     BCM2835PeripheralState *s = BCM2835_PERIPHERALS(obj);
 
     /* Memory region for peripheral devices, which we export to our parent */
-    memory_region_init_io(&s->peri_mr, obj, NULL, s, "bcm2835-peripherals",
-                          0x1000000);
+    memory_region_init(&s->peri_mr, obj,"bcm2835-peripherals", 0x1000000);
     object_property_add_child(obj, "peripheral-io", OBJECT(&s->peri_mr), NULL);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->peri_mr);
 

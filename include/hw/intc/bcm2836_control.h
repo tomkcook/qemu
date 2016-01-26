@@ -27,11 +27,7 @@ typedef struct BCM2836ControlState {
     /*< public >*/
     MemoryRegion iomem;
 
-    /* interrupt status registers (not directly visible to user) */
-    bool gpu_irq, gpu_fiq;
-    uint8_t timerirqs[BCM2836_NCORES];
-
-    /* mailboxes */
+    /* mailbox state */
     uint32_t mailboxes[BCM2836_NCORES * BCM2836_MBPERCORE];
 
     /* interrupt routing/control registers */
@@ -39,7 +35,11 @@ typedef struct BCM2836ControlState {
     uint32_t timercontrol[BCM2836_NCORES];
     uint32_t mailboxcontrol[BCM2836_NCORES];
 
-    /* interrupt source registers, post-routing (visible) */
+    /* interrupt status regs (derived from input pins; not visible to user) */
+    bool gpu_irq, gpu_fiq;
+    uint8_t timerirqs[BCM2836_NCORES];
+
+    /* interrupt source registers, post-routing (also input-derived; visible) */
     uint32_t irqsrc[BCM2836_NCORES];
     uint32_t fiqsrc[BCM2836_NCORES];
 
