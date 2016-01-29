@@ -25,7 +25,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <stdint.h>
+#include "qemu/osdep.h"
 #include <zlib.h>
 #include "qapi-event.h"
 #include "qemu/bitops.h"
@@ -265,7 +265,7 @@ struct DecompressParam {
     QemuMutex mutex;
     QemuCond cond;
     void *des;
-    uint8 *compbuf;
+    uint8_t *compbuf;
     int len;
 };
 typedef struct DecompressParam DecompressParam;

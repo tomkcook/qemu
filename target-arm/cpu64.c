@@ -18,6 +18,7 @@
  * <http://www.gnu.org/licenses/gpl-2.0.html>
  */
 
+#include "qemu/osdep.h"
 #include "cpu.h"
 #include "qemu-common.h"
 #if !defined(CONFIG_USER_ONLY)
@@ -286,19 +287,22 @@ static void aarch64_cpu_set_pc(CPUState *cs, vaddr value)
     }
 }
 
+static gchar *aarch64_gdb_arch_name(CPUState *cs)
+{
+    return g_strdup("aarch64");
+}
+
 static void aarch64_cpu_class_init(ObjectClass *oc, void *data)
 {
     CPUClass *cc = CPU_CLASS(oc);
 
-#if !defined(CONFIG_USER_ONLY)
-    cc->do_interrupt = aarch64_cpu_do_interrupt;
-#endif
     cc->cpu_exec_interrupt = arm_cpu_exec_interrupt;
     cc->set_pc = aarch64_cpu_set_pc;
     cc->gdb_read_register = aarch64_cpu_gdb_read_register;
     cc->gdb_write_register = aarch64_cpu_gdb_write_register;
     cc->gdb_num_core_regs = 34;
     cc->gdb_core_xml_file = "aarch64-core.xml";
+    cc->gdb_arch_name = aarch64_gdb_arch_name;
 }
 
 static void aarch64_cpu_register(const ARMCPUInfo *info)

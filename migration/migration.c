@@ -13,6 +13,7 @@
  * GNU GPL, version 2 or (at your option) any later version.
  */
 
+#include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
@@ -1422,7 +1423,11 @@ static int postcopy_start(MigrationState *ms, bool *old_vm_running)
     *old_vm_running = runstate_is_running();
     global_state_store();
     ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+    if (ret < 0) {
+        goto fail;
+    }
 
+    ret = bdrv_inactivate_all();
     if (ret < 0) {
         goto fail;
     }
@@ -1541,6 +1546,9 @@ static void migration_completion(MigrationState *s, int current_active_state,
 
         if (!ret) {
             ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+            if (ret >= 0) {
+                ret = bdrv_inactivate_all();
+            }
             if (ret >= 0) {
                 qemu_file_set_rate_limit(s->file, INT64_MAX);
                 qemu_savevm_state_complete_precopy(s->file, false);

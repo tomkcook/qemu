@@ -1,3 +1,4 @@
+#include "qemu/osdep.h"
 #include "net/net.h"
 #include "hw/qdev.h"
 #include "qapi/qmp/qerror.h"
@@ -539,6 +540,17 @@ PropertyInfo qdev_prop_bios_chs_trans = {
     .enum_table = BiosAtaTranslation_lookup,
     .get = get_enum,
     .set = set_enum,
+};
+
+/* --- FDC default drive types */
+
+PropertyInfo qdev_prop_fdc_drive_type = {
+    .name = "FdcDriveType",
+    .description = "FDC drive type, "
+                   "144/288/120/none/auto",
+    .enum_table = FloppyDriveType_lookup,
+    .get = get_enum,
+    .set = set_enum
 };
 
 /* --- pci address --- */
