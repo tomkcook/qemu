@@ -25,10 +25,7 @@
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 
 typedef struct RasPiState {
-    union {
-        BCM2835State pi1;
-        BCM2836State pi2;
-    } soc;
+    Object *soc;
     MemoryRegion ram;
 } RasPiState;
 
@@ -113,24 +110,15 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     arm_load_kernel(ARM_CPU(first_cpu), &binfo);
 }
 
-static void raspi_machine_init(MachineState *machine, int version)
+static void raspi_machine_init(MachineState *machine, int version,
+                               const char *soc_type)
 {
     RasPiState *s = g_new0(RasPiState, 1);
     uint32_t vcram_size;
 
     /* Initialise the relevant SOC */
-    assert(version == 1 || version == 2);
-    switch (version) {
-    case 1:
-        object_initialize(&s->soc.pi1, sizeof(s->soc.pi1), TYPE_BCM2835);
-        break;
-    case 2:
-        object_initialize(&s->soc.pi2, sizeof(s->soc.pi2), TYPE_BCM2836);
-        break;
-    }
-
-    object_property_add_child(OBJECT(machine), "soc", OBJECT(&s->soc),
-                              &error_abort);
+    s->soc = object_new(soc_type);
+    object_property_add_child(OBJECT(machine), "soc", s->soc, &error_abort);
 
     /* Allocate and map RAM */
     memory_region_allocate_system_memory(&s->ram, OBJECT(machine), "ram",
@@ -139,26 +127,26 @@ static void raspi_machine_init(MachineState *machine, int version)
     memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
 
     /* Setup the SOC */
-    object_property_add_const_link(OBJECT(&s->soc), "ram", OBJECT(&s->ram),
+    object_property_add_const_link(s->soc, "ram", OBJECT(&s->ram),
                                    &error_abort);
-    object_property_set_int(OBJECT(&s->soc), smp_cpus, "enabled-cpus",
-                            &error_abort);
-    object_property_set_bool(OBJECT(&s->soc), true, "realized", &error_abort);
+    if (version == 2) {
+        object_property_set_int(s->soc, smp_cpus, "enabled-cpus", &error_abort);
+    }
+    object_property_set_bool(s->soc, true, "realized", &error_abort);
 
     /* Prepare to boot */
-    vcram_size = object_property_get_int(OBJECT(&s->soc), "vcram-size",
-                                         &error_abort);
+    vcram_size = object_property_get_int(s->soc, "vcram-size", &error_abort);
     setup_boot(machine, version, machine->ram_size - vcram_size);
 }
 
 static void raspi1_init(MachineState *machine)
 {
-    raspi_machine_init(machine, 1);
+    raspi_machine_init(machine, 1, TYPE_BCM2835);
 }
 
 static void raspi2_init(MachineState *machine)
 {
-    raspi_machine_init(machine, 2);
+    raspi_machine_init(machine, 2, TYPE_BCM2836);
 }
 
 static void raspi1_machine_init(MachineClass *mc)
