@@ -21,6 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "monitor/monitor.h"
 #include "sysemu/sysemu.h"
@@ -37,11 +38,6 @@
 #include "io/channel-file.h"
 #include "io/channel-tls.h"
 
-#include <unistd.h>
-#include <fcntl.h>
-#include <time.h>
-#include <errno.h>
-#include <sys/time.h>
 #include <zlib.h>
 
 #ifndef _WIN32
@@ -58,7 +54,6 @@
 #include <netdb.h>
 #include <sys/select.h>
 #ifdef CONFIG_BSD
-#include <sys/stat.h>
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
 #include <dev/ppbus/ppi.h>
 #include <dev/ppbus/ppbconf.h>
@@ -72,7 +67,6 @@
 #include <linux/parport.h>
 #endif
 #ifdef __sun__
-#include <sys/stat.h>
 #include <sys/ethernet.h>
 #include <sys/sockio.h>
 #include <netinet/arp.h>
@@ -2837,19 +2831,6 @@ static int tcp_chr_sync_read(CharDriverState *chr, const uint8_t *buf, int len)
 
     return size;
 }
-
-#ifndef _WIN32
-CharDriverState *qemu_chr_open_eventfd(int eventfd)
-{
-    CharDriverState *chr = qemu_chr_open_fd(eventfd, eventfd, NULL, NULL);
-
-    if (chr) {
-        chr->avail_connections = 1;
-    }
-
-    return chr;
-}
-#endif
 
 static void tcp_chr_connect(void *opaque)
 {

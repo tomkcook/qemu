@@ -21,14 +21,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <unistd.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <time.h>
-#include <errno.h>
-#include <sys/time.h>
+#include "qemu/osdep.h"
 
-#include "config-host.h"
 
 #ifdef CONFIG_SECCOMP
 #include "sysemu/seccomp.h"
@@ -113,7 +107,6 @@ int main(int argc, char **argv)
 #include "qemu/queue.h"
 #include "sysemu/cpus.h"
 #include "sysemu/arch_init.h"
-#include "qemu/osdep.h"
 
 #include "ui/qemu-spice.h"
 #include "qapi/string-input-visitor.h"
@@ -270,9 +263,13 @@ static QemuOptsList qemu_sandbox_opts = {
 
 static QemuOptsList qemu_trace_opts = {
     .name = "trace",
-    .implied_opt_name = "trace",
+    .implied_opt_name = "enable",
     .head = QTAILQ_HEAD_INITIALIZER(qemu_trace_opts.head),
     .desc = {
+        {
+            .name = "enable",
+            .type = QEMU_OPT_STRING,
+        },
         {
             .name = "events",
             .type = QEMU_OPT_STRING,
@@ -2988,8 +2985,7 @@ int main(int argc, char **argv, char **envp)
     bool userconfig = true;
     const char *log_mask = NULL;
     const char *log_file = NULL;
-    const char *trace_events = NULL;
-    const char *trace_file = NULL;
+    char *trace_file = NULL;
     ram_addr_t maxram_size;
     uint64_t ram_slots = 0;
     FILE *vmstate_dump_file = NULL;
@@ -3308,12 +3304,18 @@ int main(int argc, char **argv, char **envp)
 #endif
 #ifdef CONFIG_SLIRP
             case QEMU_OPTION_tftp:
+                error_report("The -tftp option is deprecated. "
+                             "Please use '-netdev user,tftp=...' instead.");
                 legacy_tftp_prefix = optarg;
                 break;
             case QEMU_OPTION_bootp:
+                error_report("The -bootp option is deprecated. "
+                             "Please use '-netdev user,bootfile=...' instead.");
                 legacy_bootp_filename = optarg;
                 break;
             case QEMU_OPTION_redir:
+                error_report("The -redir option is deprecated. "
+                             "Please use '-netdev user,hostfwd=...' instead.");
                 if (net_slirp_redir(optarg) < 0)
                     exit(1);
                 break;
@@ -3901,12 +3903,19 @@ int main(int argc, char **argv, char **envp)
             case QEMU_OPTION_trace:
             {
                 opts = qemu_opts_parse_noisily(qemu_find_opts("trace"),
-                                               optarg, false);
+                                               optarg, true);
                 if (!opts) {
                     exit(1);
                 }
-                trace_events = qemu_opt_get(opts, "events");
-                trace_file = qemu_opt_get(opts, "file");
+                if (qemu_opt_get(opts, "enable")) {
+                    trace_enable_events(qemu_opt_get(opts, "enable"));
+                }
+                trace_init_events(qemu_opt_get(opts, "events"));
+                if (trace_file) {
+                    g_free(trace_file);
+                }
+                trace_file = g_strdup(qemu_opt_get(opts, "file"));
+                qemu_opts_del(opts);
                 break;
             }
             case QEMU_OPTION_readconfig:
@@ -4089,6 +4098,8 @@ int main(int argc, char **argv, char **envp)
         exit(0);
     }
 
+    trace_init_file(trace_file);
+
     /* Open the logfile at this point and set the log mask if necessary.
      */
     if (log_file) {
@@ -4103,12 +4114,12 @@ int main(int argc, char **argv, char **envp)
             exit(1);
         }
         qemu_set_log(mask);
+    } else {
+        qemu_set_log(0);
     }
 
-    if (!is_daemonized()) {
-        if (!trace_init_backends(trace_events, trace_file)) {
-            exit(1);
-        }
+    if (!trace_init_backends()) {
+        exit(1);
     }
 
     /* If no data_dir is specified then try to find it relative to the
@@ -4651,12 +4662,6 @@ int main(int argc, char **argv, char **envp)
     }
 
     os_setup_post();
-
-    if (is_daemonized()) {
-        if (!trace_init_backends(trace_events, trace_file)) {
-            exit(1);
-        }
-    }
 
     main_loop();
     replay_disable_events();

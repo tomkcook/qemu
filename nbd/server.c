@@ -16,6 +16,7 @@
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "qemu/osdep.h"
 #include "nbd-internal.h"
 
 static int system_errno_to_nbd_errno(int err)
@@ -64,6 +65,8 @@ struct NBDExport {
     QTAILQ_ENTRY(NBDExport) next;
 
     AioContext *ctx;
+
+    Notifier eject_notifier;
 };
 
 static QTAILQ_HEAD(, NBDExport) exports = QTAILQ_HEAD_INITIALIZER(exports);
@@ -644,6 +647,12 @@ static void blk_aio_detach(void *opaque)
     exp->ctx = NULL;
 }
 
+static void nbd_eject_notifier(Notifier *n, void *data)
+{
+    NBDExport *exp = container_of(n, NBDExport, eject_notifier);
+    nbd_export_close(exp);
+}
+
 NBDExport *nbd_export_new(BlockBackend *blk, off_t dev_offset, off_t size,
                           uint32_t nbdflags, void (*close)(NBDExport *),
                           Error **errp)
@@ -666,6 +675,10 @@ NBDExport *nbd_export_new(BlockBackend *blk, off_t dev_offset, off_t size,
     exp->ctx = blk_get_aio_context(blk);
     blk_ref(blk);
     blk_add_aio_context_notifier(blk, blk_aio_attached, blk_aio_detach, exp);
+
+    exp->eject_notifier.notify = nbd_eject_notifier;
+    blk_add_remove_bs_notifier(blk, &exp->eject_notifier);
+
     /*
      * NBD exports are used for non-shared storage migration.  Make sure
      * that BDRV_O_INACTIVE is cleared and the image is ready for write
@@ -747,6 +760,7 @@ void nbd_export_put(NBDExport *exp)
         }
 
         if (exp->blk) {
+            notifier_remove(&exp->eject_notifier);
             blk_remove_aio_context_notifier(exp->blk, blk_aio_attached,
                                             blk_aio_detach, exp);
             blk_unref(exp->blk);
@@ -1082,8 +1096,7 @@ static coroutine_fn void nbd_co_client_start(void *opaque)
         nbd_export_get(exp);
     }
     if (nbd_negotiate(data)) {
-        shutdown(client->sock, 2);
-        client->close(client);
+        client_close(client);
         goto out;
     }
     qemu_co_mutex_init(&client->send_lock);

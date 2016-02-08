@@ -23,7 +23,7 @@
  * THE SOFTWARE.
  */
 
-#include "config-host.h"
+#include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "trace.h"
 #include "block/block.h"
@@ -277,14 +277,6 @@ void block_job_iostatus_reset(BlockJob *job)
         job->driver->iostatus_reset(job);
     }
 }
-
-struct BlockFinishData {
-    BlockJob *job;
-    BlockCompletionFunc *cb;
-    void *opaque;
-    bool cancelled;
-    int ret;
-};
 
 static int block_job_finish_sync(BlockJob *job,
                                  void (*finish)(BlockJob *, Error **errp),
