@@ -47,7 +47,7 @@ do { fprintf(stderr, "SD: " fmt , ## __VA_ARGS__); } while (0)
 
 #define ACMD41_ENQUIRY_MASK     0x00ffffff
 #define OCR_POWER_UP            0x80000000
-#define OCR_POWER_DELAY         (get_ticks_per_sec() / 2000) /* 0.5ms */
+#define OCR_POWER_DELAY_NS      500000 /* 0.5ms */
 
 typedef enum {
     sd_r0 = 0,    /* no response */
@@ -1325,9 +1325,9 @@ static sd_rsp_type_t sd_app_command(SDState *sd,
                     timer_del(sd->ocr_power_timer);
                     sd_ocr_powerup(sd);
                 } else if (!timer_pending(sd->ocr_power_timer)) {
-                    timer_mod(sd->ocr_power_timer,
-                              (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)
-                               + OCR_POWER_DELAY));
+                    timer_mod_ns(sd->ocr_power_timer,
+                                 (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)
+                                  + OCR_POWER_DELAY_NS));
                 }
             }
 
@@ -1336,7 +1336,7 @@ static sd_rsp_type_t sd_app_command(SDState *sd,
              * Once we're powered up, we advance straight to ready state
              * unless it's an enquiry ACMD41 (bits 23:0 == 0).
              */
-            if ((sd->ocr & OCR_POWER_UP) && (req.arg & ACMD41_ENQUIRY_MASK)) {
+            if (req.arg & ACMD41_ENQUIRY_MASK) {
                 sd->state = sd_ready_state;
             }
 
