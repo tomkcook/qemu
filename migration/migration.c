@@ -905,6 +905,11 @@ bool migration_in_postcopy(MigrationState *s)
     return (s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE);
 }
 
+bool migration_in_postcopy_after_devices(MigrationState *s)
+{
+    return migration_in_postcopy(s) && s->postcopy_after_devices;
+}
+
 MigrationState *migrate_init(const MigrationParams *params)
 {
     MigrationState *s = migrate_get_current();
@@ -930,6 +935,7 @@ MigrationState *migrate_init(const MigrationParams *params)
     s->setup_time = 0;
     s->dirty_sync_count = 0;
     s->start_postcopy = false;
+    s->postcopy_after_devices = false;
     s->migration_thread_running = false;
     s->last_req_rb = NULL;
 
@@ -1489,6 +1495,14 @@ static int postcopy_start(MigrationState *ms, bool *old_vm_running)
         goto fail_closefb;
     }
     qemu_fclose(fb);
+
+    /* Send a notify to give a chance for anything that needs to happen
+     * at the transition to postcopy and after the device state; in particular
+     * spice needs to trigger a transition now
+     */
+    ms->postcopy_after_devices = true;
+    notifier_list_notify(&migration_state_notifiers, ms);
+
     ms->downtime =  qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - time_at_stop;
 
     qemu_mutex_unlock_iothread();
@@ -1691,8 +1705,8 @@ static void *migration_thread(void *opaque)
             double bandwidth = (double)transferred_bytes / time_spent;
             max_size = bandwidth * migrate_max_downtime() / 1000000;
 
-            s->mbps = time_spent ? (((double) transferred_bytes * 8.0) /
-                    ((double) time_spent / 1000.0)) / 1000.0 / 1000.0 : -1;
+            s->mbps = (((double) transferred_bytes * 8.0) /
+                    ((double) time_spent / 1000.0)) / 1000.0 / 1000.0;
 
             trace_migrate_transferred(transferred_bytes, time_spent,
                                       bandwidth, max_size);

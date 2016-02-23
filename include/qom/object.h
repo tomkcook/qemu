@@ -15,12 +15,8 @@
 #define QEMU_OBJECT_H
 
 #include <glib.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include "qemu/queue.h"
-#include "qapi/error.h"
-
-struct Visitor;
+#include "qemu/typedefs.h"
 
 struct TypeImpl;
 typedef struct TypeImpl *Type;
@@ -291,16 +287,16 @@ typedef struct InterfaceInfo InterfaceInfo;
  * ObjectPropertyAccessor:
  * @obj: the object that owns the property
  * @v: the visitor that contains the property data
- * @opaque: the object property opaque
  * @name: the name of the property
+ * @opaque: the object property opaque
  * @errp: a pointer to an Error that is filled if getting/setting fails.
  *
  * Called when trying to get/set a property.
  */
 typedef void (ObjectPropertyAccessor)(Object *obj,
-                                      struct Visitor *v,
-                                      void *opaque,
+                                      Visitor *v,
                                       const char *name,
+                                      void *opaque,
                                       Error **errp);
 
 /**
@@ -1025,7 +1021,7 @@ void object_unparent(Object *obj);
  *
  * Reads a property from a object.
  */
-void object_property_get(Object *obj, struct Visitor *v, const char *name,
+void object_property_get(Object *obj, Visitor *v, const char *name,
                          Error **errp);
 
 /**
@@ -1116,7 +1112,7 @@ void object_property_set_int(Object *obj, int64_t value,
  * @name: the name of the property
  * @errp: returns an error if this function fails
  *
- * Returns: the value of the property, converted to an integer, or NULL if
+ * Returns: the value of the property, converted to an integer, or negative if
  * an error occurs (including when the property value is not an integer).
  */
 int64_t object_property_get_int(Object *obj, const char *name,
@@ -1161,7 +1157,7 @@ void object_property_get_uint16List(Object *obj, const char *name,
  *
  * Writes a property to a object.
  */
-void object_property_set(Object *obj, struct Visitor *v, const char *name,
+void object_property_set(Object *obj, Visitor *v, const char *name,
                          Error **errp);
 
 /**

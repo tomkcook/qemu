@@ -55,6 +55,9 @@
         } \
     } while (0)
 
+#define TYPE_SDHCI_BUS "sdhci-bus"
+#define SDHCI_BUS(obj) OBJECT_CHECK(SDBus, (obj), TYPE_SDHCI_BUS)
+
 /* Default SD/MMC host controller features information, which will be
  * presented in CAPABILITIES register of generic SD host controller at reset.
  * If not stated otherwise:
@@ -145,9 +148,9 @@ static void sdhci_raise_insertion_irq(void *opaque)
     }
 }
 
-static void sdhci_insert_eject_cb(void *opaque, int irq, int level)
+static void sdhci_set_inserted(DeviceState *dev, bool level)
 {
-    SDHCIState *s = (SDHCIState *)opaque;
+    SDHCIState *s = (SDHCIState *)dev;
     DPRINT_L1("Card state changed: %s!\n", level ? "insert" : "eject");
 
     if ((s->norintsts & SDHC_NIS_REMOVE) && level) {
@@ -172,9 +175,9 @@ static void sdhci_insert_eject_cb(void *opaque, int irq, int level)
     }
 }
 
-static void sdhci_card_readonly_cb(void *opaque, int irq, int level)
+static void sdhci_set_readonly(DeviceState *dev, bool level)
 {
-    SDHCIState *s = (SDHCIState *)opaque;
+    SDHCIState *s = (SDHCIState *)dev;
 
     if (level) {
         s->prnsts &= ~SDHC_WRITE_PROTECT;
@@ -186,6 +189,8 @@ static void sdhci_card_readonly_cb(void *opaque, int irq, int level)
 
 static void sdhci_reset(SDHCIState *s)
 {
+    DeviceState *dev = DEVICE(s);
+
     timer_del(s->insert_timer);
     timer_del(s->transfer_timer);
     /* Set all registers to 0. Capabilities registers are not cleared
@@ -193,7 +198,10 @@ static void sdhci_reset(SDHCIState *s)
      * initialization */
     memset(&s->sdmasysad, 0, (uintptr_t)&s->capareg - (uintptr_t)&s->sdmasysad);
 
-    sd_set_cb(s->card, s->ro_cb, s->eject_cb);
+    /* Reset other state based on current card insertion/readonly status */
+    sdhci_set_inserted(dev, sdbus_get_inserted(&s->sdbus));
+    sdhci_set_readonly(dev, sdbus_get_readonly(&s->sdbus));
+
     s->data_count = 0;
     s->stopped_state = sdhc_not_stopped;
     s->pending_insert = false;
@@ -212,7 +220,7 @@ static void sdhci_send_command(SDHCIState *s)
     request.cmd = s->cmdreg >> 8;
     request.arg = s->argument;
     DPRINT_L1("sending CMD%u ARG[0x%08x]\n", request.cmd, request.arg);
-    rlen = sd_do_command(s->card, &request, response);
+    rlen = sdbus_do_command(&s->sdbus, &request, response);
 
     if (s->cmdreg & SDHC_CMD_RESPONSE) {
         if (rlen == 4) {
@@ -268,7 +276,7 @@ static void sdhci_end_transfer(SDHCIState *s)
         request.cmd = 0x0C;
         request.arg = 0;
         DPRINT_L1("Automatically issue CMD%d %08x\n", request.cmd, request.arg);
-        sd_do_command(s->card, &request, response);
+        sdbus_do_command(&s->sdbus, &request, response);
         /* Auto CMD12 response goes to the upper Response register */
         s->rspreg[3] = (response[0] << 24) | (response[1] << 16) |
                 (response[2] << 8) | response[3];
@@ -300,7 +308,7 @@ static void sdhci_read_block_from_card(SDHCIState *s)
     }
 
     for (index = 0; index < (s->blksize & 0x0fff); index++) {
-        s->fifo_buffer[index] = sd_read_data(s->card);
+        s->fifo_buffer[index] = sdbus_read_data(&s->sdbus);
     }
 
     /* New data now available for READ through Buffer Port Register */
@@ -393,7 +401,7 @@ static void sdhci_write_block_to_card(SDHCIState *s)
     }
 
     for (index = 0; index < (s->blksize & 0x0fff); index++) {
-        sd_write_data(s->card, s->fifo_buffer[index]);
+        sdbus_write_data(&s->sdbus, s->fifo_buffer[index]);
     }
 
     /* Next data can be written through BUFFER DATORT register */
@@ -475,7 +483,7 @@ static void sdhci_sdma_transfer_multi_blocks(SDHCIState *s)
         while (s->blkcnt) {
             if (s->data_count == 0) {
                 for (n = 0; n < block_size; n++) {
-                    s->fifo_buffer[n] = sd_read_data(s->card);
+                    s->fifo_buffer[n] = sdbus_read_data(&s->sdbus);
                 }
             }
             begin = s->data_count;
@@ -516,7 +524,7 @@ static void sdhci_sdma_transfer_multi_blocks(SDHCIState *s)
             s->sdmasysad += s->data_count - begin;
             if (s->data_count == block_size) {
                 for (n = 0; n < block_size; n++) {
-                    sd_write_data(s->card, s->fifo_buffer[n]);
+                    sdbus_write_data(&s->sdbus, s->fifo_buffer[n]);
                 }
                 s->data_count = 0;
                 if (s->trnmod & SDHC_TRNS_BLK_CNT_EN) {
@@ -548,7 +556,7 @@ static void sdhci_sdma_transfer_single_block(SDHCIState *s)
 
     if (s->trnmod & SDHC_TRNS_READ) {
         for (n = 0; n < datacnt; n++) {
-            s->fifo_buffer[n] = sd_read_data(s->card);
+            s->fifo_buffer[n] = sdbus_read_data(&s->sdbus);
         }
         dma_memory_write(&address_space_memory, s->sdmasysad, s->fifo_buffer,
                          datacnt);
@@ -556,7 +564,7 @@ static void sdhci_sdma_transfer_single_block(SDHCIState *s)
         dma_memory_read(&address_space_memory, s->sdmasysad, s->fifo_buffer,
                         datacnt);
         for (n = 0; n < datacnt; n++) {
-            sd_write_data(s->card, s->fifo_buffer[n]);
+            sdbus_write_data(&s->sdbus, s->fifo_buffer[n]);
         }
     }
 
@@ -660,7 +668,7 @@ static void sdhci_do_adma(SDHCIState *s)
                 while (length) {
                     if (s->data_count == 0) {
                         for (n = 0; n < block_size; n++) {
-                            s->fifo_buffer[n] = sd_read_data(s->card);
+                            s->fifo_buffer[n] = sdbus_read_data(&s->sdbus);
                         }
                     }
                     begin = s->data_count;
@@ -701,7 +709,7 @@ static void sdhci_do_adma(SDHCIState *s)
                     dscr.addr += s->data_count - begin;
                     if (s->data_count == block_size) {
                         for (n = 0; n < block_size; n++) {
-                            sd_write_data(s->card, s->fifo_buffer[n]);
+                            sdbus_write_data(&s->sdbus, s->fifo_buffer[n]);
                         }
                         s->data_count = 0;
                         if (s->trnmod & SDHC_TRNS_BLK_CNT_EN) {
@@ -815,7 +823,7 @@ static void sdhci_data_transfer(void *opaque)
             break;
         }
     } else {
-        if ((s->trnmod & SDHC_TRNS_READ) && sd_data_ready(s->card)) {
+        if ((s->trnmod & SDHC_TRNS_READ) && sdbus_data_ready(&s->sdbus)) {
             s->prnsts |= SDHC_DOING_READ | SDHC_DATA_INHIBIT |
                     SDHC_DAT_LINE_ACTIVE;
             sdhci_read_block_from_card(s);
@@ -1158,15 +1166,10 @@ static inline unsigned int sdhci_get_fifolen(SDHCIState *s)
     }
 }
 
-static void sdhci_initfn(SDHCIState *s, BlockBackend *blk)
+static void sdhci_initfn(SDHCIState *s)
 {
-    s->card = sd_init(blk, false);
-    if (s->card == NULL) {
-        exit(1);
-    }
-    s->eject_cb = qemu_allocate_irq(sdhci_insert_eject_cb, s, 0);
-    s->ro_cb = qemu_allocate_irq(sdhci_card_readonly_cb, s, 0);
-    sd_set_cb(s->card, s->ro_cb, s->eject_cb);
+    qbus_create_inplace(&s->sdbus, sizeof(s->sdbus),
+                        TYPE_SDHCI_BUS, DEVICE(s), "sd-bus");
 
     s->insert_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sdhci_raise_insertion_irq, s);
     s->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sdhci_data_transfer, s);
@@ -1226,12 +1229,6 @@ const VMStateDescription sdhci_vmstate = {
 /* Capabilities registers provide information on supported features of this
  * specific host controller implementation */
 static Property sdhci_pci_properties[] = {
-    /*
-     * We currently fuse controller and card into a single device
-     * model, but we intend to separate them.  For that purpose, the
-     * properties that belong to the card are marked as experimental.
-     */
-    DEFINE_PROP_DRIVE("x-drive", SDHCIState, blk),
     DEFINE_PROP_UINT32("capareg", SDHCIState, capareg,
             SDHC_CAPAB_REG_DEFAULT),
     DEFINE_PROP_UINT32("maxcurr", SDHCIState, maxcurr, 0),
@@ -1243,7 +1240,7 @@ static void sdhci_pci_realize(PCIDevice *dev, Error **errp)
     SDHCIState *s = PCI_SDHCI(dev);
     dev->config[PCI_CLASS_PROG] = 0x01; /* Standard Host supported DMA */
     dev->config[PCI_INTERRUPT_PIN] = 0x01; /* interrupt pin A */
-    sdhci_initfn(s, s->blk);
+    sdhci_initfn(s);
     s->buf_maxsz = sdhci_get_fifolen(s);
     s->fifo_buffer = g_malloc0(s->buf_maxsz);
     s->irq = pci_allocate_irq(dev);
@@ -1292,11 +1289,8 @@ static Property sdhci_sysbus_properties[] = {
 static void sdhci_sysbus_init(Object *obj)
 {
     SDHCIState *s = SYSBUS_SDHCI(obj);
-    DriveInfo *di;
 
-    /* FIXME use a qdev drive property instead of drive_get_next() */
-    di = drive_get_next(IF_SD);
-    sdhci_initfn(s, di ? blk_by_legacy_dinfo(di) : NULL);
+    sdhci_initfn(s);
 }
 
 static void sdhci_sysbus_finalize(Object *obj)
@@ -1325,8 +1319,6 @@ static void sdhci_sysbus_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &sdhci_vmstate;
     dc->props = sdhci_sysbus_properties;
     dc->realize = sdhci_sysbus_realize;
-    /* Reason: instance_init() method uses drive_get_next() */
-    dc->cannot_instantiate_with_device_add_yet = true;
 }
 
 static const TypeInfo sdhci_sysbus_info = {
@@ -1338,10 +1330,26 @@ static const TypeInfo sdhci_sysbus_info = {
     .class_init = sdhci_sysbus_class_init,
 };
 
+static void sdhci_bus_class_init(ObjectClass *klass, void *data)
+{
+    SDBusClass *sbc = SD_BUS_CLASS(klass);
+
+    sbc->set_inserted = sdhci_set_inserted;
+    sbc->set_readonly = sdhci_set_readonly;
+}
+
+static const TypeInfo sdhci_bus_info = {
+    .name = TYPE_SDHCI_BUS,
+    .parent = TYPE_SD_BUS,
+    .instance_size = sizeof(SDBus),
+    .class_init = sdhci_bus_class_init,
+};
+
 static void sdhci_register_types(void)
 {
     type_register_static(&sdhci_pci_info);
     type_register_static(&sdhci_sysbus_info);
+    type_register_static(&sdhci_bus_info);
 }
 
 type_init(sdhci_register_types)

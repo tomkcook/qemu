@@ -30,6 +30,7 @@
 #include "qapi/string-output-visitor.h"
 #include "qapi/util.h"
 #include "qapi-visit.h"
+#include "qom/object_interfaces.h"
 #include "ui/console.h"
 #include "block/qapi.h"
 #include "qemu-io.h"
@@ -313,20 +314,22 @@ void hmp_info_cpus(Monitor *mon, const QDict *qdict)
 
         switch (cpu->value->arch) {
         case CPU_INFO_ARCH_X86:
-            monitor_printf(mon, " pc=0x%016" PRIx64, cpu->value->u.x86->pc);
+            monitor_printf(mon, " pc=0x%016" PRIx64, cpu->value->u.x86.pc);
             break;
         case CPU_INFO_ARCH_PPC:
-            monitor_printf(mon, " nip=0x%016" PRIx64, cpu->value->u.ppc->nip);
+            monitor_printf(mon, " nip=0x%016" PRIx64, cpu->value->u.ppc.nip);
             break;
         case CPU_INFO_ARCH_SPARC:
-            monitor_printf(mon, " pc=0x%016" PRIx64, cpu->value->u.sparc->pc);
-            monitor_printf(mon, " npc=0x%016" PRIx64, cpu->value->u.sparc->npc);
+            monitor_printf(mon, " pc=0x%016" PRIx64,
+                           cpu->value->u.q_sparc.pc);
+            monitor_printf(mon, " npc=0x%016" PRIx64,
+                           cpu->value->u.q_sparc.npc);
             break;
         case CPU_INFO_ARCH_MIPS:
-            monitor_printf(mon, " PC=0x%016" PRIx64, cpu->value->u.mips->PC);
+            monitor_printf(mon, " PC=0x%016" PRIx64, cpu->value->u.q_mips.PC);
             break;
         case CPU_INFO_ARCH_TRICORE:
-            monitor_printf(mon, " PC=0x%016" PRIx64, cpu->value->u.tricore->PC);
+            monitor_printf(mon, " PC=0x%016" PRIx64, cpu->value->u.tricore.PC);
             break;
         default:
             break;
@@ -1411,6 +1414,18 @@ void hmp_block_set_io_throttle(Monitor *mon, const QDict *qdict)
                               0,
                               false,
                               0,
+                              false, /* no burst length via HMP */
+                              0,
+                              false,
+                              0,
+                              false,
+                              0,
+                              false,
+                              0,
+                              false,
+                              0,
+                              false,
+                              0,
                               false, /* No default I/O size */
                               0,
                               false,
@@ -1653,58 +1668,27 @@ void hmp_netdev_del(Monitor *mon, const QDict *qdict)
 void hmp_object_add(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
-    Error *err_end = NULL;
     QemuOpts *opts;
-    char *type = NULL;
-    char *id = NULL;
-    void *dummy = NULL;
     OptsVisitor *ov;
-    QDict *pdict;
+    Object *obj = NULL;
 
     opts = qemu_opts_from_qdict(qemu_find_opts("object"), qdict, &err);
     if (err) {
-        goto out;
+        hmp_handle_error(mon, &err);
+        return;
     }
 
     ov = opts_visitor_new(opts);
-    pdict = qdict_clone_shallow(qdict);
-
-    visit_start_struct(opts_get_visitor(ov), &dummy, NULL, NULL, 0, &err);
-    if (err) {
-        goto out_clean;
-    }
-
-    qdict_del(pdict, "qom-type");
-    visit_type_str(opts_get_visitor(ov), &type, "qom-type", &err);
-    if (err) {
-        goto out_end;
-    }
-
-    qdict_del(pdict, "id");
-    visit_type_str(opts_get_visitor(ov), &id, "id", &err);
-    if (err) {
-        goto out_end;
-    }
-
-    object_add(type, id, pdict, opts_get_visitor(ov), &err);
-
-out_end:
-    visit_end_struct(opts_get_visitor(ov), &err_end);
-    if (!err && err_end) {
-        qmp_object_del(id, NULL);
-    }
-    error_propagate(&err, err_end);
-out_clean:
+    obj = user_creatable_add(qdict, opts_get_visitor(ov), &err);
     opts_visitor_cleanup(ov);
-
-    QDECREF(pdict);
     qemu_opts_del(opts);
-    g_free(id);
-    g_free(type);
-    g_free(dummy);
 
-out:
-    hmp_handle_error(mon, &err);
+    if (err) {
+        hmp_handle_error(mon, &err);
+    }
+    if (obj) {
+        object_unref(obj);
+    }
 }
 
 void hmp_getfd(Monitor *mon, const QDict *qdict)
@@ -1821,7 +1805,7 @@ void hmp_nbd_server_start(Monitor *mon, const QDict *qdict)
         goto exit;
     }
 
-    qmp_nbd_server_start(addr, &local_err);
+    qmp_nbd_server_start(addr, false, NULL, &local_err);
     qapi_free_SocketAddress(addr);
     if (local_err != NULL) {
         goto exit;
@@ -1932,7 +1916,7 @@ void hmp_object_del(Monitor *mon, const QDict *qdict)
     const char *id = qdict_get_str(qdict, "id");
     Error *err = NULL;
 
-    qmp_object_del(id, &err);
+    user_creatable_del(id, &err);
     hmp_handle_error(mon, &err);
 }
 
@@ -1948,8 +1932,8 @@ void hmp_info_memdev(Monitor *mon, const QDict *qdict)
 
     while (m) {
         ov = string_output_visitor_new(false);
-        visit_type_uint16List(string_output_get_visitor(ov),
-                              &m->value->host_nodes, NULL, NULL);
+        visit_type_uint16List(string_output_get_visitor(ov), NULL,
+                              &m->value->host_nodes, NULL);
         monitor_printf(mon, "memory backend: %d\n", i);
         monitor_printf(mon, "  size:  %" PRId64 "\n", m->value->size);
         monitor_printf(mon, "  merge: %s\n",

@@ -2,7 +2,7 @@
 # QAPI helper library
 #
 # Copyright IBM, Corp. 2011
-# Copyright (c) 2013-2015 Red Hat Inc.
+# Copyright (c) 2013-2016 Red Hat Inc.
 #
 # Authors:
 #  Anthony Liguori <aliguori@us.ibm.com>
@@ -167,7 +167,7 @@ class QAPISchemaParser(object):
                     continue
                 try:
                     fobj = open(incl_abs_fname, 'r')
-                except IOError, e:
+                except IOError as e:
                     raise QAPIExprError(expr_info,
                                         '%s: %s' % (e.strerror, include))
                 exprs_include = QAPISchemaParser(fobj, previously_included,
@@ -590,7 +590,10 @@ def check_union(expr, expr_info):
                                 "Discriminator '%s' must be of enumeration "
                                 "type" % discriminator)
 
-    # Check every branch
+    # Check every branch; don't allow an empty union
+    if len(members) == 0:
+        raise QAPIExprError(expr_info,
+                            "Union '%s' cannot have empty 'data'" % name)
     for (key, value) in members.items():
         check_name(expr_info, "Member of union '%s'" % name, key)
 
@@ -613,7 +616,11 @@ def check_alternate(expr, expr_info):
     members = expr['data']
     types_seen = {}
 
-    # Check every branch
+    # Check every branch; require at least two branches
+    if len(members) < 2:
+        raise QAPIExprError(expr_info,
+                            "Alternate '%s' should have at least two branches "
+                            "in 'data'" % name)
     for (key, value) in members.items():
         check_name(expr_info, "Member of alternate '%s'" % name, key)
 
@@ -622,7 +629,10 @@ def check_alternate(expr, expr_info):
                    value,
                    allow_metas=['built-in', 'union', 'struct', 'enum'])
         qtype = find_alternate_member_qtype(value)
-        assert qtype
+        if not qtype:
+            raise QAPIExprError(expr_info,
+                                "Alternate '%s' member '%s' cannot use "
+                                "type '%s'" % (name, key, value))
         if qtype in types_seen:
             raise QAPIExprError(expr_info,
                                 "Alternate '%s' member '%s' can't "
@@ -814,7 +824,7 @@ class QAPISchemaVisitor(object):
 
 
 class QAPISchemaType(QAPISchemaEntity):
-    def c_type(self, is_param=False):
+    def c_type(self, is_param=False, is_unboxed=False):
         return c_name(self.name) + pointer_suffix
 
     def c_null(self):
@@ -847,7 +857,7 @@ class QAPISchemaBuiltinType(QAPISchemaType):
     def c_name(self):
         return self.name
 
-    def c_type(self, is_param=False):
+    def c_type(self, is_param=False, is_unboxed=False):
         if is_param and self.name == 'str':
             return 'const ' + self._c_type_name
         return self._c_type_name
@@ -881,7 +891,7 @@ class QAPISchemaEnumType(QAPISchemaType):
         # See QAPISchema._make_implicit_enum_type()
         return self.name.endswith('Kind')
 
-    def c_type(self, is_param=False):
+    def c_type(self, is_param=False, is_unboxed=False):
         return c_name(self.name)
 
     def member_names(self):
@@ -977,9 +987,11 @@ class QAPISchemaObjectType(QAPISchemaType):
         assert not self.is_implicit()
         return QAPISchemaType.c_name(self)
 
-    def c_type(self, is_param=False):
+    def c_type(self, is_param=False, is_unboxed=False):
         assert not self.is_implicit()
-        return QAPISchemaType.c_type(self)
+        if is_unboxed:
+            return c_name(self.name)
+        return c_name(self.name) + pointer_suffix
 
     def json_type(self):
         return 'object'
@@ -1059,6 +1071,7 @@ class QAPISchemaObjectTypeVariants(object):
         assert bool(tag_member) != bool(tag_name)
         assert (isinstance(tag_name, str) or
                 isinstance(tag_member, QAPISchemaObjectTypeMember))
+        assert len(variants) > 0
         for v in variants:
             assert isinstance(v, QAPISchemaObjectTypeVariant)
         self.tag_name = tag_name
@@ -1189,7 +1202,7 @@ class QAPISchema(object):
             self._predefining = False
             self._def_exprs()
             self.check()
-        except (QAPISchemaError, QAPIExprError), err:
+        except (QAPISchemaError, QAPIExprError) as err:
             print >>sys.stderr, err
             exit(1)
 
@@ -1482,7 +1495,7 @@ def c_name(name, protect=True):
                      'and', 'and_eq', 'bitand', 'bitor', 'compl', 'not',
                      'not_eq', 'or', 'or_eq', 'xor', 'xor_eq'])
     # namespace pollution:
-    polluted_words = set(['unix', 'errno'])
+    polluted_words = set(['unix', 'errno', 'mips', 'sparc'])
     name = name.translate(c_name_trans)
     if protect and (name in c89_words | c99_words | c11_words | gcc_words
                     | cpp_words | polluted_words):
@@ -1636,7 +1649,8 @@ def gen_err_check(label='out', skiperr=False):
                  label=label)
 
 
-def gen_visit_fields(members, prefix='', need_cast=False, skiperr=False):
+def gen_visit_fields(members, prefix='', need_cast=False, skiperr=False,
+                     label='out'):
     ret = ''
     if skiperr:
         errparg = 'NULL'
@@ -1646,10 +1660,10 @@ def gen_visit_fields(members, prefix='', need_cast=False, skiperr=False):
     for memb in members:
         if memb.optional:
             ret += mcgen('''
-    if (visit_optional(v, &%(prefix)shas_%(c_name)s, "%(name)s")) {
+    if (visit_optional(v, "%(name)s", &%(prefix)shas_%(c_name)s)) {
 ''',
                          prefix=prefix, c_name=c_name(memb.name),
-                         name=memb.name, errp=errparg)
+                         name=memb.name)
             push_indent()
 
         # Ugly: sometimes we need to cast away const
@@ -1659,12 +1673,12 @@ def gen_visit_fields(members, prefix='', need_cast=False, skiperr=False):
             cast = ''
 
         ret += mcgen('''
-    visit_type_%(c_type)s(v, %(cast)s&%(prefix)s%(c_name)s, "%(name)s", %(errp)s);
+    visit_type_%(c_type)s(v, "%(name)s", %(cast)s&%(prefix)s%(c_name)s, %(errp)s);
 ''',
                      c_type=memb.type.c_name(), prefix=prefix, cast=cast,
                      c_name=c_name(memb.name), name=memb.name,
                      errp=errparg)
-        ret += gen_err_check(skiperr=skiperr)
+        ret += gen_err_check(skiperr=skiperr, label=label)
 
         if memb.optional:
             pop_indent()
@@ -1686,7 +1700,7 @@ def parse_command_line(extra_options="", extra_long_options=[]):
                                        "chp:o:" + extra_options,
                                        ["source", "header", "prefix=",
                                         "output-dir="] + extra_long_options)
-    except getopt.GetoptError, err:
+    except getopt.GetoptError as err:
         print >>sys.stderr, "%s: %s" % (sys.argv[0], str(err))
         sys.exit(1)
 
@@ -1740,7 +1754,7 @@ def open_output(output_dir, do_c, do_h, prefix, c_file, h_file,
     if output_dir:
         try:
             os.makedirs(output_dir)
-        except os.error, e:
+        except os.error as e:
             if e.errno != errno.EEXIST:
                 raise
 

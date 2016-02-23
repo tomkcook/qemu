@@ -896,13 +896,13 @@ static int io_channel_send_full(QIOChannel *ioc,
             ioc, &iov, 1,
             fds, nfds, NULL);
         if (ret == QIO_CHANNEL_ERR_BLOCK) {
-            errno = EAGAIN;
-            return -1;
-        } else if (ret < 0) {
             if (offset) {
                 return offset;
             }
 
+            errno = EAGAIN;
+            return -1;
+        } else if (ret < 0) {
             errno = EINVAL;
             return -1;
         }
@@ -1794,12 +1794,12 @@ static int pp_ioctl(CharDriverState *chr, int cmd, void *arg)
 }
 
 static CharDriverState *qemu_chr_open_pp_fd(int fd,
-                                            ChardevBackend *backend,
+                                            ChardevCommon *backend,
                                             Error **errp)
 {
     CharDriverState *chr;
 
-    chr = qemu_chr_alloc(common, errp);
+    chr = qemu_chr_alloc(backend, errp);
     if (!chr) {
         return NULL;
     }
@@ -2855,6 +2855,10 @@ static void tcp_chr_connect(void *opaque)
 static void tcp_chr_update_read_handler(CharDriverState *chr)
 {
     TCPCharDriver *s = chr->opaque;
+
+    if (!s->connected) {
+        return;
+    }
 
     remove_fd_in_watch(chr);
     if (s->ioc) {
@@ -4380,7 +4384,7 @@ static CharDriverState *qmp_chardev_open_udp(const char *id,
     QIOChannelSocket *sioc = qio_channel_socket_new();
 
     if (qio_channel_socket_dgram_sync(sioc,
-                                      udp->remote, udp->local,
+                                      udp->local, udp->remote,
                                       errp) < 0) {
         object_unref(OBJECT(sioc));
         return NULL;

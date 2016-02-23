@@ -459,7 +459,7 @@ static int inet_dgram_saddr(InetSocketAddress *sraddr,
 
     if (err) {
         error_propagate(errp, err);
-        return -1;
+        goto err;
     }
 
     addr = sraddr->host;
@@ -469,13 +469,13 @@ static int inet_dgram_saddr(InetSocketAddress *sraddr,
     }
     if (port == NULL || strlen(port) == 0) {
         error_setg(errp, "remote port not specified");
-        return -1;
+        goto err;
     }
 
     if (0 != (rc = getaddrinfo(addr, port, &ai, &peer))) {
         error_setg(errp, "address resolution failed for %s:%s: %s", addr, port,
                    gai_strerror(rc));
-	return -1;
+	goto err;
     }
 
     /* lookup local addr */
@@ -1117,7 +1117,7 @@ void qapi_copy_SocketAddress(SocketAddress **p_dest,
 
     qov = qmp_output_visitor_new();
     ov = qmp_output_get_visitor(qov);
-    visit_type_SocketAddress(ov, &src, NULL, &error_abort);
+    visit_type_SocketAddress(ov, NULL, &src, &error_abort);
     obj = qmp_output_get_qobject(qov);
     qmp_output_visitor_cleanup(qov);
     if (!obj) {
@@ -1126,7 +1126,7 @@ void qapi_copy_SocketAddress(SocketAddress **p_dest,
 
     qiv = qmp_input_visitor_new(obj);
     iv = qmp_input_get_visitor(qiv);
-    visit_type_SocketAddress(iv, p_dest, NULL, &error_abort);
+    visit_type_SocketAddress(iv, NULL, p_dest, &error_abort);
     qmp_input_visitor_cleanup(qiv);
     qobject_decref(obj);
 }

@@ -609,7 +609,6 @@ static void migration_bitmap_sync_init(void)
     iterations_prev = 0;
 }
 
-/* Called with iothread lock held, to protect ram_list.dirty_memory[] */
 static void migration_bitmap_sync(void)
 {
     RAMBlock *block;
@@ -1921,8 +1920,9 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
         acct_clear();
     }
 
-    /* iothread lock needed for ram_list.dirty_memory[] */
+    /* For memory_global_dirty_log_start below.  */
     qemu_mutex_lock_iothread();
+
     qemu_mutex_lock_ramlist();
     rcu_read_lock();
     bytes_transferred = 0;

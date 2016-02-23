@@ -8,6 +8,7 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
+#include "qemu/osdep.h"
 #include "hw/arm/bcm2835.h"
 #include "hw/arm/bcm2836.h"
 #include "qemu/error-report.h"
@@ -131,6 +132,7 @@ static void raspi_machine_init(MachineState *machine, int version,
                                    &error_abort);
     if (version == 2) {
         object_property_set_int(s->soc, smp_cpus, "enabled-cpus", &error_abort);
+        object_property_set_int(s->soc, 0xa21041, "board-rev", &error_abort);
     }
     object_property_set_bool(s->soc, true, "realized", &error_abort);
 

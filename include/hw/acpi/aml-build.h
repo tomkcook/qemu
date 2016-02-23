@@ -1,9 +1,7 @@
 #ifndef HW_ACPI_GEN_UTILS_H
 #define HW_ACPI_GEN_UTILS_H
 
-#include <stdint.h>
 #include <glib.h>
-#include "qemu/compiler.h"
 #include "hw/acpi/acpi-defs.h"
 
 /* Reserve RAM space for tables: add another order of magnitude. */
@@ -357,13 +355,14 @@ Aml *aml_sizeof(Aml *arg);
 void
 build_header(GArray *linker, GArray *table_data,
              AcpiTableHeader *h, const char *sig, int len, uint8_t rev,
-             const char *oem_table_id);
+             const char *oem_id, const char *oem_table_id);
 void *acpi_data_push(GArray *table_data, unsigned size);
 unsigned acpi_data_len(GArray *table);
 void acpi_add_table(GArray *table_offsets, GArray *table_data);
 void acpi_build_tables_init(AcpiBuildTables *tables);
 void acpi_build_tables_cleanup(AcpiBuildTables *tables, bool mfre);
 void
-build_rsdt(GArray *table_data, GArray *linker, GArray *table_offsets);
+build_rsdt(GArray *table_data, GArray *linker, GArray *table_offsets,
+           const char *oem_id, const char *oem_table_id);
 
 #endif
