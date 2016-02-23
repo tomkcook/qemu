@@ -5,6 +5,7 @@
 
 /* This is wrong at so many levels, but well, I'm releasing it anyway */
 
+#include "qemu/osdep.h"
 #include "hw/usb/bcm2835_usb.h"
 #include "sysemu/dma.h"
 

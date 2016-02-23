@@ -15,6 +15,7 @@
  * This code is licensed under the GPL.
  */
 
+#include "qemu/osdep.h"
 #include "hw/char/bcm2835_aux.h"
 
 static void bcm2835_aux_update(BCM2835AuxState *s)

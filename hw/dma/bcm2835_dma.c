@@ -3,6 +3,7 @@
  * This code is licensed under the GNU GPLv2 and later.
  */
 
+#include "qemu/osdep.h"
 #include "hw/dma/bcm2835_dma.h"
 
 /* DMA CS Control and Status bits */
