@@ -25,6 +25,11 @@
 /* Table of Linux board IDs for different Pi versions */
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 
+/* Table of board revisions
+ * https://github.com/AndrewFromMelbourne/raspberry_pi_revision/blob/master/README.md
+ */
+static const uint32_t raspi_boardrev[] = {[1] = 0x10, [2] = 0xa21041};
+
 typedef struct RasPiState {
     Object *soc;
     MemoryRegion ram;
@@ -135,9 +140,11 @@ static void raspi_machine_init(MachineState *machine, int version,
     object_property_add_const_link(s->soc, "ram", OBJECT(&s->ram),
                                    &error_abort);
 
+    object_property_set_int(s->soc, raspi_boardrev[version], "board-rev",
+                            &error_abort);
+
     if (version == 2) {
         object_property_set_int(s->soc, smp_cpus, "enabled-cpus", &error_abort);
-        object_property_set_int(s->soc, 0xa21041, "board-rev", &error_abort);
     }
 
     object_property_set_bool(s->soc, true, "realized", &error_abort);
