@@ -116,6 +116,10 @@ static void raspi_machine_init(MachineState *machine, int version,
 {
     RasPiState *s = g_new0(RasPiState, 1);
     uint32_t vcram_size;
+    DriveInfo *di;
+    BlockBackend *blk;
+    BusState *bus;
+    DeviceState *carddev;
 
     /* Initialise the relevant SOC */
     s->soc = object_new(soc_type);
@@ -130,11 +134,25 @@ static void raspi_machine_init(MachineState *machine, int version,
     /* Setup the SOC */
     object_property_add_const_link(s->soc, "ram", OBJECT(&s->ram),
                                    &error_abort);
+
     if (version == 2) {
         object_property_set_int(s->soc, smp_cpus, "enabled-cpus", &error_abort);
         object_property_set_int(s->soc, 0xa21041, "board-rev", &error_abort);
     }
+
     object_property_set_bool(s->soc, true, "realized", &error_abort);
+
+    /* Create and plug in the SD cards */
+    di = drive_get_next(IF_SD);
+    blk = di ? blk_by_legacy_dinfo(di) : NULL;
+    bus = qdev_get_child_bus(DEVICE(s->soc), "sd-bus");
+    if (bus == NULL) {
+        error_report("No SD bus found in SOC object");
+        exit(1);
+    }
+    carddev = qdev_create(bus, TYPE_SD_CARD);
+    qdev_prop_set_drive(carddev, "drive", blk, &error_fatal);
+    object_property_set_bool(OBJECT(carddev), true, "realized", &error_fatal);
 
     /* Prepare to boot */
     vcram_size = object_property_get_int(s->soc, "vcram-size", &error_abort);
