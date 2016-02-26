@@ -21,7 +21,7 @@ typedef struct {
     /*< public >*/
     MemoryRegion *dma_mr;
     AddressSpace dma_as;
-    BCM2835FbState *fbdev;
+    BCM2835FBState *fbdev;
     MemoryRegion iomem;
     qemu_irq mbox_irq;
     MACAddr macaddr;
