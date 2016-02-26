@@ -349,13 +349,13 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->sdhci), 0,
         qdev_get_gpio_in_named(DEVICE(&s->ic), BCM2835_IC_GPU_IRQ,
                                INTERRUPT_ARASANSDIO));
-
     object_property_add_alias(OBJECT(s), "sd-bus", OBJECT(&s->sdhci), "sd-bus",
                               &err);
     if (err) {
         error_propagate(errp, err);
         return;
     }
+
 
     /* DMA Channels */
     object_property_set_bool(OBJECT(&s->dma), true, "realized", &err);
