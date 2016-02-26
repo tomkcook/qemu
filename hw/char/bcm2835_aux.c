@@ -2,11 +2,8 @@
  * BCM2835 (Raspberry Pi / Pi 2) Aux block (mini UART and SPI).
  * Copyright (c) 2015, Microsoft
  * Written by Andrew Baumann
+ * Based on pl011.c, copyright terms below:
  *
- * Fairly hacky. Based on gutted code for pl011 emulation (copyright below).
- */
-
-/*
  * Arm PrimeCell PL011 UART
  *
  * Copyright (c) 2006 CodeSourcery.
@@ -18,23 +15,29 @@
 #include "qemu/osdep.h"
 #include "hw/char/bcm2835_aux.h"
 
+#define AUX_ENABLES     0x4
+#define AUX_MU_IO_REG   0x40
+#define AUX_MU_IER_REG  0x44
+#define AUX_MU_IIR_REG  0x48
+#define AUX_MU_LSR_REG  0x54
+#define AUX_MU_STAT_REG 0x64
+
 static void bcm2835_aux_update(BCM2835AuxState *s)
 {
     bool status = (s->rx_int_enable && s->read_count != 0) || s->tx_int_enable;
     qemu_set_irq(s->irq, status);
 }
 
-static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
-                           unsigned size)
+static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset, unsigned size)
 {
-    BCM2835AuxState *s = (BCM2835AuxState *)opaque;
+    BCM2835AuxState *s = opaque;
     uint32_t c, res;
 
-    switch (offset >> 2) {
-    case 1: /* AUXENB */
+    switch (offset) {
+    case AUX_ENABLES:
         return 1; /* mini UART enabled */
 
-    case 16: /* AUX_MU_IO_REG */
+    case AUX_MU_IO_REG:
         c = s->read_fifo[s->read_pos];
         if (s->read_count > 0) {
             s->read_count--;
@@ -48,7 +51,7 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         bcm2835_aux_update(s);
         return c;
 
-    case 17: /* AUX_MU_IIR_REG */
+    case AUX_MU_IER_REG:
         res = 0;
         if (s->rx_int_enable) {
             res |= 0x2;
@@ -58,7 +61,7 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         }
         return res;
 
-    case 18: /* AUX_MU_IER_REG */
+    case AUX_MU_IIR_REG:
         res = 0xc0;
         if (s->tx_int_enable) {
             res |= 0x1;
@@ -67,14 +70,14 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         }
         return res;
 
-    case 21: /* AUX_MU_LSR_REG */
+    case AUX_MU_LSR_REG:
         res = 0x60; /* tx idle, empty */
         if (s->read_count != 0) {
             res |= 0x1;
         }
         return res;
 
-    case 25: /* AUX_MU_STAT_REG */
+    case AUX_MU_STAT_REG:
         res = 0x302; /* space in the output buffer, empty tx fifo */
         if (s->read_count > 0) {
             res |= 0x1; /* data in input buffer */
@@ -84,48 +87,47 @@ static uint64_t bcm2835_aux_read(void *opaque, hwaddr offset,
         return res;
 
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "bcm2835_aux_read: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
         return 0;
     }
 }
 
-static void bcm2835_aux_write(void *opaque, hwaddr offset,
-                              uint64_t value, unsigned size)
+static void bcm2835_aux_write(void *opaque, hwaddr offset, uint64_t value,
+                              unsigned size)
 {
-    BCM2835AuxState *s = (BCM2835AuxState *)opaque;
+    BCM2835AuxState *s = opaque;
     unsigned char ch;
 
-    switch (offset >> 2) {
-    case 1: /* AUXENB */
+    switch (offset) {
+    case AUX_ENABLES:
         if (value != 1) {
-            qemu_log_mask(LOG_GUEST_ERROR,
-                          "bcm2835_aux_write: Trying to enable SPI or"
-                          " disable UART. Not supported!\n");
+            qemu_log_mask(LOG_UNIMP, "%s: unsupported attempt to enable SPI "
+                          "or disable UART\n", __func__);
         }
         break;
 
-    case 16: /* AUX_MU_IO_REG */
+    case AUX_MU_IO_REG:
         ch = value;
         if (s->chr) {
             qemu_chr_fe_write(s->chr, &ch, 1);
         }
         break;
 
-    case 17: /* AUX_MU_IIR_REG */
+    case AUX_MU_IER_REG:
         s->rx_int_enable = (value & 0x2) != 0;
         s->tx_int_enable = (value & 0x1) != 0;
         break;
 
-    case 18: /* AUX_MU_IER_REG */
+    case AUX_MU_IIR_REG:
         if (value & 0x1) {
             s->read_count = 0;
         }
         break;
 
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "bcm2835_aux_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset %"HWADDR_PRIx"\n",
+                      __func__, offset);
     }
 
     bcm2835_aux_update(s);
@@ -133,14 +135,14 @@ static void bcm2835_aux_write(void *opaque, hwaddr offset,
 
 static int bcm2835_aux_can_receive(void *opaque)
 {
-    BCM2835AuxState *s = (BCM2835AuxState *)opaque;
+    BCM2835AuxState *s = opaque;
 
     return s->read_count < 8;
 }
 
 static void bcm2835_aux_put_fifo(void *opaque, uint32_t value)
 {
-    BCM2835AuxState *s = (BCM2835AuxState *)opaque;
+    BCM2835AuxState *s = opaque;
     int slot;
 
     slot = s->read_pos + s->read_count;
@@ -171,16 +173,20 @@ static const MemoryRegionOps bcm2835_aux_ops = {
     .read = bcm2835_aux_read,
     .write = bcm2835_aux_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid.min_access_size = 4,
+    .valid.max_access_size = 4,
 };
 
 static const VMStateDescription vmstate_bcm2835_aux = {
-    .name = "bcm2835_aux",
-    .version_id = 2,
-    .minimum_version_id = 2,
+    .name = TYPE_BCM2835_AUX,
+    .version_id = 1,
+    .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(read_fifo, BCM2835AuxState, 8),
-        VMSTATE_INT32(read_pos, BCM2835AuxState),
-        VMSTATE_INT32(read_count, BCM2835AuxState),
+        VMSTATE_UINT8(read_pos, BCM2835AuxState),
+        VMSTATE_UINT8(read_count, BCM2835AuxState),
+        VMSTATE_BOOL(rx_int_enable, BCM2835AuxState),
+        VMSTATE_BOOL(tx_int_enable, BCM2835AuxState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -191,7 +197,7 @@ static void bcm2835_aux_init(Object *obj)
     BCM2835AuxState *s = BCM2835_AUX(obj);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_aux_ops, s,
-                          "bcm2835_aux", 0x100);
+                          TYPE_BCM2835_AUX, 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->irq);
 }
