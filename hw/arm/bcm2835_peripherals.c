@@ -12,6 +12,8 @@
 #include "hw/arm/bcm2835_peripherals.h"
 #include "hw/misc/bcm2835_mbox_defs.h"
 #include "hw/arm/raspi_platform.h"
+#include "sysemu/char.h"
+#include "sysemu/sysemu.h" /* for serial_hds */
 
 /* Peripheral base address on the VC (GPU) system bus */
 #define BCM2835_VC_PERI_BASE 0x7e000000
@@ -133,6 +135,7 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
     MemoryRegion *ram;
     Error *err = NULL;
     uint32_t ram_size, vcram_size;
+    CharDriverState *chr;
     int n;
 
     obj = object_property_get_link(OBJECT(dev), "ram", &err);
@@ -186,6 +189,14 @@ static void bcm2835_peripherals_realize(DeviceState *dev, Error **errp)
                                INTERRUPT_UART));
 
     /* AUX / UART1 */
+    /* XXX: pl011 (uart0) uses qemu_char_get_next_serial(), so at this point it
+     * should have claimed the first serial device (if one exists) */
+    chr = serial_hds[1];
+    if (chr == NULL) {
+        chr = qemu_chr_new("bcm2835.uart1", "null", NULL);
+    }
+    qdev_prop_set_chr(DEVICE(&s->aux), "chardev", chr);
+
     object_property_set_bool(OBJECT(&s->aux), true, "realized", &err);
     if (err) {
         error_propagate(errp, err);
