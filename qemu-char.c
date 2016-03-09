@@ -4376,6 +4376,7 @@ static CharDriverState *qmp_chardev_open_socket(const char *id,
     if (is_listen && is_waitconnect) {
         fprintf(stderr, "QEMU waiting for connection on: %s\n",
                 chr->filename);
+        qio_channel_set_blocking(QIO_CHANNEL(s->listen_ioc), true, NULL);
         tcp_chr_accept(QIO_CHANNEL(s->listen_ioc), G_IO_IN, chr);
         qio_channel_set_blocking(QIO_CHANNEL(s->listen_ioc), false, NULL);
     }
