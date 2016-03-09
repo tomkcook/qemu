@@ -66,7 +66,7 @@ static void tcp_accept_incoming_migration(void *opaque)
         err = socket_error();
     } while (c < 0 && err == EINTR);
     qemu_set_fd_handler(s, NULL, NULL, NULL);
-    closesocket(s);
+    close(s);
 
     DPRINTF("accepted migration\n");
 
@@ -86,7 +86,7 @@ static void tcp_accept_incoming_migration(void *opaque)
     return;
 
 out:
-    closesocket(c);
+    close(c);
 }
 
 void tcp_start_incoming_migration(const char *host_port, Error **errp)

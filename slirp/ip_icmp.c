@@ -110,7 +110,7 @@ static int icmp_send(struct socket *so, struct mbuf *m, int hlen)
 
 void icmp_detach(struct socket *so)
 {
-    closesocket(so->s);
+    close(so->s);
     sofree(so);
 }
 

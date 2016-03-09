@@ -682,7 +682,7 @@ qio_channel_socket_close(QIOChannel *ioc,
 {
     QIOChannelSocket *sioc = QIO_CHANNEL_SOCKET(ioc);
 
-    if (closesocket(sioc->fd) < 0) {
+    if (close(sioc->fd) < 0) {
         sioc->fd = -1;
         error_setg_errno(errp, socket_error(),
                          "Unable to close socket");

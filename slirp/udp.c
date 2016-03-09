@@ -291,7 +291,7 @@ udp_attach(struct socket *so, unsigned short af)
 void
 udp_detach(struct socket *so)
 {
-	closesocket(so->s);
+	close(so->s);
 	sofree(so);
 }
 

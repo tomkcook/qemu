@@ -163,7 +163,7 @@ static void net_socket_send(void *opaque)
         if (s->listen_fd != -1) {
             qemu_set_fd_handler(s->listen_fd, net_socket_accept, NULL, s);
         }
-        closesocket(s->fd);
+        close(s->fd);
 
         s->fd = -1;
         s->state = 0;
@@ -325,7 +325,7 @@ static int net_socket_mcast_create(struct sockaddr_in *mcastaddr, struct in_addr
     return fd;
 fail:
     if (fd >= 0)
-        closesocket(fd);
+        close(fd);
     return -1;
 }
 
@@ -340,7 +340,7 @@ static void net_socket_cleanup(NetClientState *nc)
     }
     if (s->listen_fd != -1) {
         qemu_set_fd_handler(s->listen_fd, NULL, NULL, NULL);
-        closesocket(s->listen_fd);
+        close(s->listen_fd);
         s->listen_fd = -1;
     }
 }
@@ -417,7 +417,7 @@ static NetSocketState *net_socket_fd_init_dgram(NetClientState *peer,
     return s;
 
 err:
-    closesocket(fd);
+    close(fd);
     return NULL;
 }
 
@@ -473,7 +473,7 @@ static NetSocketState *net_socket_fd_init(NetClientState *peer,
         (socklen_t *)&optlen)< 0) {
         fprintf(stderr, "qemu: error: getsockopt(SO_TYPE) for fd=%d failed\n",
                 fd);
-        closesocket(fd);
+        close(fd);
         return NULL;
     }
     switch(so_type) {
@@ -540,13 +540,13 @@ static int net_socket_listen_init(NetClientState *peer,
     ret = bind(fd, (struct sockaddr *)&saddr, sizeof(saddr));
     if (ret < 0) {
         perror("bind");
-        closesocket(fd);
+        close(fd);
         return -1;
     }
     ret = listen(fd, 0);
     if (ret < 0) {
         perror("listen");
-        closesocket(fd);
+        close(fd);
         return -1;
     }
 
@@ -593,7 +593,7 @@ static int net_socket_connect_init(NetClientState *peer,
 #endif
             } else {
                 perror("connect");
-                closesocket(fd);
+                close(fd);
                 return -1;
             }
         } else {
@@ -675,13 +675,13 @@ static int net_socket_udp_init(NetClientState *peer,
 
     ret = socket_set_fast_reuse(fd);
     if (ret < 0) {
-        closesocket(fd);
+        close(fd);
         return -1;
     }
     ret = bind(fd, (struct sockaddr *)&laddr, sizeof(laddr));
     if (ret < 0) {
         perror("bind");
-        closesocket(fd);
+        close(fd);
         return -1;
     }
     qemu_set_nonblock(fd);

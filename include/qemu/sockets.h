@@ -6,10 +6,6 @@
 
 int inet_aton(const char *cp, struct in_addr *ia);
 
-#else
-
-#define closesocket(s) close(s)
-
 #endif /* !_WIN32 */
 
 #include "qapi-types.h"

@@ -211,7 +211,7 @@ static int inet_listen_saddr(InetSocketAddress *saddr,
                 }
             }
         }
-        closesocket(slisten);
+        close(slisten);
     }
     freeaddrinfo(res);
     return -1;
@@ -219,7 +219,7 @@ static int inet_listen_saddr(InetSocketAddress *saddr,
 listen:
     if (listen(slisten,1) != 0) {
         error_setg_errno(errp, errno, "Failed to listen on socket");
-        closesocket(slisten);
+        close(slisten);
         freeaddrinfo(res);
         return -1;
     }
@@ -279,7 +279,7 @@ static void wait_for_connect(void *opaque)
     /* connect error */
     if (rc < 0) {
         error_setg_errno(&err, errno, "Error connecting to socket");
-        closesocket(s->fd);
+        close(s->fd);
         s->fd = rc;
     }
 
@@ -340,7 +340,7 @@ static int inet_connect_addr(struct addrinfo *addr, bool *in_progress,
         *in_progress = true;
     } else if (rc < 0) {
         error_setg_errno(errp, errno, "Failed to connect socket");
-        closesocket(sock);
+        close(sock);
         return -1;
     }
     return sock;
@@ -530,7 +530,7 @@ static int inet_dgram_saddr(InetSocketAddress *sraddr,
 
 err:
     if (-1 != sock)
-        closesocket(sock);
+        close(sock);
     if (local)
         freeaddrinfo(local);
     if (peer)
@@ -751,7 +751,7 @@ static int unix_listen_saddr(UnixSocketAddress *saddr,
     return sock;
 
 err:
-    closesocket(sock);
+    close(sock);
     return -1;
 }
 

@@ -1143,7 +1143,7 @@ static int find_vdi_name(BDRVSheepdogState *s, const char *filename,
 
     ret = 0;
 out:
-    closesocket(fd);
+    close(fd);
     return ret;
 }
 
@@ -1340,7 +1340,7 @@ static int reload_inode(BDRVSheepdogState *s, uint32_t snapid, const char *tag)
 
 out:
     g_free(inode);
-    closesocket(fd);
+    close(fd);
 
     return ret;
 }
@@ -1488,7 +1488,7 @@ static int sd_open(BlockDriverState *bs, QDict *options, int flags,
     ret = read_object(fd, s->aio_context, buf, vid_to_vdi_oid(vid),
                       0, SD_INODE_SIZE, 0, s->cache_flags);
 
-    closesocket(fd);
+    close(fd);
 
     if (ret) {
         error_setg(errp, "Can't read snapshot inode");
@@ -1508,7 +1508,7 @@ out:
     aio_set_fd_handler(bdrv_get_aio_context(bs), s->fd,
                        false, NULL, NULL, NULL);
     if (s->fd >= 0) {
-        closesocket(s->fd);
+        close(s->fd);
     }
     qemu_opts_del(opts);
     g_free(buf);
@@ -1546,7 +1546,7 @@ static void sd_reopen_commit(BDRVReopenState *state)
     if (s->fd) {
         aio_set_fd_handler(s->aio_context, s->fd, false,
                            NULL, NULL, NULL);
-        closesocket(s->fd);
+        close(s->fd);
     }
 
     s->fd = re_s->fd;
@@ -1570,7 +1570,7 @@ static void sd_reopen_abort(BDRVReopenState *state)
     if (re_s->fd) {
         aio_set_fd_handler(s->aio_context, re_s->fd, false,
                            NULL, NULL, NULL);
-        closesocket(re_s->fd);
+        close(re_s->fd);
     }
 
     g_free(state->opaque);
@@ -1616,7 +1616,7 @@ static int do_sd_create(BDRVSheepdogState *s, uint32_t *vdi_id, int snapshot,
 
     ret = do_req(fd, s->aio_context, (SheepdogReq *)&hdr, buf, &wlen, &rlen);
 
-    closesocket(fd);
+    close(fd);
 
     if (ret) {
         error_setg_errno(errp, -ret, "create failed");
@@ -1879,7 +1879,7 @@ static int sd_create(const char *filename, QemuOpts *opts,
 
         ret = do_req(fd, s->aio_context, (SheepdogReq *)&hdr,
                      NULL, &wlen, &rlen);
-        closesocket(fd);
+        close(fd);
         if (ret) {
             error_setg_errno(errp, -ret, "failed to get cluster default");
             goto out;
@@ -1945,7 +1945,7 @@ static void sd_close(BlockDriverState *bs)
     ret = do_req(fd, s->aio_context, (SheepdogReq *)&hdr,
                  s->name, &wlen, &rlen);
 
-    closesocket(fd);
+    close(fd);
 
     if (!ret && rsp->result != SD_RES_SUCCESS &&
         rsp->result != SD_RES_VDI_NOT_LOCKED) {
@@ -1954,7 +1954,7 @@ static void sd_close(BlockDriverState *bs)
 
     aio_set_fd_handler(bdrv_get_aio_context(bs), s->fd,
                        false, NULL, NULL, NULL);
-    closesocket(s->fd);
+    close(s->fd);
     g_free(s->host_spec);
 }
 
@@ -2063,7 +2063,7 @@ static bool sd_delete(BDRVSheepdogState *s)
 
     ret = do_req(fd, s->aio_context, (SheepdogReq *)&hdr,
                  s->name, &wlen, &rlen);
-    closesocket(fd);
+    close(fd);
     if (ret) {
         return false;
     }
@@ -2120,7 +2120,7 @@ static int sd_create_branch(BDRVSheepdogState *s)
     ret = read_object(fd, s->aio_context, buf, vid_to_vdi_oid(vid),
                       s->inode.nr_copies, SD_INODE_SIZE, 0, s->cache_flags);
 
-    closesocket(fd);
+    close(fd);
 
     if (ret < 0) {
         goto out;
@@ -2432,7 +2432,7 @@ static int sd_snapshot_create(BlockDriverState *bs, QEMUSnapshotInfo *sn_info)
 
 cleanup:
     g_free(inode);
-    closesocket(fd);
+    close(fd);
     return ret;
 }
 
@@ -2534,7 +2534,7 @@ static bool remove_objects(BDRVSheepdogState *s)
     }
 
 out:
-    closesocket(fd);
+    close(fd);
     return result;
 }
 
@@ -2590,7 +2590,7 @@ static int sd_snapshot_delete(BlockDriverState *bs,
 
     ret = do_req(fd, s->aio_context, (SheepdogReq *)&hdr,
                  buf, &wlen, &rlen);
-    closesocket(fd);
+    close(fd);
     if (ret) {
         return ret;
     }
@@ -2643,7 +2643,7 @@ static int sd_snapshot_list(BlockDriverState *bs, QEMUSnapshotInfo **psn_tab)
     ret = do_req(fd, s->aio_context, (SheepdogReq *)&req,
                  vdi_inuse, &wlen, &rlen);
 
-    closesocket(fd);
+    close(fd);
     if (ret) {
         goto out;
     }
@@ -2691,7 +2691,7 @@ static int sd_snapshot_list(BlockDriverState *bs, QEMUSnapshotInfo **psn_tab)
         }
     }
 
-    closesocket(fd);
+    close(fd);
 out:
     *psn_tab = sn_tab;
 
@@ -2753,7 +2753,7 @@ static int do_load_save_vmstate(BDRVSheepdogState *s, uint8_t *data,
     }
     ret = size;
 cleanup:
-    closesocket(fd);
+    close(fd);
     return ret;
 }
 

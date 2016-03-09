@@ -139,7 +139,7 @@ fork_exec(struct socket *so, const char *ex, int do_pty)
 		    bind(s, (struct sockaddr *)&addr, addrlen) < 0 ||
 		    listen(s, 1) < 0) {
 			error_report("Error: inet socket: %s", strerror(errno));
-			closesocket(s);
+			close(s);
 
 			return 0;
 		}
@@ -213,7 +213,7 @@ fork_exec(struct socket *so, const char *ex, int do_pty)
                 do {
                     so->s = accept(s, (struct sockaddr *)&addr, &addrlen);
                 } while (so->s < 0 && errno == EINTR);
-                closesocket(s);
+                close(s);
                 socket_set_fast_reuse(so->s);
                 opt = 1;
                 qemu_setsockopt(so->s, SOL_SOCKET, SO_OOBINLINE, &opt, sizeof(int));
