@@ -559,7 +559,8 @@ static ssize_t qio_channel_socket_readv(QIOChannel *ioc,
                    iov[i].iov_len,
                    0);
         if (ret < 0) {
-            if (socket_error() == EAGAIN) {
+            if (socket_error() == EAGAIN ||
+                socket_error() == EWOULDBLOCK) {
                 if (done) {
                     return done;
                 } else {
@@ -601,7 +602,8 @@ static ssize_t qio_channel_socket_writev(QIOChannel *ioc,
                    iov[i].iov_len,
                    0);
         if (ret < 0) {
-            if (socket_error() == EAGAIN) {
+            if (socket_error() == EAGAIN ||
+                socket_error() == EWOULDBLOCK) {
                 if (done) {
                     return done;
                 } else {
