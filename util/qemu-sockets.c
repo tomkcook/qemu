@@ -180,7 +180,7 @@ static int inet_listen_saddr(InetSocketAddress *saddr,
         getnameinfo((struct sockaddr*)e->ai_addr,e->ai_addrlen,
 		        uaddr,INET6_ADDRSTRLEN,uport,32,
 		        NI_NUMERICHOST | NI_NUMERICSERV);
-        slisten = qemu_socket(e->ai_family, e->ai_socktype, e->ai_protocol);
+        slisten = socket(e->ai_family, e->ai_socktype, e->ai_protocol);
         if (slisten < 0) {
             if (!e->ai_next) {
                 error_setg_errno(errp, errno, "Failed to create socket");
@@ -317,7 +317,7 @@ static int inet_connect_addr(struct addrinfo *addr, bool *in_progress,
 
     *in_progress = false;
 
-    sock = qemu_socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+    sock = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
     if (sock < 0) {
         error_setg_errno(errp, errno, "Failed to create socket");
         return -1;
@@ -505,7 +505,7 @@ static int inet_dgram_saddr(InetSocketAddress *sraddr,
     }
 
     /* create socket */
-    sock = qemu_socket(peer->ai_family, peer->ai_socktype, peer->ai_protocol);
+    sock = socket(peer->ai_family, peer->ai_socktype, peer->ai_protocol);
     if (sock < 0) {
         error_setg_errno(errp, errno, "Failed to create socket");
         goto err;
@@ -694,7 +694,7 @@ static int unix_listen_saddr(UnixSocketAddress *saddr,
     struct sockaddr_un un;
     int sock, fd;
 
-    sock = qemu_socket(PF_UNIX, SOCK_STREAM, 0);
+    sock = socket(PF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
         error_setg_errno(errp, errno, "Failed to create Unix socket");
         return -1;
@@ -767,7 +767,7 @@ static int unix_connect_saddr(UnixSocketAddress *saddr, Error **errp,
         return -1;
     }
 
-    sock = qemu_socket(PF_UNIX, SOCK_STREAM, 0);
+    sock = socket(PF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
         error_setg_errno(errp, errno, "Failed to create socket");
         return -1;

@@ -262,7 +262,7 @@ static int net_socket_mcast_create(struct sockaddr_in *mcastaddr, struct in_addr
         return -1;
 
     }
-    fd = qemu_socket(PF_INET, SOCK_DGRAM, 0);
+    fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         perror("socket(PF_INET, SOCK_DGRAM)");
         return -1;
@@ -497,7 +497,7 @@ static void net_socket_accept(void *opaque)
 
     for(;;) {
         len = sizeof(saddr);
-        fd = qemu_accept(s->listen_fd, (struct sockaddr *)&saddr, &len);
+        fd = accept(s->listen_fd, (struct sockaddr *)&saddr, &len);
         if (fd < 0 && errno != EINTR) {
             return;
         } else if (fd >= 0) {
@@ -527,7 +527,7 @@ static int net_socket_listen_init(NetClientState *peer,
     if (parse_host_port(&saddr, host_str) < 0)
         return -1;
 
-    fd = qemu_socket(PF_INET, SOCK_STREAM, 0);
+    fd = socket(PF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         perror("socket");
         return -1;
@@ -571,7 +571,7 @@ static int net_socket_connect_init(NetClientState *peer,
     if (parse_host_port(&saddr, host_str) < 0)
         return -1;
 
-    fd = qemu_socket(PF_INET, SOCK_STREAM, 0);
+    fd = socket(PF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         perror("socket");
         return -1;
@@ -664,7 +664,7 @@ static int net_socket_udp_init(NetClientState *peer,
         return -1;
     }
 
-    fd = qemu_socket(PF_INET, SOCK_DGRAM, 0);
+    fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         perror("socket(PF_INET, SOCK_DGRAM)");
         return -1;

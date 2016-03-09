@@ -142,8 +142,8 @@ ivshmem_server_handle_new_conn(IvshmemServer *server)
 
     /* accept the incoming connection */
     unaddr_len = sizeof(unaddr);
-    newfd = qemu_accept(server->sock_fd,
-                        (struct sockaddr *)&unaddr, &unaddr_len);
+    newfd = accept(server->sock_fd,
+                   (struct sockaddr *)&unaddr, &unaddr_len);
 
     if (newfd < 0) {
         IVSHMEM_SERVER_DEBUG(server, "cannot accept() %s\n", strerror(errno));

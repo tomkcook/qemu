@@ -56,4 +56,15 @@ int qemu_utimens(const char *path, const qemu_timespec *times);
 
 bool is_daemonized(void);
 
+/* Some sockets wrappers to handle O_CLOEXEC */
+
+#undef socket
+#define socket qemu_socket_wrap
+int qemu_socket_wrap(int domain, int type, int protocol);
+
+#undef accept
+#define accept qemu_accept_wrap
+int qemu_accept_wrap(int sockfd, struct sockaddr *addr,
+                     socklen_t *addrlen);
+
 #endif

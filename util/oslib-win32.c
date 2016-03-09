@@ -626,6 +626,8 @@ int qemu_socket_wrap(int domain, int type, int protocol)
     ret = socket(domain, type, protocol);
     if (ret < 0) {
         errno = socket_error();
+    } else {
+        qemu_set_cloexec(ret);
     }
     return ret;
 }
@@ -639,6 +641,8 @@ int qemu_accept_wrap(int sockfd, struct sockaddr *addr,
     ret = accept(sockfd, addr, addrlen);
     if (ret < 0) {
         errno = socket_error();
+    } else {
+        qemu_set_cloexec(ret);
     }
     return ret;
 }

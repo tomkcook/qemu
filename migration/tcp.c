@@ -62,7 +62,7 @@ static void tcp_accept_incoming_migration(void *opaque)
     int c;
 
     do {
-        c = qemu_accept(s, (struct sockaddr *)&addr, &addrlen);
+        c = accept(s, (struct sockaddr *)&addr, &addrlen);
     } while (c < 0 && errno == EINTR);
     qemu_set_fd_handler(s, NULL, NULL, NULL);
     close(s);

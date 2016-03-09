@@ -62,7 +62,7 @@ static void unix_accept_incoming_migration(void *opaque)
     int c, err;
 
     do {
-        c = qemu_accept(s, (struct sockaddr *)&addr, &addrlen);
+        c = accept(s, (struct sockaddr *)&addr, &addrlen);
         err = errno;
     } while (c < 0 && err == EINTR);
     qemu_set_fd_handler(s, NULL, NULL, NULL);

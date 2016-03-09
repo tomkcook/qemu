@@ -267,48 +267,6 @@ ssize_t qemu_write_full(int fd, const void *buf, size_t count)
     return total;
 }
 
-/*
- * Opens a socket with FD_CLOEXEC set
- */
-int qemu_socket(int domain, int type, int protocol)
-{
-    int ret;
-
-#ifdef SOCK_CLOEXEC
-    ret = socket(domain, type | SOCK_CLOEXEC, protocol);
-    if (ret != -1 || errno != EINVAL) {
-        return ret;
-    }
-#endif
-    ret = socket(domain, type, protocol);
-    if (ret >= 0) {
-        qemu_set_cloexec(ret);
-    }
-
-    return ret;
-}
-
-/*
- * Accept a connection and set FD_CLOEXEC
- */
-int qemu_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
-{
-    int ret;
-
-#ifdef CONFIG_ACCEPT4
-    ret = accept4(s, addr, addrlen, SOCK_CLOEXEC);
-    if (ret != -1 || errno != ENOSYS) {
-        return ret;
-    }
-#endif
-    ret = accept(s, addr, addrlen);
-    if (ret >= 0) {
-        qemu_set_cloexec(ret);
-    }
-
-    return ret;
-}
-
 void qemu_set_hw_version(const char *version)
 {
     hw_version = version;

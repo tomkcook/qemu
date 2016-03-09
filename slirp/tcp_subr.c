@@ -332,7 +332,7 @@ int tcp_fconnect(struct socket *so, unsigned short af)
   DEBUG_CALL("tcp_fconnect");
   DEBUG_ARG("so = %p", so);
 
-  ret = so->s = qemu_socket(af, SOCK_STREAM, 0);
+  ret = so->s = socket(af, SOCK_STREAM, 0);
   if (ret >= 0) {
     int opt, s=so->s;
     struct sockaddr_storage addr;

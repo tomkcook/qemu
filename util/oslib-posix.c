@@ -509,3 +509,42 @@ pid_t qemu_fork(Error **errp)
     }
     return pid;
 }
+
+
+#undef socket
+int qemu_socket_wrap(int domain, int type, int protocol)
+{
+    int ret;
+
+#ifdef SOCK_CLOEXEC
+    ret = socket(domain, type | SOCK_CLOEXEC, protocol);
+    if (ret != -1 || errno != EINVAL) {
+        return ret;
+    }
+#endif
+    ret = socket(domain, type, protocol);
+    if (ret >= 0) {
+        qemu_set_cloexec(ret);
+    }
+
+    return ret;
+}
+
+#undef accept
+int qemu_accept_wrap(int s, struct sockaddr *addr, socklen_t *addrlen)
+{
+    int ret;
+
+#ifdef CONFIG_ACCEPT4
+    ret = accept4(s, addr, addrlen, SOCK_CLOEXEC);
+    if (ret != -1 || errno != ENOSYS) {
+        return ret;
+    }
+#endif
+    ret = accept(s, addr, addrlen);
+    if (ret >= 0) {
+        qemu_set_cloexec(ret);
+    }
+
+    return ret;
+}
