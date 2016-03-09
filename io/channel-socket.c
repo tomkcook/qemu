@@ -82,11 +82,11 @@ qio_channel_socket_set_fd(QIOChannelSocket *sioc,
 
     if (getpeername(fd, (struct sockaddr *)&sioc->remoteAddr,
                     &sioc->remoteAddrLen) < 0) {
-        if (socket_error() == ENOTCONN) {
+        if (errno == ENOTCONN) {
             memset(&sioc->remoteAddr, 0, sizeof(sioc->remoteAddr));
             sioc->remoteAddrLen = sizeof(sioc->remoteAddr);
         } else {
-            error_setg_errno(errp, socket_error(),
+            error_setg_errno(errp, errno,
                              "Unable to query remote socket address");
             goto error;
         }
@@ -94,7 +94,7 @@ qio_channel_socket_set_fd(QIOChannelSocket *sioc,
 
     if (getsockname(fd, (struct sockaddr *)&sioc->localAddr,
                     &sioc->localAddrLen) < 0) {
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to query local socket address");
         goto error;
     }
@@ -356,7 +356,7 @@ qio_channel_socket_accept(QIOChannelSocket *ioc,
                       &cioc->remoteAddrLen);
     if (cioc->fd < 0) {
         trace_qio_channel_socket_accept_fail(ioc);
-        if (socket_error() == EINTR) {
+        if (errno == EINTR) {
             goto retry;
         }
         goto error;
@@ -364,7 +364,7 @@ qio_channel_socket_accept(QIOChannelSocket *ioc,
 
     if (getsockname(cioc->fd, (struct sockaddr *)&cioc->localAddr,
                     &cioc->localAddrLen) < 0) {
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to query local socket address");
         goto error;
     }
@@ -475,15 +475,15 @@ static ssize_t qio_channel_socket_readv(QIOChannel *ioc,
  retry:
     ret = recvmsg(sioc->fd, &msg, sflags);
     if (ret < 0) {
-        if (socket_error() == EAGAIN ||
-            socket_error() == EWOULDBLOCK) {
+        if (errno == EAGAIN ||
+            errno == EWOULDBLOCK) {
             return QIO_CHANNEL_ERR_BLOCK;
         }
-        if (socket_error() == EINTR) {
+        if (errno == EINTR) {
             goto retry;
         }
 
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to read from socket");
         return -1;
     }
@@ -535,14 +535,14 @@ static ssize_t qio_channel_socket_writev(QIOChannel *ioc,
  retry:
     ret = sendmsg(sioc->fd, &msg, 0);
     if (ret <= 0) {
-        if (socket_error() == EAGAIN ||
-            socket_error() == EWOULDBLOCK) {
+        if (errno == EAGAIN ||
+            errno == EWOULDBLOCK) {
             return QIO_CHANNEL_ERR_BLOCK;
         }
-        if (socket_error() == EINTR) {
+        if (errno == EINTR) {
             goto retry;
         }
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to write to socket");
         return -1;
     }
@@ -568,17 +568,17 @@ static ssize_t qio_channel_socket_readv(QIOChannel *ioc,
                    iov[i].iov_len,
                    0);
         if (ret < 0) {
-            if (socket_error() == EAGAIN ||
-                socket_error() == EWOULDBLOCK) {
+            if (errno == EAGAIN ||
+                errno == EWOULDBLOCK) {
                 if (done) {
                     return done;
                 } else {
                     return QIO_CHANNEL_ERR_BLOCK;
                 }
-            } else if (socket_error() == EINTR) {
+            } else if (errno == EINTR) {
                 goto retry;
             } else {
-                error_setg_errno(errp, socket_error(),
+                error_setg_errno(errp, errno,
                                  "Unable to read from socket");
                 return -1;
             }
@@ -611,17 +611,17 @@ static ssize_t qio_channel_socket_writev(QIOChannel *ioc,
                    iov[i].iov_len,
                    0);
         if (ret < 0) {
-            if (socket_error() == EAGAIN ||
-                socket_error() == EWOULDBLOCK) {
+            if (errno == EAGAIN ||
+                errno == EWOULDBLOCK) {
                 if (done) {
                     return done;
                 } else {
                     return QIO_CHANNEL_ERR_BLOCK;
                 }
-            } else if (socket_error() == EINTR) {
+            } else if (errno == EINTR) {
                 goto retry;
             } else {
-                error_setg_errno(errp, socket_error(),
+                error_setg_errno(errp, errno,
                                  "Unable to write to socket");
                 return -1;
             }
@@ -684,7 +684,7 @@ qio_channel_socket_close(QIOChannel *ioc,
 
     if (close(sioc->fd) < 0) {
         sioc->fd = -1;
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to close socket");
         return -1;
     }
@@ -714,7 +714,7 @@ qio_channel_socket_shutdown(QIOChannel *ioc,
     }
 
     if (shutdown(sioc->fd, sockhow) < 0) {
-        error_setg_errno(errp, socket_error(),
+        error_setg_errno(errp, errno,
                          "Unable to shutdown socket");
         return -1;
     }

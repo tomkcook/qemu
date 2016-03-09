@@ -124,13 +124,13 @@ void qemu_set_block(int fd)
 {
     unsigned long opt = 0;
     WSAEventSelect(fd, NULL, 0);
-    ioctlsocket(fd, FIONBIO, &opt);
+    ioctl(fd, FIONBIO, &opt);
 }
 
 void qemu_set_nonblock(int fd)
 {
     unsigned long opt = 1;
-    ioctlsocket(fd, FIONBIO, &opt);
+    ioctl(fd, FIONBIO, &opt);
     qemu_fd_register(fd);
 }
 
@@ -145,7 +145,7 @@ int socket_set_fast_reuse(int fd)
 }
 
 
-int socket_error(void)
+static int socket_error(void)
 {
     switch (WSAGetLastError()) {
     case 0:
