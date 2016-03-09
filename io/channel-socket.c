@@ -55,6 +55,10 @@ qio_channel_socket_new(void)
     ioc = QIO_CHANNEL(sioc);
     ioc->features |= (1 << QIO_CHANNEL_FEATURE_SHUTDOWN);
 
+#ifdef WIN32
+    ioc->event = CreateEvent(NULL, FALSE, FALSE, NULL);
+#endif
+
     trace_qio_channel_socket_new(sioc);
 
     return sioc;
@@ -340,6 +344,11 @@ qio_channel_socket_accept(QIOChannelSocket *ioc,
     cioc->fd = -1;
     cioc->remoteAddrLen = sizeof(ioc->remoteAddr);
     cioc->localAddrLen = sizeof(ioc->localAddr);
+
+#ifdef WIN32
+    ((QIOChannel *)cioc)->event = CreateEvent(NULL, FALSE, FALSE, NULL);
+#endif
+
 
  retry:
     trace_qio_channel_socket_accept(ioc);
