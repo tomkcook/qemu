@@ -540,15 +540,15 @@
 # @auto-converge: If enabled, QEMU will automatically throttle down the guest
 #          to speed up convergence of RAM migration. (since 1.6)
 #
-# @x-postcopy-ram: Start executing on the migration target before all of RAM has
+# @postcopy-ram: Start executing on the migration target before all of RAM has
 #          been migrated, pulling the remaining pages along as needed. NOTE: If
-#          the migration fails during postcopy the VM will fail.  (since 2.5)
+#          the migration fails during postcopy the VM will fail.  (since 2.6)
 #
 # Since: 1.2
 ##
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
-           'compress', 'events', 'x-postcopy-ram'] }
+           'compress', 'events', 'postcopy-ram'] }
 
 ##
 # @MigrationCapabilityStatus
@@ -705,7 +705,7 @@
 # @migrate-start-postcopy
 #
 # Followup to a migration command to switch the migration to postcopy mode.
-# The x-postcopy-ram capability must be set before the original migration
+# The postcopy-ram capability must be set before the original migration
 # command.
 #
 # Since: 2.5
@@ -2451,6 +2451,14 @@
 # @dnssearch: #optional list of DNS suffixes to search, passed as DHCP option
 #             to the guest
 #
+# @ip6-prefix: #optional IPv6 network prefix (default is fec0::) (since 2.6)
+#
+# @ip6-prefixlen: #optional IPv6 network prefix length (default is 64) (since 2.6)
+#
+# @ip6-host: #optional guest-visible IPv6 address of the host (since 2.6)
+#
+# @ip6-dns: #optional guest-visible IPv6 address of the virtual nameserver (since 2.6)
+#
 # @smb: #optional root directory of the built-in SMB server
 #
 # @smbserver: #optional IP address of the built-in SMB server
@@ -2474,6 +2482,10 @@
     '*dhcpstart': 'str',
     '*dns':       'str',
     '*dnssearch': ['String'],
+    '*ip6-prefix':      'str',
+    '*ip6-prefixlen':   'int',
+    '*ip6-host':        'str',
+    '*ip6-dns':         'str',
     '*smb':       'str',
     '*smbserver': 'str',
     '*hostfwd':   ['String'],

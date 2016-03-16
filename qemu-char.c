@@ -37,6 +37,7 @@
 #include "io/channel-socket.h"
 #include "io/channel-file.h"
 #include "io/channel-tls.h"
+#include "sysemu/replay.h"
 
 #include <zlib.h>
 
@@ -234,30 +235,15 @@ static void qemu_chr_fe_write_log(CharDriverState *s,
     }
 }
 
-int qemu_chr_fe_write(CharDriverState *s, const uint8_t *buf, int len)
+static int qemu_chr_fe_write_buffer(CharDriverState *s, const uint8_t *buf, int len, int *offset)
 {
-    int ret;
-
-    qemu_mutex_lock(&s->chr_write_lock);
-    ret = s->chr_write(s, buf, len);
-
-    if (ret > 0) {
-        qemu_chr_fe_write_log(s, buf, ret);
-    }
-
-    qemu_mutex_unlock(&s->chr_write_lock);
-    return ret;
-}
-
-int qemu_chr_fe_write_all(CharDriverState *s, const uint8_t *buf, int len)
-{
-    int offset = 0;
     int res = 0;
+    *offset = 0;
 
     qemu_mutex_lock(&s->chr_write_lock);
-    while (offset < len) {
+    while (*offset < len) {
         do {
-            res = s->chr_write(s, buf + offset, len - offset);
+            res = s->chr_write(s, buf + *offset, len - *offset);
             if (res == -1 && errno == EAGAIN) {
                 g_usleep(100);
             }
@@ -267,13 +253,61 @@ int qemu_chr_fe_write_all(CharDriverState *s, const uint8_t *buf, int len)
             break;
         }
 
-        offset += res;
+        *offset += res;
     }
-    if (offset > 0) {
-        qemu_chr_fe_write_log(s, buf, offset);
+    if (*offset > 0) {
+        qemu_chr_fe_write_log(s, buf, *offset);
+    }
+    qemu_mutex_unlock(&s->chr_write_lock);
+
+    return res;
+}
+
+int qemu_chr_fe_write(CharDriverState *s, const uint8_t *buf, int len)
+{
+    int ret;
+
+    if (s->replay && replay_mode == REPLAY_MODE_PLAY) {
+        int offset;
+        replay_char_write_event_load(&ret, &offset);
+        assert(offset <= len);
+        qemu_chr_fe_write_buffer(s, buf, offset, &offset);
+        return ret;
+    }
+
+    qemu_mutex_lock(&s->chr_write_lock);
+    ret = s->chr_write(s, buf, len);
+
+    if (ret > 0) {
+        qemu_chr_fe_write_log(s, buf, ret);
     }
 
     qemu_mutex_unlock(&s->chr_write_lock);
+    
+    if (s->replay && replay_mode == REPLAY_MODE_RECORD) {
+        replay_char_write_event_save(ret, ret < 0 ? 0 : ret);
+    }
+    
+    return ret;
+}
+
+int qemu_chr_fe_write_all(CharDriverState *s, const uint8_t *buf, int len)
+{
+    int offset;
+    int res;
+
+    if (s->replay && replay_mode == REPLAY_MODE_PLAY) {
+        replay_char_write_event_load(&res, &offset);
+        assert(offset <= len);
+        qemu_chr_fe_write_buffer(s, buf, offset, &offset);
+        return res;
+    }
+
+    res = qemu_chr_fe_write_buffer(s, buf, len, &offset);
+
+    if (s->replay && replay_mode == REPLAY_MODE_RECORD) {
+        replay_char_write_event_save(res, offset);
+    }
 
     if (res < 0) {
         return res;
@@ -289,6 +323,10 @@ int qemu_chr_fe_read_all(CharDriverState *s, uint8_t *buf, int len)
     if (!s->chr_sync_read) {
         return 0;
     }
+    
+    if (s->replay && replay_mode == REPLAY_MODE_PLAY) {
+        return replay_char_read_all_load(buf);
+    }
 
     while (offset < len) {
         do {
@@ -303,6 +341,9 @@ int qemu_chr_fe_read_all(CharDriverState *s, uint8_t *buf, int len)
         }
 
         if (res < 0) {
+            if (s->replay && replay_mode == REPLAY_MODE_RECORD) {
+                replay_char_read_all_save_error(res);
+            }
             return res;
         }
 
@@ -313,14 +354,22 @@ int qemu_chr_fe_read_all(CharDriverState *s, uint8_t *buf, int len)
         }
     }
 
+    if (s->replay && replay_mode == REPLAY_MODE_RECORD) {
+        replay_char_read_all_save_buf(buf, offset);
+    }
     return offset;
 }
 
 int qemu_chr_fe_ioctl(CharDriverState *s, int cmd, void *arg)
 {
-    if (!s->chr_ioctl)
-        return -ENOTSUP;
-    return s->chr_ioctl(s, cmd, arg);
+    int res;
+    if (!s->chr_ioctl || s->replay) {
+        res = -ENOTSUP;
+    } else {
+        res = s->chr_ioctl(s, cmd, arg);
+    }
+
+    return res;
 }
 
 int qemu_chr_be_can_write(CharDriverState *s)
@@ -330,17 +379,35 @@ int qemu_chr_be_can_write(CharDriverState *s)
     return s->chr_can_read(s->handler_opaque);
 }
 
-void qemu_chr_be_write(CharDriverState *s, uint8_t *buf, int len)
+void qemu_chr_be_write_impl(CharDriverState *s, uint8_t *buf, int len)
 {
     if (s->chr_read) {
         s->chr_read(s->handler_opaque, buf, len);
     }
 }
 
+void qemu_chr_be_write(CharDriverState *s, uint8_t *buf, int len)
+{
+    if (s->replay) {
+        if (replay_mode == REPLAY_MODE_PLAY) {
+            return;
+        }
+        replay_chr_be_write(s, buf, len);
+    } else {
+        qemu_chr_be_write_impl(s, buf, len);
+    }
+}
+
 int qemu_chr_fe_get_msgfd(CharDriverState *s)
 {
     int fd;
-    return (qemu_chr_fe_get_msgfds(s, &fd, 1) == 1) ? fd : -1;
+    int res = (qemu_chr_fe_get_msgfds(s, &fd, 1) == 1) ? fd : -1;
+    if (s->replay) {
+        fprintf(stderr,
+                "Replay: get msgfd is not supported for serial devices yet\n");
+        exit(1);
+    }
+    return res;
 }
 
 int qemu_chr_fe_get_msgfds(CharDriverState *s, int *fds, int len)
@@ -2697,6 +2764,7 @@ static int tcp_set_msgfds(CharDriverState *chr, int *fds, int num)
     }
     /* clear old pending fd array */
     g_free(s->write_msgfds);
+    s->write_msgfds = NULL;
 
     if (num) {
         s->write_msgfds = g_new(int, num);
@@ -2768,11 +2836,16 @@ static void tcp_chr_disconnect(CharDriverState *chr)
 {
     TCPCharDriver *s = chr->opaque;
 
+    if (!s->connected) {
+        return;
+    }
+
     s->connected = 0;
     if (s->listen_ioc) {
         s->listen_tag = qio_channel_add_watch(
             QIO_CHANNEL(s->listen_ioc), G_IO_IN, tcp_chr_accept, chr, NULL);
     }
+    tcp_set_msgfds(chr, NULL, 0);
     remove_fd_in_watch(chr);
     object_unref(OBJECT(s->sioc));
     s->sioc = NULL;
@@ -3091,20 +3164,6 @@ static void tcp_chr_close(CharDriverState *chr)
     qemu_chr_be_event(chr, CHR_EVENT_CLOSED);
 }
 
-static void qemu_chr_finish_socket_connection(CharDriverState *chr,
-                                              QIOChannelSocket *sioc)
-{
-    TCPCharDriver *s = chr->opaque;
-
-    if (s->is_listen) {
-        s->listen_ioc = sioc;
-        s->listen_tag = qio_channel_add_watch(
-            QIO_CHANNEL(s->listen_ioc), G_IO_IN, tcp_chr_accept, chr, NULL);
-    } else {
-        tcp_chr_new_client(chr, sioc);
-        object_unref(OBJECT(sioc));
-    }
-}
 
 static void qemu_chr_socket_connected(Object *src, Error *err, void *opaque)
 {
@@ -3119,36 +3178,10 @@ static void qemu_chr_socket_connected(Object *src, Error *err, void *opaque)
     }
 
     s->connect_err_reported = false;
-    qemu_chr_finish_socket_connection(chr, sioc);
-}
-
-static bool qemu_chr_open_socket_fd(CharDriverState *chr, Error **errp)
-{
-    TCPCharDriver *s = chr->opaque;
-    QIOChannelSocket *sioc = qio_channel_socket_new();
-
-    if (s->is_listen) {
-        if (qio_channel_socket_listen_sync(sioc, s->addr, errp) < 0) {
-            goto fail;
-        }
-        qemu_chr_finish_socket_connection(chr, sioc);
-    } else if (s->reconnect_time) {
-        qio_channel_socket_connect_async(sioc, s->addr,
-                                         qemu_chr_socket_connected,
-                                         chr, NULL);
-    } else {
-        if (qio_channel_socket_connect_sync(sioc, s->addr, errp) < 0) {
-            goto fail;
-        }
-        qemu_chr_finish_socket_connection(chr, sioc);
-    }
-
-    return true;
-
- fail:
+    tcp_chr_new_client(chr, sioc);
     object_unref(OBJECT(sioc));
-    return false;
 }
+
 
 /*********************************************************/
 /* Ring buffer chardev */
@@ -3855,7 +3888,8 @@ err:
     return NULL;
 }
 
-CharDriverState *qemu_chr_new(const char *label, const char *filename, void (*init)(struct CharDriverState *s))
+CharDriverState *qemu_chr_new_noreplay(const char *label, const char *filename,
+                                       void (*init)(struct CharDriverState *s))
 {
     const char *p;
     CharDriverState *chr;
@@ -3877,6 +3911,21 @@ CharDriverState *qemu_chr_new(const char *label, const char *filename, void (*in
     if (chr && qemu_opt_get_bool(opts, "mux", 0)) {
         qemu_chr_fe_claim_no_fail(chr);
         monitor_init(chr, MONITOR_USE_READLINE);
+    }
+    return chr;
+}
+
+CharDriverState *qemu_chr_new(const char *label, const char *filename, void (*init)(struct CharDriverState *s))
+{
+    CharDriverState *chr;
+    chr = qemu_chr_new_noreplay(label, filename, init);
+    if (chr) {
+        chr->replay = replay_mode != REPLAY_MODE_NONE;
+        if (chr->replay && chr->chr_ioctl) {
+            fprintf(stderr,
+                    "Replay: ioctl is not supported for serial devices yet\n");
+        }
+        replay_register_char_driver(chr);
     }
     return chr;
 }
@@ -4258,19 +4307,11 @@ static CharDriverState *qmp_chardev_open_parallel(const char *id,
 
 #endif /* WIN32 */
 
-static void socket_try_connect(CharDriverState *chr)
-{
-    Error *err = NULL;
-
-    if (!qemu_chr_open_socket_fd(chr, &err)) {
-        check_report_connect_error(chr, err);
-    }
-}
-
 static gboolean socket_reconnect_timeout(gpointer opaque)
 {
     CharDriverState *chr = opaque;
     TCPCharDriver *s = chr->opaque;
+    QIOChannelSocket *sioc;
 
     s->reconnect_timer = 0;
 
@@ -4278,7 +4319,10 @@ static gboolean socket_reconnect_timeout(gpointer opaque)
         return false;
     }
 
-    socket_try_connect(chr);
+    sioc = qio_channel_socket_new();
+    qio_channel_socket_connect_async(sioc, s->addr,
+                                     qemu_chr_socket_connected,
+                                     chr, NULL);
 
     return false;
 }
@@ -4298,6 +4342,7 @@ static CharDriverState *qmp_chardev_open_socket(const char *id,
     bool is_waitconnect = sock->has_wait    ? sock->wait    : false;
     int64_t reconnect   = sock->has_reconnect ? sock->reconnect : 0;
     ChardevCommon *common = qapi_ChardevSocket_base(sock);
+    QIOChannelSocket *sioc = NULL;
 
     chr = qemu_chr_alloc(common, errp);
     if (!chr) {
@@ -4367,22 +4412,40 @@ static CharDriverState *qmp_chardev_open_socket(const char *id,
         s->reconnect_time = reconnect;
     }
 
+    sioc = qio_channel_socket_new();
     if (s->reconnect_time) {
-        socket_try_connect(chr);
-    } else if (!qemu_chr_open_socket_fd(chr, errp)) {
-        goto error;
-    }
-
-    if (is_listen && is_waitconnect) {
-        fprintf(stderr, "QEMU waiting for connection on: %s\n",
-                chr->filename);
-        tcp_chr_accept(QIO_CHANNEL(s->listen_ioc), G_IO_IN, chr);
+        qio_channel_socket_connect_async(sioc, s->addr,
+                                         qemu_chr_socket_connected,
+                                         chr, NULL);
+    } else if (s->is_listen) {
+        if (qio_channel_socket_listen_sync(sioc, s->addr, errp) < 0) {
+            goto error;
+        }
+        s->listen_ioc = sioc;
+        if (is_waitconnect) {
+            fprintf(stderr, "QEMU waiting for connection on: %s\n",
+                    chr->filename);
+            tcp_chr_accept(QIO_CHANNEL(s->listen_ioc), G_IO_IN, chr);
+        }
         qio_channel_set_blocking(QIO_CHANNEL(s->listen_ioc), false, NULL);
+        if (!s->ioc) {
+            s->listen_tag = qio_channel_add_watch(
+                QIO_CHANNEL(s->listen_ioc), G_IO_IN, tcp_chr_accept, chr, NULL);
+        }
+    } else {
+        if (qio_channel_socket_connect_sync(sioc, s->addr, errp) < 0) {
+            goto error;
+        }
+        tcp_chr_new_client(chr, sioc);
+        object_unref(OBJECT(sioc));
     }
 
     return chr;
 
  error:
+    if (sioc) {
+        object_unref(OBJECT(sioc));
+    }
     if (s->tls_creds) {
         object_unref(OBJECT(s->tls_creds));
     }
@@ -4473,6 +4536,11 @@ void qmp_chardev_remove(const char *id, Error **errp)
     if (chr->chr_can_read || chr->chr_read ||
         chr->chr_event || chr->handler_opaque) {
         error_setg(errp, "Chardev '%s' is busy", id);
+        return;
+    }
+    if (chr->replay) {
+        error_setg(errp,
+            "Chardev '%s' cannot be unplugged in record/replay mode", id);
         return;
     }
     qemu_chr_delete(chr);

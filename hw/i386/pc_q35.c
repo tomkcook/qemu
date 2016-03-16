@@ -39,6 +39,7 @@
 #include "hw/kvm/clock.h"
 #include "hw/pci-host/q35.h"
 #include "exec/address-spaces.h"
+#include "hw/i386/pc.h"
 #include "hw/i386/ich9.h"
 #include "hw/smbios/smbios.h"
 #include "hw/ide/pci.h"
@@ -61,6 +62,7 @@ static void pc_q35_init(MachineState *machine)
     PCIDevice *lpc;
     BusState *idebus[MAX_SATA_PORTS];
     ISADevice *rtc_state;
+    MemoryRegion *system_io = get_system_io();
     MemoryRegion *pci_memory;
     MemoryRegion *rom_memory;
     MemoryRegion *ram_memory;
@@ -145,7 +147,7 @@ static void pc_q35_init(MachineState *machine)
 
     /* irq lines */
     gsi_state = g_malloc0(sizeof(*gsi_state));
-    if (kvm_irqchip_in_kernel()) {
+    if (kvm_ioapic_in_kernel()) {
         kvm_pc_setup_irq_routing(pcmc->pci_enabled);
         gsi = qemu_allocate_irqs(kvm_pc_gsi_handler, gsi_state,
                                  GSI_NUM_PINS);
@@ -160,7 +162,7 @@ static void pc_q35_init(MachineState *machine)
     q35_host->mch.ram_memory = ram_memory;
     q35_host->mch.pci_address_space = pci_memory;
     q35_host->mch.system_memory = get_system_memory();
-    q35_host->mch.address_space_io = get_system_io();
+    q35_host->mch.address_space_io = system_io;
     q35_host->mch.below_4g_mem_size = pcms->below_4g_mem_size;
     q35_host->mch.above_4g_mem_size = pcms->above_4g_mem_size;
     /* pci */
@@ -192,7 +194,7 @@ static void pc_q35_init(MachineState *machine)
     /*end early*/
     isa_bus_irqs(isa_bus, gsi);
 
-    if (kvm_irqchip_in_kernel()) {
+    if (kvm_pic_in_kernel()) {
         i8259 = kvm_i8259_init(isa_bus);
     } else if (xen_enabled()) {
         i8259 = xen_interrupt_controller_init();
@@ -250,6 +252,11 @@ static void pc_q35_init(MachineState *machine)
     pc_nic_init(isa_bus, host_bus);
     if (pcmc->pci_enabled) {
         pc_pci_device_init(host_bus);
+    }
+
+    if (pcms->acpi_nvdimm_state.is_enabled) {
+        nvdimm_init_acpi_state(&pcms->acpi_nvdimm_state, system_io,
+                               pcms->fw_cfg, OBJECT(pcms));
     }
 }
 

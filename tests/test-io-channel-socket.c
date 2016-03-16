@@ -22,66 +22,77 @@
 #include "io/channel-socket.h"
 #include "io/channel-util.h"
 #include "io-channel-helpers.h"
-#ifdef HAVE_IFADDRS_H
-#include <ifaddrs.h>
+
+#ifndef AI_ADDRCONFIG
+# define AI_ADDRCONFIG 0
 #endif
+#ifndef AI_V4MAPPED
+# define AI_V4MAPPED 0
+#endif
+#ifndef EAI_ADDRFAMILY
+# define EAI_ADDRFAMILY 0
+#endif
+
+static int check_bind(const char *hostname, bool *has_proto)
+{
+    int fd = -1;
+    struct addrinfo ai, *res = NULL;
+    int rc;
+    int ret = -1;
+
+    memset(&ai, 0, sizeof(ai));
+    ai.ai_flags = AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+    ai.ai_family = AF_UNSPEC;
+    ai.ai_socktype = SOCK_STREAM;
+
+    /* lookup */
+    rc = getaddrinfo(hostname, NULL, &ai, &res);
+    if (rc != 0) {
+        if (rc == EAI_ADDRFAMILY ||
+            rc == EAI_FAMILY) {
+            *has_proto = false;
+            goto done;
+        }
+        goto cleanup;
+    }
+
+    fd = qemu_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) {
+        goto cleanup;
+    }
+
+    if (bind(fd, res->ai_addr, res->ai_addrlen) < 0) {
+        if (errno == EADDRNOTAVAIL) {
+            *has_proto = false;
+            goto done;
+        }
+        goto cleanup;
+    }
+
+    *has_proto = true;
+ done:
+    ret = 0;
+
+ cleanup:
+    if (fd != -1) {
+        close(fd);
+    }
+    if (res) {
+        freeaddrinfo(res);
+    }
+    return ret;
+}
 
 static int check_protocol_support(bool *has_ipv4, bool *has_ipv6)
 {
-#ifdef HAVE_IFADDRS_H
-    struct ifaddrs *ifaddr = NULL, *ifa;
-    struct addrinfo hints = { 0 };
-    struct addrinfo *ai = NULL;
-    int gaierr;
-
-    *has_ipv4 = *has_ipv6 = false;
-
-    if (getifaddrs(&ifaddr) < 0) {
-        g_printerr("Failed to lookup interface addresses: %s\n",
-                   strerror(errno));
+    if (check_bind("127.0.0.1", has_ipv4) < 0) {
+        return -1;
+    }
+    if (check_bind("::1", has_ipv6) < 0) {
         return -1;
     }
 
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if (!ifa->ifa_addr) {
-            continue;
-        }
-
-        if (ifa->ifa_addr->sa_family == AF_INET) {
-            *has_ipv4 = true;
-        }
-        if (ifa->ifa_addr->sa_family == AF_INET6) {
-            *has_ipv6 = true;
-        }
-    }
-
-    freeifaddrs(ifaddr);
-
-    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
-    hints.ai_family = AF_INET6;
-    hints.ai_socktype = SOCK_STREAM;
-
-    gaierr = getaddrinfo("::1", NULL, &hints, &ai);
-    if (gaierr != 0) {
-        if (gaierr == EAI_ADDRFAMILY ||
-            gaierr == EAI_FAMILY ||
-            gaierr == EAI_NONAME) {
-            *has_ipv6 = false;
-        } else {
-            g_printerr("Failed to resolve ::1 address: %s\n",
-                       gai_strerror(gaierr));
-            return -1;
-        }
-    }
-
-    freeaddrinfo(ai);
-
     return 0;
-#else
-    *has_ipv4 = *has_ipv6 = false;
-
-    return -1;
-#endif
 }
 
 
@@ -131,6 +142,7 @@ static void test_io_channel_setup_sync(SocketAddress *listen_addr,
         QIO_CHANNEL_SOCKET(*src), connect_addr, &error_abort);
     qio_channel_set_delay(*src, false);
 
+    qio_channel_wait(QIO_CHANNEL(lioc), G_IO_IN);
     *dst = QIO_CHANNEL(qio_channel_socket_accept(lioc, &error_abort));
     g_assert(*dst);
 
@@ -198,6 +210,7 @@ static void test_io_channel_setup_async(SocketAddress *listen_addr,
 
     g_assert(!data.err);
 
+    qio_channel_wait(QIO_CHANNEL(lioc), G_IO_IN);
     *dst = QIO_CHANNEL(qio_channel_socket_accept(lioc, &error_abort));
     g_assert(*dst);
 
@@ -487,9 +500,19 @@ static void test_io_channel_ipv4_fd(void)
 {
     QIOChannel *ioc;
     int fd = -1;
+    struct sockaddr_in sa = {
+        .sin_family = AF_INET,
+        .sin_addr = {
+            .s_addr =  htonl(INADDR_LOOPBACK),
+        }
+        /* Leave port unset for auto-assign */
+    };
+    socklen_t salen = sizeof(sa);
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
     g_assert_cmpint(fd, >, -1);
+
+    g_assert_cmpint(bind(fd, (struct sockaddr *)&sa, salen), ==, 0);
 
     ioc = qio_channel_new_fd(fd, &error_abort);
 
@@ -506,6 +529,7 @@ int main(int argc, char **argv)
     bool has_ipv4, has_ipv6;
 
     module_call_init(MODULE_INIT_QOM);
+    socket_init();
 
     g_test_init(&argc, &argv, NULL);
 
