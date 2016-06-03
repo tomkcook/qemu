@@ -20,7 +20,7 @@
 #define SMPBOOT_ADDR    0x300 /* this should leave enough space for ATAGS */
 #define MVBAR_ADDR      0x400 /* secure vectors */
 #define BOARDSETUP_ADDR (MVBAR_ADDR + 0x20) /* board setup code */
-#define FIRMWARE_ADDR   0x8000 /* Pi loads kernel.img here by default */
+#define FIRMWARE_ADDR   0 // 0x8000 /* Pi loads kernel.img here by default */
 
 /* Table of Linux board IDs for different Pi versions */
 static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
@@ -81,6 +81,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     binfo.board_id = raspi_boardid[version];
     binfo.ram_size = ram_size;
     binfo.nb_cpus = smp_cpus;
+if (0) {
     binfo.board_setup_addr = BOARDSETUP_ADDR;
     binfo.write_board_setup = write_board_setup;
     binfo.secure_board_setup = true;
@@ -92,6 +93,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
         binfo.write_secondary_boot = write_smpboot;
         binfo.secondary_cpu_reset_hook = reset_secondary;
     }
+}
 
     /* If the user specified a "firmware" image (e.g. UEFI), we bypass
      * the normal Linux boot process
