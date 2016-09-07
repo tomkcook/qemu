@@ -2,16 +2,16 @@
 #define QEMU_HW_SCSI_H
 
 #include "hw/qdev.h"
-#include "qemu/typedefs.h"
 #include "hw/block/block.h"
 #include "sysemu/sysemu.h"
 #include "qemu/notify.h"
 
 #define MAX_SCSI_DEVS	255
 
-#define SCSI_CMD_BUF_SIZE     16
-#define SCSI_SENSE_LEN      18
-#define SCSI_INQUIRY_LEN    36
+#define SCSI_CMD_BUF_SIZE      16
+#define SCSI_SENSE_LEN         18
+#define SCSI_SENSE_LEN_SCANNER 32
+#define SCSI_INQUIRY_LEN       36
 
 typedef struct SCSIBus SCSIBus;
 typedef struct SCSIBusInfo SCSIBusInfo;

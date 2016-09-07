@@ -18,11 +18,9 @@
  *
  */
 
-#ifndef QCRYPTO_INIT_H__
-#define QCRYPTO_INIT_H__
-
-#include "qemu-common.h"
+#ifndef QCRYPTO_INIT_H
+#define QCRYPTO_INIT_H
 
 int qcrypto_init(Error **errp);
 
-#endif /* QCRYPTO_INIT_H__ */
+#endif /* QCRYPTO_INIT_H */

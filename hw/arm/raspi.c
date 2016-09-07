@@ -9,6 +9,9 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu-common.h"
+#include "cpu.h"
 #include "hw/arm/bcm2835.h"
 #include "hw/arm/bcm2836.h"
 #include "qemu/error-report.h"
@@ -31,7 +34,7 @@ static const int raspi_boardid[] = {[1] = 0xc42, [2] = 0xc43};
 static const uint32_t raspi_boardrev[] = {[1] = 0x10, [2] = 0xa21041};
 
 typedef struct RasPiState {
-    Object *soc;
+    BCM2836State soc;
     MemoryRegion ram;
 } RasPiState;
 
@@ -116,8 +119,7 @@ static void setup_boot(MachineState *machine, int version, size_t ram_size)
     arm_load_kernel(ARM_CPU(first_cpu), &binfo);
 }
 
-static void raspi_machine_init(MachineState *machine, int version,
-                               const char *soc_type)
+static void raspi2_init(MachineState *machine)
 {
     RasPiState *s = g_new0(RasPiState, 1);
     uint32_t vcram_size;
@@ -126,9 +128,9 @@ static void raspi_machine_init(MachineState *machine, int version,
     BusState *bus;
     DeviceState *carddev;
 
-    /* Initialise the relevant SOC */
-    s->soc = object_new(soc_type);
-    object_property_add_child(OBJECT(machine), "soc", s->soc, &error_abort);
+    object_initialize(&s->soc, sizeof(s->soc), TYPE_BCM2836);
+    object_property_add_child(OBJECT(machine), "soc", OBJECT(&s->soc),
+                              &error_abort);
 
     /* Allocate and map RAM */
     memory_region_allocate_system_memory(&s->ram, OBJECT(machine), "ram",
@@ -137,22 +139,18 @@ static void raspi_machine_init(MachineState *machine, int version,
     memory_region_add_subregion_overlap(get_system_memory(), 0, &s->ram, 0);
 
     /* Setup the SOC */
-    object_property_add_const_link(s->soc, "ram", OBJECT(&s->ram),
+    object_property_add_const_link(OBJECT(&s->soc), "ram", OBJECT(&s->ram),
                                    &error_abort);
-
-    object_property_set_int(s->soc, raspi_boardrev[version], "board-rev",
+    object_property_set_int(OBJECT(&s->soc), smp_cpus, "enabled-cpus",
                             &error_abort);
-
-    if (version == 2) {
-        object_property_set_int(s->soc, smp_cpus, "enabled-cpus", &error_abort);
-    }
-
-    object_property_set_bool(s->soc, true, "realized", &error_abort);
+    object_property_set_int(OBJECT(&s->soc), 0xa21041, "board-rev",
+                            &error_abort);
+    object_property_set_bool(OBJECT(&s->soc), true, "realized", &error_abort);
 
     /* Create and plug in the SD cards */
     di = drive_get_next(IF_SD);
     blk = di ? blk_by_legacy_dinfo(di) : NULL;
-    bus = qdev_get_child_bus(DEVICE(s->soc), "sd-bus");
+    bus = qdev_get_child_bus(DEVICE(&s->soc), "sd-bus");
     if (bus == NULL) {
         error_report("No SD bus found in SOC object");
         exit(1);
@@ -161,37 +159,19 @@ static void raspi_machine_init(MachineState *machine, int version,
     qdev_prop_set_drive(carddev, "drive", blk, &error_fatal);
     object_property_set_bool(OBJECT(carddev), true, "realized", &error_fatal);
 
-    vcram_size = object_property_get_int(s->soc, "vcram-size", &error_abort);
-    setup_boot(machine, version, machine->ram_size - vcram_size);
+    vcram_size = object_property_get_int(OBJECT(&s->soc), "vcram-size",
+                                         &error_abort);
+    setup_boot(machine, 2, machine->ram_size - vcram_size);
 }
 
-static void raspi1_init(MachineState *machine)
+static void raspi2_machine_init(MachineClass *mc)
 {
-    raspi_machine_init(machine, 1, TYPE_BCM2835);
-}
-
-static void raspi2_init(MachineState *machine)
-{
-    raspi_machine_init(machine, 2, TYPE_BCM2836);
-}
-
-static void raspi1_machine_init(MachineClass *mc)
-{
-    mc->desc = "Raspberry Pi";
-    mc->init = raspi1_init;
+    mc->desc = "Raspberry Pi 2";
+    mc->init = raspi2_init;
     mc->block_default_type = IF_SD;
     mc->no_parallel = 1;
     mc->no_floppy = 1;
     mc->no_cdrom = 1;
-    mc->default_ram_size = 512 * 1024 * 1024;
-};
-DEFINE_MACHINE("raspi", raspi1_machine_init)
-
-static void raspi2_machine_init(MachineClass *mc)
-{
-    raspi1_machine_init(mc);
-    mc->desc = "Raspberry Pi 2";
-    mc->init = raspi2_init;
     mc->max_cpus = BCM2836_NCPUS;
     mc->default_ram_size = 1024 * 1024 * 1024;
 };

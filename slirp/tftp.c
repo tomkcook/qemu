@@ -23,8 +23,9 @@
  */
 
 #include "qemu/osdep.h"
-#include <slirp.h>
+#include "slirp.h"
 #include "qemu-common.h"
+#include "qemu/cutils.h"
 
 static inline int tftp_session_in_use(struct tftp_session *spt)
 {
@@ -207,8 +208,6 @@ static void tftp_send_error(struct tftp_session *spt,
     goto out;
   }
 
-  memset(m->m_data, 0, m->m_size);
-
   tp = tftp_prep_mbuf_data(spt, m);
 
   tp->tp_op = htons(TFTP_ERROR);
@@ -235,8 +234,6 @@ static void tftp_send_next_block(struct tftp_session *spt,
   if (!m) {
     return;
   }
-
-  memset(m->m_data, 0, m->m_size);
 
   tp = tftp_prep_mbuf_data(spt, m);
 

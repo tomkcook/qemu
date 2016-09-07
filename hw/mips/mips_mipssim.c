@@ -25,6 +25,9 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu-common.h"
+#include "cpu.h"
 #include "hw/hw.h"
 #include "hw/mips/mips.h"
 #include "hw/mips/cpudevs.h"
@@ -213,8 +216,8 @@ mips_mipssim_init(MachineState *machine)
     }
 
     /* Init CPU internal devices. */
-    cpu_mips_irq_init_cpu(env);
-    cpu_mips_clock_init(env);
+    cpu_mips_irq_init_cpu(cpu);
+    cpu_mips_clock_init(cpu);
 
     /* Register 64 KB of ISA IO space at 0x1fd00000. */
     memory_region_init_alias(isa, NULL, "isa_mmio",

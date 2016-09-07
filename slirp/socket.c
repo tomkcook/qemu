@@ -7,7 +7,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu-common.h"
-#include <slirp.h>
+#include "slirp.h"
 #include "ip_icmp.h"
 #ifdef __sun__
 #include <sys/filio.h>
@@ -176,9 +176,24 @@ soread(struct socket *so)
 		if (nn < 0 && (errno == EINTR || errno == EAGAIN))
 			return 0;
 		else {
+			int err;
+			socklen_t slen = sizeof err;
+
+			err = errno;
+			if (nn == 0) {
+				getsockopt(so->s, SOL_SOCKET, SO_ERROR,
+					   &err, &slen);
+			}
+
 			DEBUG_MISC((dfd, " --- soread() disconnected, nn = %d, errno = %d-%s\n", nn, errno,strerror(errno)));
 			sofcantrcvmore(so);
-			tcp_sockclosed(sototcpcb(so));
+
+			if (err == ECONNRESET || err == ECONNREFUSED
+			    || err == ENOTCONN || err == EPIPE) {
+				tcp_drop(sototcpcb(so), err);
+			} else {
+				tcp_sockclosed(sototcpcb(so));
+			}
 			return -1;
 		}
 	}
@@ -191,7 +206,7 @@ soread(struct socket *so)
 	 * We don't test for <= 0 this time, because there legitimately
 	 * might not be any more data (since the socket is non-blocking),
 	 * a close will be detected on next iteration.
-	 * A return of -1 wont (shouldn't) happen, since it didn't happen above
+	 * A return of -1 won't (shouldn't) happen, since it didn't happen above
 	 */
 	if (n == 2 && nn == iov[0].iov_len) {
             int ret;
@@ -260,10 +275,11 @@ err:
  * so when OOB data arrives, we soread() it and everything
  * in the send buffer is sent as urgent data
  */
-void
+int
 sorecvoob(struct socket *so)
 {
 	struct tcpcb *tp = sototcpcb(so);
+	int ret;
 
 	DEBUG_CALL("sorecvoob");
 	DEBUG_ARG("so = %p", so);
@@ -276,11 +292,15 @@ sorecvoob(struct socket *so)
 	 * urgent data, or the read() doesn't return all the
 	 * urgent data.
 	 */
-	soread(so);
-	tp->snd_up = tp->snd_una + so->so_snd.sb_cc;
-	tp->t_force = 1;
-	tcp_output(tp);
-	tp->t_force = 0;
+	ret = soread(so);
+	if (ret > 0) {
+	    tp->snd_up = tp->snd_una + so->so_snd.sb_cc;
+	    tp->t_force = 1;
+	    tcp_output(tp);
+	    tp->t_force = 0;
+	}
+
+	return ret;
 }
 
 /*
@@ -607,7 +627,7 @@ sosendto(struct socket *so, struct mbuf *m)
 
 	/* Don't care what port we get */
 	ret = sendto(so->s, m->m_data, m->m_len, 0,
-		     (struct sockaddr *)&addr, sizeof(addr));
+		     (struct sockaddr *)&addr, sockaddr_size(&addr));
 	if (ret < 0)
 		return -1;
 
@@ -796,9 +816,12 @@ void sotranslate_out(struct socket *so, struct sockaddr_storage *addr)
         if (in6_equal_net(&so->so_faddr6, &slirp->vprefix_addr6,
                     slirp->vprefix_len)) {
             if (in6_equal(&so->so_faddr6, &slirp->vnameserver_addr6)) {
-                /*if (get_dns_addr(&addr) < 0) {*/ /* TODO */
+                uint32_t scope_id;
+                if (get_dns6_addr(&sin6->sin6_addr, &scope_id) >= 0) {
+                    sin6->sin6_scope_id = scope_id;
+                } else {
                     sin6->sin6_addr = in6addr_loopback;
-                /*}*/
+                }
             } else {
                 sin6->sin6_addr = in6addr_loopback;
             }

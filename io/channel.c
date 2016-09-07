@@ -20,6 +20,7 @@
 
 #include "qemu/osdep.h"
 #include "io/channel.h"
+#include "qapi/error.h"
 #include "qemu/coroutine.h"
 
 bool qio_channel_has_feature(QIOChannel *ioc,
@@ -217,7 +218,7 @@ static gboolean qio_channel_yield_enter(QIOChannel *ioc,
                                         gpointer opaque)
 {
     QIOChannelYieldData *data = opaque;
-    qemu_coroutine_enter(data->co, NULL);
+    qemu_coroutine_enter(data->co);
     return FALSE;
 }
 

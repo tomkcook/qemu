@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "hw/hw.h"
+#include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/scsi/scsi.h"
 #include "block/scsi.h"
@@ -8,6 +9,7 @@
 #include "sysemu/blockdev.h"
 #include "trace.h"
 #include "sysemu/dma.h"
+#include "qemu/cutils.h"
 
 static char *scsibus_get_dev_path(DeviceState *dev);
 static char *scsibus_get_fw_dev_path(DeviceState *dev);
@@ -459,6 +461,14 @@ static bool scsi_target_emulate_inquiry(SCSITargetReq *r)
     return true;
 }
 
+static size_t scsi_sense_len(SCSIRequest *req)
+{
+    if (req->dev->type == TYPE_SCANNER)
+        return SCSI_SENSE_LEN_SCANNER;
+    else
+        return SCSI_SENSE_LEN;
+}
+
 static int32_t scsi_target_send_command(SCSIRequest *req, uint8_t *buf)
 {
     SCSITargetReq *r = DO_UPCAST(SCSITargetReq, req, req);
@@ -475,7 +485,7 @@ static int32_t scsi_target_send_command(SCSIRequest *req, uint8_t *buf)
         }
         break;
     case REQUEST_SENSE:
-        scsi_target_alloc_buf(&r->req, SCSI_SENSE_LEN);
+        scsi_target_alloc_buf(&r->req, scsi_sense_len(req));
         r->len = scsi_device_get_sense(r->req.dev, r->buf,
                                        MIN(req->cmd.xfer, r->buf_len),
                                        (req->cmd.buf[1] & 1) == 0);
@@ -1130,6 +1140,29 @@ static int scsi_req_medium_changer_xfer(SCSICommand *cmd, SCSIDevice *dev, uint8
     return 0;
 }
 
+static int scsi_req_scanner_length(SCSICommand *cmd, SCSIDevice *dev, uint8_t *buf)
+{
+    switch (buf[0]) {
+    /* Scanner commands */
+    case OBJECT_POSITION:
+        cmd->xfer = 0;
+        break;
+    case SCAN:
+        cmd->xfer = buf[4];
+        break;
+    case READ_10:
+    case SEND:
+    case GET_WINDOW:
+    case SET_WINDOW:
+        cmd->xfer = buf[8] | (buf[7] << 8) | (buf[6] << 16);
+        break;
+    default:
+        /* GET_DATA_BUFFER_STATUS xfer handled by scsi_req_xfer */
+        return scsi_req_xfer(cmd, dev, buf);
+    }
+
+    return 0;
+}
 
 static void scsi_cmd_xfer_mode(SCSICommand *cmd)
 {
@@ -1176,6 +1209,11 @@ static void scsi_cmd_xfer_mode(SCSICommand *cmd)
     case SEND_DVD_STRUCTURE:
     case PERSISTENT_RESERVE_OUT:
     case MAINTENANCE_OUT:
+    case SET_WINDOW:
+    case SCAN:
+        /* SCAN conflicts with START_STOP.  START_STOP has cmd->xfer set to 0 for
+         * non-scanner devices, so we only get here for SCAN and not for START_STOP.
+         */
         cmd->mode = SCSI_XFER_TO_DEV;
         break;
     case ATA_PASSTHROUGH_12:
@@ -1255,6 +1293,9 @@ int scsi_req_parse_cdb(SCSIDevice *dev, SCSICommand *cmd, uint8_t *buf)
         break;
     case TYPE_MEDIUM_CHANGER:
         rc = scsi_req_medium_changer_xfer(cmd, dev, buf);
+        break;
+    case TYPE_SCANNER:
+        rc = scsi_req_scanner_length(cmd, dev, buf);
         break;
     default:
         rc = scsi_req_xfer(cmd, dev, buf);

@@ -17,12 +17,12 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "nbd-internal.h"
 
 ssize_t nbd_wr_syncv(QIOChannel *ioc,
                      struct iovec *iov,
                      size_t niov,
-                     size_t offset,
                      size_t length,
                      bool do_read)
 {
@@ -32,9 +32,7 @@ ssize_t nbd_wr_syncv(QIOChannel *ioc,
     struct iovec *local_iov_head = local_iov;
     unsigned int nlocal_iov = niov;
 
-    nlocal_iov = iov_copy(local_iov, nlocal_iov,
-                          iov, niov,
-                          offset, length);
+    nlocal_iov = iov_copy(local_iov, nlocal_iov, iov, niov, 0, length);
 
     while (nlocal_iov > 0) {
         ssize_t len;
@@ -49,9 +47,12 @@ ssize_t nbd_wr_syncv(QIOChannel *ioc,
                  * qio_channel_yield() that works with AIO contexts
                  * and consider using that in this branch */
                 qemu_coroutine_yield();
-            } else {
+            } else if (done) {
+                /* XXX this is needed by nbd_reply_ready.  */
                 qio_channel_wait(ioc,
                                  do_read ? G_IO_IN : G_IO_OUT);
+            } else {
+                return -EAGAIN;
             }
             continue;
         }

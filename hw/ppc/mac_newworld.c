@@ -47,6 +47,7 @@
  *
  */
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/hw.h"
 #include "hw/ppc/ppc.h"
 #include "hw/ppc/mac.h"
@@ -70,6 +71,7 @@
 #include "sysemu/block-backend.h"
 #include "exec/address-spaces.h"
 #include "hw/sysbus.h"
+#include "qemu/cutils.h"
 
 #define MAX_IDE_BUS 2
 #define CFG_ADDR 0xf0000510
@@ -378,6 +380,7 @@ static void ppc_core99_init(MachineState *machine)
         pci_bus = pci_pmac_init(pic, get_system_memory(), get_system_io());
         machine_arch = ARCH_MAC99;
     }
+    object_property_set_bool(OBJECT(pci_bus), true, "realized", &error_abort);
 
     machine->usb |= defaults_enabled() && !machine->usb_disabled;
 

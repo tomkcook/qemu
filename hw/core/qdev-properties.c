@@ -1,6 +1,8 @@
 #include "qemu/osdep.h"
 #include "net/net.h"
 #include "hw/qdev.h"
+#include "qapi/error.h"
+#include "hw/pci/pci.h"
 #include "qapi/qmp/qerror.h"
 #include "qemu/error-report.h"
 #include "sysemu/block-backend.h"
@@ -516,6 +518,16 @@ PropertyInfo qdev_prop_macaddr = {
     .set   = set_mac,
 };
 
+/* --- on/off/auto --- */
+
+PropertyInfo qdev_prop_on_off_auto = {
+    .name = "OnOffAuto",
+    .description = "on/off/auto",
+    .enum_table = OnOffAuto_lookup,
+    .get = get_enum,
+    .set = set_enum,
+};
+
 /* --- lost tick policy --- */
 
 QEMU_BUILD_BUG_ON(sizeof(LostTickPolicy) != sizeof(int));
@@ -525,6 +537,19 @@ PropertyInfo qdev_prop_losttickpolicy = {
     .enum_table  = LostTickPolicy_lookup,
     .get   = get_enum,
     .set   = set_enum,
+};
+
+/* --- Block device error handling policy --- */
+
+QEMU_BUILD_BUG_ON(sizeof(BlockdevOnError) != sizeof(int));
+
+PropertyInfo qdev_prop_blockdev_on_error = {
+    .name = "BlockdevOnError",
+    .description = "Error handling policy, "
+                   "report/ignore/enospc/stop/auto",
+    .enum_table = BlockdevOnError_lookup,
+    .get = get_enum,
+    .set = set_enum,
 };
 
 /* --- BIOS CHS translation */
@@ -1008,12 +1033,11 @@ void qdev_prop_set_ptr(DeviceState *dev, const char *name, void *value)
     *ptr = value;
 }
 
-static QTAILQ_HEAD(, GlobalProperty) global_props =
-        QTAILQ_HEAD_INITIALIZER(global_props);
+static GList *global_props;
 
 void qdev_prop_register_global(GlobalProperty *prop)
 {
-    QTAILQ_INSERT_TAIL(&global_props, prop, next);
+    global_props = g_list_append(global_props, prop);
 }
 
 void qdev_prop_register_global_list(GlobalProperty *props)
@@ -1027,10 +1051,11 @@ void qdev_prop_register_global_list(GlobalProperty *props)
 
 int qdev_prop_check_globals(void)
 {
-    GlobalProperty *prop;
+    GList *l;
     int ret = 0;
 
-    QTAILQ_FOREACH(prop, &global_props, next) {
+    for (l = global_props; l; l = l->next) {
+        GlobalProperty *prop = l->data;
         ObjectClass *oc;
         DeviceClass *dc;
         if (prop->used) {
@@ -1059,11 +1084,12 @@ int qdev_prop_check_globals(void)
 }
 
 static void qdev_prop_set_globals_for_type(DeviceState *dev,
-                                const char *typename)
+                                           const char *typename)
 {
-    GlobalProperty *prop;
+    GList *l;
 
-    QTAILQ_FOREACH(prop, &global_props, next) {
+    for (l = global_props; l; l = l->next) {
+        GlobalProperty *prop = l->data;
         Error *err = NULL;
 
         if (strcmp(typename, prop->driver) != 0) {
@@ -1072,10 +1098,14 @@ static void qdev_prop_set_globals_for_type(DeviceState *dev,
         prop->used = true;
         object_property_parse(OBJECT(dev), prop->value, prop->property, &err);
         if (err != NULL) {
-            assert(prop->user_provided);
-            error_reportf_err(err, "Warning: global %s.%s=%s ignored: ",
-                              prop->driver, prop->property, prop->value);
-            return;
+            error_prepend(&err, "can't apply global %s.%s=%s: ",
+                          prop->driver, prop->property, prop->value);
+            if (!dev->hotplugged && prop->errp) {
+                error_propagate(prop->errp, err);
+            } else {
+                assert(prop->user_provided);
+                error_reportf_err(err, "Warning: ");
+            }
         }
     }
 }

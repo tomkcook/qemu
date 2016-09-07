@@ -22,6 +22,9 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu-common.h"
+#include "cpu.h"
 #include "hw/hw.h"
 #include "hw/pci/pci.h"
 #include "hw/pci-host/apb.h"
@@ -41,6 +44,7 @@
 #include "elf.h"
 #include "sysemu/block-backend.h"
 #include "exec/address-spaces.h"
+#include "qemu/cutils.h"
 
 //#define DEBUG_IRQ
 //#define DEBUG_EBUS
@@ -445,12 +449,12 @@ static void hstick_irq(void *opaque)
 
 static int64_t cpu_to_timer_ticks(int64_t cpu_ticks, uint32_t frequency)
 {
-    return muldiv64(cpu_ticks, get_ticks_per_sec(), frequency);
+    return muldiv64(cpu_ticks, NANOSECONDS_PER_SECOND, frequency);
 }
 
 static uint64_t timer_to_cpu_ticks(int64_t timer_ticks, uint32_t frequency)
 {
-    return muldiv64(timer_ticks, frequency, get_ticks_per_sec());
+    return muldiv64(timer_ticks, frequency, NANOSECONDS_PER_SECOND);
 }
 
 void cpu_tick_set_count(CPUTimer *timer, uint64_t count)
@@ -997,14 +1001,10 @@ static void sun4u_register_types(void)
     type_register_static(&ebus_info);
     type_register_static(&prom_info);
     type_register_static(&ram_info);
-}
 
-static void sun4u_machine_init(void)
-{
     type_register_static(&sun4u_type);
     type_register_static(&sun4v_type);
     type_register_static(&niagara_type);
 }
 
 type_init(sun4u_register_types)
-machine_init(sun4u_machine_init)

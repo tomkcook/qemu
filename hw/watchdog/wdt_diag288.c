@@ -16,6 +16,7 @@
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
 #include "hw/watchdog/wdt_diag288.h"
+#include "qemu/log.h"
 
 static WatchdogTimerModel model = {
     .wdt_name = TYPE_WDT_DIAG288,
@@ -79,7 +80,7 @@ static int wdt_diag288_handle_timer(DIAG288State *diag288,
         }
         timer_mod(diag288->timer,
                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                  timeout * get_ticks_per_sec());
+                  timeout * NANOSECONDS_PER_SECOND);
         break;
     case WDT_DIAG288_CANCEL:
         if (!diag288->enabled) {

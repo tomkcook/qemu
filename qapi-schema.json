@@ -382,13 +382,17 @@
 #
 # @dirty-sync-count: number of times that dirty ram was synchronized (since 2.1)
 #
+# @postcopy-requests: The number of page requests received from the destination
+#        (since 2.7)
+#
 # Since: 0.14.0
 ##
 { 'struct': 'MigrationStats',
   'data': {'transferred': 'int', 'remaining': 'int', 'total': 'int' ,
            'duplicate': 'int', 'skipped': 'int', 'normal': 'int',
            'normal-bytes': 'int', 'dirty-pages-rate' : 'int',
-           'mbps' : 'number', 'dirty-sync-count' : 'int' } }
+           'mbps' : 'number', 'dirty-sync-count' : 'int',
+           'postcopy-requests' : 'int' } }
 
 ##
 # @XBZRLECacheStats
@@ -480,9 +484,13 @@
 #        may be expensive, but do not actually occur during the iterative
 #        migration rounds themselves. (since 1.6)
 #
-# @x-cpu-throttle-percentage: #optional percentage of time guest cpus are being
-#       throttled during auto-converge. This is only present when auto-converge
-#       has started throttling guest cpus. (Since 2.5)
+# @cpu-throttle-percentage: #optional percentage of time guest cpus are being
+#        throttled during auto-converge. This is only present when auto-converge
+#        has started throttling guest cpus. (Since 2.7)
+#
+# @error-desc: #optional the human readable error description string, when
+#              @status is 'failed'. Clients should not attempt to parse the
+#              error strings. (Since 2.7)
 #
 # Since: 0.14.0
 ##
@@ -494,7 +502,8 @@
            '*expected-downtime': 'int',
            '*downtime': 'int',
            '*setup-time': 'int',
-           '*x-cpu-throttle-percentage': 'int'} }
+           '*cpu-throttle-percentage': 'int',
+           '*error-desc': 'str'} }
 
 ##
 # @query-migrate
@@ -605,18 +614,35 @@
 #          compression, so set the decompress-threads to the number about 1/4
 #          of compress-threads is adequate.
 #
-# @x-cpu-throttle-initial: Initial percentage of time guest cpus are throttled
-#                          when migration auto-converge is activated. The
-#                          default value is 20. (Since 2.5)
+# @cpu-throttle-initial: Initial percentage of time guest cpus are throttled
+#                        when migration auto-converge is activated. The
+#                        default value is 20. (Since 2.7)
 #
-# @x-cpu-throttle-increment: throttle percentage increase each time
-#                            auto-converge detects that migration is not making
-#                            progress. The default value is 10. (Since 2.5)
+# @cpu-throttle-increment: throttle percentage increase each time
+#                          auto-converge detects that migration is not making
+#                          progress. The default value is 10. (Since 2.7)
+#
+# @tls-creds: ID of the 'tls-creds' object that provides credentials for
+#             establishing a TLS connection over the migration data channel.
+#             On the outgoing side of the migration, the credentials must
+#             be for a 'client' endpoint, while for the incoming side the
+#             credentials must be for a 'server' endpoint. Setting this
+#             will enable TLS for all migrations. The default is unset,
+#             resulting in unsecured migration at the QEMU level. (Since 2.7)
+#
+# @tls-hostname: hostname of the target host for the migration. This is
+#                required when using x509 based TLS credentials and the
+#                migration URI does not already include a hostname. For
+#                example if using fd: or exec: based migration, the
+#                hostname must be provided so that the server's x509
+#                certificate identity can be validated. (Since 2.7)
+#
 # Since: 2.4
 ##
 { 'enum': 'MigrationParameter',
   'data': ['compress-level', 'compress-threads', 'decompress-threads',
-           'x-cpu-throttle-initial', 'x-cpu-throttle-increment'] }
+           'cpu-throttle-initial', 'cpu-throttle-increment',
+           'tls-creds', 'tls-hostname'] }
 
 #
 # @migrate-set-parameters
@@ -629,21 +655,39 @@
 #
 # @decompress-threads: decompression thread count
 #
-# @x-cpu-throttle-initial: Initial percentage of time guest cpus are throttled
-#                          when migration auto-converge is activated. The
-#                          default value is 20. (Since 2.5)
+# @cpu-throttle-initial: Initial percentage of time guest cpus are throttled
+#                        when migration auto-converge is activated. The
+#                        default value is 20. (Since 2.7)
 #
-# @x-cpu-throttle-increment: throttle percentage increase each time
-#                            auto-converge detects that migration is not making
-#                            progress. The default value is 10. (Since 2.5)
+# @cpu-throttle-increment: throttle percentage increase each time
+#                          auto-converge detects that migration is not making
+#                          progress. The default value is 10. (Since 2.7)
+#
+# @tls-creds: ID of the 'tls-creds' object that provides credentials for
+#             establishing a TLS connection over the migration data channel.
+#             On the outgoing side of the migration, the credentials must
+#             be for a 'client' endpoint, while for the incoming side the
+#             credentials must be for a 'server' endpoint. Setting this
+#             will enable TLS for all migrations. The default is unset,
+#             resulting in unsecured migration at the QEMU level. (Since 2.7)
+#
+# @tls-hostname: hostname of the target host for the migration. This is
+#                required when using x509 based TLS credentials and the
+#                migration URI does not already include a hostname. For
+#                example if using fd: or exec: based migration, the
+#                hostname must be provided so that the server's x509
+#                certificate identity can be validated. (Since 2.7)
+#
 # Since: 2.4
 ##
 { 'command': 'migrate-set-parameters',
   'data': { '*compress-level': 'int',
             '*compress-threads': 'int',
             '*decompress-threads': 'int',
-            '*x-cpu-throttle-initial': 'int',
-            '*x-cpu-throttle-increment': 'int'} }
+            '*cpu-throttle-initial': 'int',
+            '*cpu-throttle-increment': 'int',
+            '*tls-creds': 'str',
+            '*tls-hostname': 'str'} }
 
 #
 # @MigrationParameters
@@ -654,13 +698,28 @@
 #
 # @decompress-threads: decompression thread count
 #
-# @x-cpu-throttle-initial: Initial percentage of time guest cpus are throttled
-#                          when migration auto-converge is activated. The
-#                          default value is 20. (Since 2.5)
+# @cpu-throttle-initial: Initial percentage of time guest cpus are throttled
+#                        when migration auto-converge is activated. The
+#                        default value is 20. (Since 2.7)
 #
-# @x-cpu-throttle-increment: throttle percentage increase each time
-#                            auto-converge detects that migration is not making
-#                            progress. The default value is 10. (Since 2.5)
+# @cpu-throttle-increment: throttle percentage increase each time
+#                          auto-converge detects that migration is not making
+#                          progress. The default value is 10. (Since 2.7)
+#
+# @tls-creds: ID of the 'tls-creds' object that provides credentials for
+#             establishing a TLS connection over the migration data channel.
+#             On the outgoing side of the migration, the credentials must
+#             be for a 'client' endpoint, while for the incoming side the
+#             credentials must be for a 'server' endpoint. Setting this
+#             will enable TLS for all migrations. The default is unset,
+#             resulting in unsecured migration at the QEMU level. (Since 2.7)
+#
+# @tls-hostname: hostname of the target host for the migration. This is
+#                required when using x509 based TLS credentials and the
+#                migration URI does not already include a hostname. For
+#                example if using fd: or exec: based migration, the
+#                hostname must be provided so that the server's x509
+#                certificate identity can be validated. (Since 2.7)
 #
 # Since: 2.4
 ##
@@ -668,8 +727,10 @@
   'data': { 'compress-level': 'int',
             'compress-threads': 'int',
             'decompress-threads': 'int',
-            'x-cpu-throttle-initial': 'int',
-            'x-cpu-throttle-increment': 'int'} }
+            'cpu-throttle-initial': 'int',
+            'cpu-throttle-increment': 'int',
+            'tls-creds': 'str',
+            'tls-hostname': 'str'} }
 ##
 # @query-migrate-parameters
 #
@@ -753,9 +814,9 @@
   'data': ['x86', 'sparc', 'ppc', 'mips', 'tricore', 'other' ] }
 
 ##
-# @CpuInfoBase:
+# @CpuInfo:
 #
-# Common information about a virtual CPU
+# Information about a virtual CPU
 #
 # @CPU: the index of the virtual CPU
 #
@@ -776,18 +837,10 @@
 # Notes: @halted is a transient state that changes frequently.  By the time the
 #        data is sent to the client, the guest may no longer be halted.
 ##
-{ 'struct': 'CpuInfoBase',
-  'data': {'CPU': 'int', 'current': 'bool', 'halted': 'bool',
-           'qom_path': 'str', 'thread_id': 'int', 'arch': 'CpuInfoArch' } }
-
-##
-# @CpuInfo:
-#
-# Information about a virtual CPU
-#
-# Since: 0.14.0
-##
-{ 'union': 'CpuInfo', 'base': 'CpuInfoBase', 'discriminator': 'arch',
+{ 'union': 'CpuInfo',
+  'base': {'CPU': 'int', 'current': 'bool', 'halted': 'bool',
+           'qom_path': 'str', 'thread_id': 'int', 'arch': 'CpuInfoArch' },
+  'discriminator': 'arch',
   'data': { 'x86': 'CpuInfoX86',
             'sparc': 'CpuInfoSPARC',
             'ppc': 'CpuInfoPPC',
@@ -2433,9 +2486,18 @@
 #
 # @restrict: #optional isolate the guest from the host
 #
+# @ipv4: #optional whether to support IPv4, default true for enabled
+#        (since 2.6)
+#
+# @ipv6: #optional whether to support IPv6, default true for enabled
+#        (since 2.6)
+#
 # @ip: #optional legacy parameter, use net= instead
 #
-# @net: #optional IP address and optional netmask
+# @net: #optional IP network address that the guest will see, in the
+#       form addr[/netmask] The netmask is optional, and can be
+#       either in the form a.b.c.d or as a number of valid top-most
+#       bits. Default is 10.0.2.0/24.
 #
 # @host: #optional guest-visible address of the host
 #
@@ -2451,13 +2513,17 @@
 # @dnssearch: #optional list of DNS suffixes to search, passed as DHCP option
 #             to the guest
 #
-# @ip6-prefix: #optional IPv6 network prefix (default is fec0::) (since 2.6)
+# @ipv6-prefix: #optional IPv6 network prefix (default is fec0::) (since
+#               2.6). The network prefix is given in the usual
+#               hexadecimal IPv6 address notation.
 #
-# @ip6-prefixlen: #optional IPv6 network prefix length (default is 64) (since 2.6)
+# @ipv6-prefixlen: #optional IPv6 network prefix length (default is 64)
+#                  (since 2.6)
 #
-# @ip6-host: #optional guest-visible IPv6 address of the host (since 2.6)
+# @ipv6-host: #optional guest-visible IPv6 address of the host (since 2.6)
 #
-# @ip6-dns: #optional guest-visible IPv6 address of the virtual nameserver (since 2.6)
+# @ipv6-dns: #optional guest-visible IPv6 address of the virtual
+#            nameserver (since 2.6)
 #
 # @smb: #optional root directory of the built-in SMB server
 #
@@ -2474,6 +2540,8 @@
   'data': {
     '*hostname':  'str',
     '*restrict':  'bool',
+    '*ipv4':      'bool',
+    '*ipv6':      'bool',
     '*ip':        'str',
     '*net':       'str',
     '*host':      'str',
@@ -2482,10 +2550,10 @@
     '*dhcpstart': 'str',
     '*dns':       'str',
     '*dnssearch': ['String'],
-    '*ip6-prefix':      'str',
-    '*ip6-prefixlen':   'int',
-    '*ip6-host':        'str',
-    '*ip6-dns':         'str',
+    '*ipv6-prefix':      'str',
+    '*ipv6-prefixlen':   'int',
+    '*ipv6-host':        'str',
+    '*ipv6-dns':         'str',
     '*smb':       'str',
     '*smbserver': 'str',
     '*hostfwd':   ['String'],
@@ -2524,6 +2592,9 @@
 #
 # @queues: #optional number of queues to be created for multiqueue capable tap
 #
+# @poll-us: #optional maximum number of microseconds that could
+# be spent on busy polling for tap (since 2.7)
+#
 # Since 1.2
 ##
 { 'struct': 'NetdevTapOptions',
@@ -2540,7 +2611,8 @@
     '*vhostfd':    'str',
     '*vhostfds':   'str',
     '*vhostforce': 'bool',
-    '*queues':     'uint32'} }
+    '*queues':     'uint32',
+    '*poll-us':    'uint32'} }
 
 ##
 # @NetdevSocketOptions
@@ -2737,16 +2809,32 @@
     '*queues':        'int' } }
 
 ##
-# @NetClientOptions
+# @NetClientDriver
 #
-# A discriminated record of network device traits.
+# Available netdev drivers.
+#
+# Since 2.7
+##
+{ 'enum': 'NetClientDriver',
+  'data': [ 'none', 'nic', 'user', 'tap', 'l2tpv3', 'socket', 'vde', 'dump',
+            'bridge', 'hubport', 'netmap', 'vhost-user' ] }
+
+##
+# @Netdev
+#
+# Captures the configuration of a network device.
+#
+# @id: identifier for monitor commands.
+#
+# @type: Specify the driver used for interpreting remaining arguments.
 #
 # Since 1.2
 #
 # 'l2tpv3' - since 2.1
-#
 ##
-{ 'union': 'NetClientOptions',
+{ 'union': 'Netdev',
+  'base': { 'id': 'str', 'type': 'NetClientDriver' },
+  'discriminator': 'type',
   'data': {
     'none':     'NetdevNoneOptions',
     'nic':      'NetLegacyNicOptions',
@@ -2781,23 +2869,28 @@
     '*vlan': 'int32',
     '*id':   'str',
     '*name': 'str',
-    'opts':  'NetClientOptions' } }
+    'opts':  'NetLegacyOptions' } }
 
 ##
-# @Netdev
+# @NetLegacyOptions
 #
-# Captures the configuration of a network device.
-#
-# @id: identifier for monitor commands.
-#
-# @opts: device type specific properties
+# Like Netdev, but for use only by the legacy command line options
 #
 # Since 1.2
 ##
-{ 'struct': 'Netdev',
+{ 'union': 'NetLegacyOptions',
   'data': {
-    'id':   'str',
-    'opts': 'NetClientOptions' } }
+    'none':     'NetdevNoneOptions',
+    'nic':      'NetLegacyNicOptions',
+    'user':     'NetdevUserOptions',
+    'tap':      'NetdevTapOptions',
+    'l2tpv3':   'NetdevL2TPv3Options',
+    'socket':   'NetdevSocketOptions',
+    'vde':      'NetdevVdeOptions',
+    'dump':     'NetdevDumpOptions',
+    'bridge':   'NetdevBridgeOptions',
+    'netmap':   'NetdevNetmapOptions',
+    'vhost-user': 'NetdevVhostUserOptions' } }
 
 ##
 # @NetFilterDirection
@@ -2918,11 +3011,14 @@
 # @cpu-max: maximum number of CPUs supported by the machine type
 #           (since 1.5.0)
 #
+# @hotpluggable-cpus: cpu hotplug via -device is supported (since 2.7.0)
+#
 # Since: 1.2.0
 ##
 { 'struct': 'MachineInfo',
   'data': { 'name': 'str', '*alias': 'str',
-            '*is-default': 'bool', 'cpu-max': 'int' } }
+            '*is-default': 'bool', 'cpu-max': 'int',
+            'hotpluggable-cpus': 'bool'} }
 
 ##
 # @query-machines:
@@ -2942,10 +3038,22 @@
 #
 # @name: the name of the CPU definition
 #
+# @migration-safe: #optional whether a CPU definition can be safely used for
+#                  migration in combination with a QEMU compatibility machine
+#                  when migrating between different QMU versions and between
+#                  hosts with different sets of (hardware or software)
+#                  capabilities. If not provided, information is not available
+#                  and callers should not assume the CPU definition to be
+#                  migration-safe. (since 2.8)
+#
+# @static: whether a CPU definition is static and will not change depending on
+#          QEMU version, machine type, machine options and accelerator options.
+#          A static model is always migration-safe. (since 2.8)
+#
 # Since: 1.2.0
 ##
 { 'struct': 'CpuDefinitionInfo',
-  'data': { 'name': 'str' } }
+  'data': { 'name': 'str', '*migration-safe': 'bool', 'static': 'bool' } }
 
 ##
 # @query-cpu-definitions:
@@ -2957,6 +3065,238 @@
 # Since: 1.2.0
 ##
 { 'command': 'query-cpu-definitions', 'returns': ['CpuDefinitionInfo'] }
+
+##
+# @CpuModelInfo:
+#
+# Virtual CPU model.
+#
+# A CPU model consists of the name of a CPU definition, to which
+# delta changes are applied (e.g. features added/removed). Most magic values
+# that an architecture might require should be hidden behind the name.
+# However, if required, architectures can expose relevant properties.
+#
+# @name: the name of the CPU definition the model is based on
+# @props: #optional a dictionary of QOM properties to be applied
+#
+# Since: 2.8.0
+##
+{ 'struct': 'CpuModelInfo',
+  'data': { 'name': 'str',
+            '*props': 'any' } }
+
+##
+# @CpuModelExpansionType
+#
+# An enumeration of CPU model expansion types.
+#
+# @static: Expand to a static CPU model, a combination of a static base
+#          model name and property delta changes. As the static base model will
+#          never change, the expanded CPU model will be the same, independant of
+#          independent of QEMU version, machine type, machine options, and
+#          accelerator options. Therefore, the resulting model can be used by
+#          tooling without having to specify a compatibility machine - e.g. when
+#          displaying the "host" model. static CPU models are migration-safe.
+#
+# @full: Expand all properties. The produced model is not guaranteed to be
+#        migration-safe, but allows tooling to get an insight and work with
+#        model details.
+#
+# Since: 2.8.0
+##
+{ 'enum': 'CpuModelExpansionType',
+  'data': [ 'static', 'full' ] }
+
+
+##
+# @CpuModelExpansionInfo
+#
+# The result of a cpu model expansion.
+#
+# @model: the expanded CpuModelInfo.
+#
+# Since: 2.8.0
+##
+{ 'struct': 'CpuModelExpansionInfo',
+  'data': { 'model': 'CpuModelInfo' } }
+
+
+##
+# @query-cpu-model-expansion:
+#
+# Expands a given CPU model (or a combination of CPU model + additional options)
+# to different granularities, allowing tooling to get an understanding what a
+# specific CPU model looks like in QEMU under a certain configuration.
+#
+# This interface can be used to query the "host" CPU model.
+#
+# The data returned by this command may be affected by:
+#
+# * QEMU version: CPU models may look different depending on the QEMU version.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine-type: CPU model  may look different depending on the machine-type.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine options (including accelerator): in some architectures, CPU models
+#   may look different depending on machine and accelerator options. (Except for
+#   CPU models reported as "static" in query-cpu-definitions.)
+# * "-cpu" arguments and global properties: arguments to the -cpu option and
+#   global properties may affect expansion of CPU models. Using
+#   query-cpu-model-expansion while using these is not advised.
+#
+# Some architectures may not support all expansion types. s390x supports
+# "full" and "static".
+#
+# Returns: a CpuModelExpansionInfo. Returns an error if expanding CPU models is
+#          not supported, if the model cannot be expanded, if the model contains
+#          an unknown CPU definition name, unknown properties or properties
+#          with a wrong type. Also returns an error if an expansion type is
+#          not supported.
+#
+# Since: 2.8.0
+##
+{ 'command': 'query-cpu-model-expansion',
+  'data': { 'type': 'CpuModelExpansionType',
+            'model': 'CpuModelInfo' },
+  'returns': 'CpuModelExpansionInfo' }
+
+##
+# @CpuModelCompareResult:
+#
+# An enumeration of CPU model comparation results. The result is usually
+# calcualted using e.g. CPU features or CPU generations.
+#
+# @incompatible: If model A is incompatible to model B, model A is not
+#                guaranteed to run where model B runs and the other way around.
+#
+# @identical: If model A is identical to model B, model A is guaranteed to run
+#             where model B runs and the other way around.
+#
+# @superset: If model A is a superset of model B, model B is guaranteed to run
+#            where model A runs. There are no guarantees about the other way.
+#
+# @subset: If model A is a subset of model B, model A is guaranteed to run
+#          where model B runs. There are no guarantees about the other way.
+#
+# Since: 2.8.0
+##
+{ 'enum': 'CpuModelCompareResult',
+  'data': [ 'incompatible', 'identical', 'superset', 'subset' ] }
+
+##
+# @CpuModelCompareInfo
+#
+# The result of a CPU model comparison.
+#
+# @result: The result of the compare operation.
+# @responsible-properties: List of properties that led to the comparison result
+#                          not being identical.
+#
+# @responsible-properties is a list of QOM property names that led to
+# both CPUs not being detected as identical. For identical models, this
+# list is empty.
+# If a QOM property is read-only, that means there's no known way to make the
+# CPU models identical. If the special property name "type" is included, the
+# models are by definition not identical and cannot be made identical.
+#
+# Since: 2.8.0
+##
+{ 'struct': 'CpuModelCompareInfo',
+  'data': {'result': 'CpuModelCompareResult',
+           'responsible-properties': ['str']
+          }
+}
+
+##
+# @query-cpu-model-comparison:
+#
+# Compares two CPU models, returning how they compare in a specific
+# configuration. The results indicates how both models compare regarding
+# runnability. This result can be used by tooling to make decisions if a
+# certain CPU model will run in a certain configuration or if a compatible
+# CPU model has to be created by baselining.
+#
+# Usually, a CPU model is compared against the maximum possible CPU model
+# of a ceratin configuration (e.g. the "host" model for KVM). If that CPU
+# model is identical or a subset, it will run in that configuration.
+#
+# The result returned by this command may be affected by:
+#
+# * QEMU version: CPU models may look different depending on the QEMU version.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine-type: CPU model  may look different depending on the machine-type.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine options (including accelerator): in some architectures, CPU models
+#   may look different depending on machine and accelerator options. (Except for
+#   CPU models reported as "static" in query-cpu-definitions.)
+# * "-cpu" arguments and global properties: arguments to the -cpu option and
+#   global properties may affect expansion of CPU models. Using
+#   query-cpu-model-expansion while using these is not advised.
+#
+# Some architectures may not support comparing CPU models. s390x supports
+# comparing CPU models.
+#
+# Returns: a CpuModelBaselineInfo. Returns an error if comparing CPU models is
+#          not supported, if a model cannot be used, if a model contains
+#          an unknown cpu definition name, unknown properties or properties
+#          with wrong types.
+#
+# Since: 2.8.0
+##
+{ 'command': 'query-cpu-model-comparison',
+  'data': { 'modela': 'CpuModelInfo', 'modelb': 'CpuModelInfo' },
+  'returns': 'CpuModelCompareInfo' }
+
+##
+# @CpuModelBaselineInfo
+#
+# The result of a CPU model baseline.
+#
+# @model: the baselined CpuModelInfo.
+#
+# Since: 2.8.0
+##
+{ 'struct': 'CpuModelBaselineInfo',
+  'data': { 'model': 'CpuModelInfo' } }
+
+##
+# @query-cpu-model-baseline:
+#
+# Baseline two CPU models, creating a compatible third model. The created
+# model will always be a static, migration-safe CPU model (see "static"
+# CPU model expansion for details).
+#
+# This interface can be used by tooling to create a compatible CPU model out
+# two CPU models. The created CPU model will be identical to or a subset of
+# both CPU models when comparing them. Therefore, the created CPU model is
+# guaranteed to run where the given CPU models run.
+#
+# The result returned by this command may be affected by:
+#
+# * QEMU version: CPU models may look different depending on the QEMU version.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine-type: CPU model  may look different depending on the machine-type.
+#   (Except for CPU models reported as "static" in query-cpu-definitions.)
+# * machine options (including accelerator): in some architectures, CPU models
+#   may look different depending on machine and accelerator options. (Except for
+#   CPU models reported as "static" in query-cpu-definitions.)
+# * "-cpu" arguments and global properties: arguments to the -cpu option and
+#   global properties may affect expansion of CPU models. Using
+#   query-cpu-model-expansion while using these is not advised.
+#
+# Some architectures may not support baselining CPU models. s390x supports
+# baselining CPU models.
+#
+# Returns: a CpuModelBaselineInfo. Returns an error if baselining CPU models is
+#          not supported, if a model cannot be used, if a model contains
+#          an unknown cpu definition name, unknown properties or properties
+#          with wrong types.
+#
+# Since: 2.8.0
+##
+{ 'command': 'query-cpu-model-baseline',
+  'data': { 'modela': 'CpuModelInfo',
+            'modelb': 'CpuModelInfo' },
+  'returns': 'CpuModelBaselineInfo' }
 
 # @AddfdInfo:
 #
@@ -3090,6 +3430,7 @@
 #
 # 'unmapped' and 'pause' since 2.0
 # 'ro' and 'kp_comma' since 2.4
+# 'kp_equals' and 'power' since 2.6
 ##
 { 'enum': 'QKeyCode',
   'data': [ 'unmapped',
@@ -3108,7 +3449,7 @@
             'left', 'up', 'down', 'right', 'insert', 'delete', 'stop', 'again',
             'props', 'undo', 'front', 'copy', 'open', 'paste', 'find', 'cut',
             'lf', 'help', 'meta_l', 'meta_r', 'compose', 'pause', 'ro',
-            'kp_comma' ] }
+            'kp_comma', 'kp_equals', 'power' ] }
 
 ##
 # @KeyValue
@@ -4010,8 +4351,9 @@
 ## @ACPISlotType
 #
 # @DIMM: memory slot
+# @CPU: logical CPU slot (since 2.7)
 #
-{ 'enum': 'ACPISlotType', 'data': [ 'DIMM' ] }
+{ 'enum': 'ACPISlotType', 'data': [ 'DIMM', 'CPU' ] }
 
 ## @ACPIOSTInfo
 #
@@ -4134,3 +4476,109 @@
 ##
 { 'enum': 'ReplayMode',
   'data': [ 'none', 'record', 'play' ] }
+
+##
+# @xen-load-devices-state:
+#
+# Load the state of all devices from file. The RAM and the block devices
+# of the VM are not loaded by this command.
+#
+# @filename: the file to load the state of the devices from as binary
+# data. See xen-save-devices-state.txt for a description of the binary
+# format.
+#
+# Since: 2.7
+##
+{ 'command': 'xen-load-devices-state', 'data': {'filename': 'str'} }
+
+##
+# @GICCapability:
+#
+# The struct describes capability for a specific GIC (Generic
+# Interrupt Controller) version. These bits are not only decided by
+# QEMU/KVM software version, but also decided by the hardware that
+# the program is running upon.
+#
+# @version:  version of GIC to be described. Currently, only 2 and 3
+#            are supported.
+#
+# @emulated: whether current QEMU/hardware supports emulated GIC
+#            device in user space.
+#
+# @kernel:   whether current QEMU/hardware supports hardware
+#            accelerated GIC device in kernel.
+#
+# Since: 2.6
+##
+{ 'struct': 'GICCapability',
+  'data': { 'version': 'int',
+            'emulated': 'bool',
+            'kernel': 'bool' } }
+
+##
+# @query-gic-capabilities:
+#
+# This command is ARM-only. It will return a list of GICCapability
+# objects that describe its capability bits.
+#
+# Returns: a list of GICCapability objects.
+#
+# Since: 2.6
+##
+{ 'command': 'query-gic-capabilities', 'returns': ['GICCapability'] }
+
+##
+# CpuInstanceProperties
+#
+# List of properties to be used for hotplugging a CPU instance,
+# it should be passed by management with device_add command when
+# a CPU is being hotplugged.
+#
+# Note: currently there are 4 properties that could be present
+# but management should be prepared to pass through other
+# properties with device_add command to allow for future
+# interface extension. This also requires the filed names to be kept in
+# sync with the properties passed to -device/device_add.
+#
+# @node-id: #optional NUMA node ID the CPU belongs to
+# @socket-id: #optional socket number within node/board the CPU belongs to
+# @core-id: #optional core number within socket the CPU belongs to
+# @thread-id: #optional thread number within core the CPU belongs to
+#
+# Since: 2.7
+##
+{ 'struct': 'CpuInstanceProperties',
+  'data': { '*node-id': 'int',
+            '*socket-id': 'int',
+            '*core-id': 'int',
+            '*thread-id': 'int'
+  }
+}
+
+##
+# @HotpluggableCPU
+#
+# @type: CPU object type for usage with device_add command
+# @props: list of properties to be used for hotplugging CPU
+# @vcpus-count: number of logical VCPU threads @HotpluggableCPU provides
+# @qom-path: #optional link to existing CPU object if CPU is present or
+#            omitted if CPU is not present.
+#
+# Since: 2.7
+##
+{ 'struct': 'HotpluggableCPU',
+  'data': { 'type': 'str',
+            'vcpus-count': 'int',
+            'props': 'CpuInstanceProperties',
+            '*qom-path': 'str'
+          }
+}
+
+##
+# @query-hotpluggable-cpus
+#
+# Returns: a list of HotpluggableCPU objects.
+#
+# Since: 2.7
+##
+{ 'command': 'query-hotpluggable-cpus', 'returns': ['HotpluggableCPU'] }

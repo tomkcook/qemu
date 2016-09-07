@@ -6,8 +6,8 @@
 #include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "slirp.h"
-#include "qemu/osdep.h"
 #include "udp.h"
+#include "dhcpv6.h"
 
 void udp6_input(struct mbuf *m)
 {
@@ -62,7 +62,17 @@ void udp6_input(struct mbuf *m)
     lhost.sin6_addr = ip->ip_src;
     lhost.sin6_port = uh->uh_sport;
 
-    /* TODO handle DHCP/BOOTP */
+    /* handle DHCPv6 */
+    if (ntohs(uh->uh_dport) == DHCPV6_SERVER_PORT &&
+        (in6_equal(&ip->ip_dst, &slirp->vhost_addr6) ||
+         in6_equal(&ip->ip_dst, &(struct in6_addr)ALLDHCP_MULTICAST))) {
+        m->m_data += iphlen;
+        m->m_len -= iphlen;
+        dhcpv6_input(&lhost, m);
+        m->m_data -= iphlen;
+        m->m_len += iphlen;
+        goto bad;
+    }
 
     /* handle TFTP */
     if (ntohs(uh->uh_dport) == TFTP_SERVER &&
@@ -113,8 +123,7 @@ void udp6_input(struct mbuf *m)
         m->m_data -= iphlen;
         *ip = save_ip;
         DEBUG_MISC((dfd, "udp tx errno = %d-%s\n", errno, strerror(errno)));
-        /* TODO: ICMPv6 error */
-        /*icmp_error(m, ICMP_UNREACH,ICMP_UNREACH_NET, 0,strerror(errno));*/
+        icmp6_send_error(m, ICMP6_UNREACH, ICMP6_UNREACH_NO_ROUTE);
         goto bad;
     }
 

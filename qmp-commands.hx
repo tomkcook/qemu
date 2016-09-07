@@ -587,6 +587,33 @@ Example:
 EQMP
 
     {
+        .name       = "xen-load-devices-state",
+        .args_type  = "filename:F",
+        .mhandler.cmd_new = qmp_marshal_xen_load_devices_state,
+    },
+
+SQMP
+xen-load-devices-state
+----------------------
+
+Load the state of all devices from file. The RAM and the block devices
+of the VM are not loaded by this command.
+
+Arguments:
+
+- "filename": the file to load the state of the devices from as binary
+data. See xen-save-devices-state.txt for a description of the binary
+format.
+
+Example:
+
+-> { "execute": "xen-load-devices-state",
+     "arguments": { "filename": "/tmp/resume" } }
+<- { "return": {} }
+
+EQMP
+
+    {
         .name       = "xen-set-global-dirty-log",
         .args_type  = "enable:b",
         .mhandler.cmd_new = qmp_marshal_xen_set_global_dirty_log,
@@ -1079,7 +1106,7 @@ EQMP
 
     {
         .name       = "block-stream",
-        .args_type  = "device:B,base:s?,speed:o?,backing-file:s?,on-error:s?",
+        .args_type  = "job-id:s?,device:B,base:s?,speed:o?,backing-file:s?,on-error:s?",
         .mhandler.cmd_new = qmp_marshal_block_stream,
     },
 
@@ -1091,7 +1118,9 @@ Copy data from a backing file into a block device.
 
 Arguments:
 
-- "device": The device's ID, must be unique (json-string)
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": The device name or node-name of a root node (json-string)
 - "base": The file name of the backing image above which copying starts
           (json-string, optional)
 - "backing-file": The backing file string to write into the active layer. This
@@ -1122,7 +1151,7 @@ EQMP
 
     {
         .name       = "block-commit",
-        .args_type  = "device:B,base:s?,top:s?,backing-file:s?,speed:o?",
+        .args_type  = "job-id:s?,device:B,base:s?,top:s?,backing-file:s?,speed:o?",
         .mhandler.cmd_new = qmp_marshal_block_commit,
     },
 
@@ -1135,7 +1164,9 @@ data between 'top' and 'base' into 'base'.
 
 Arguments:
 
-- "device": The device's ID, must be unique (json-string)
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": The device name or node-name of a root node (json-string)
 - "base": The file name of the backing image to write data into.
           If not specified, this is the deepest backing image
           (json-string, optional)
@@ -1185,8 +1216,9 @@ EQMP
 
     {
         .name       = "drive-backup",
-        .args_type  = "sync:s,device:B,target:s,speed:i?,mode:s?,format:s?,"
-                      "bitmap:s?,on-source-error:s?,on-target-error:s?",
+        .args_type  = "job-id:s?,sync:s,device:B,target:s,speed:i?,mode:s?,"
+                      "format:s?,bitmap:s?,compress:b?,"
+                      "on-source-error:s?,on-target-error:s?",
         .mhandler.cmd_new = qmp_marshal_drive_backup,
     },
 
@@ -1202,7 +1234,9 @@ block-job-cancel command.
 
 Arguments:
 
-- "device": the name of the device which should be copied.
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": the device name or node-name of a root node which should be copied.
             (json-string)
 - "target": the target of the new image. If the file exists, or if it is a
             device, the existing file/device will be used as the new
@@ -1220,6 +1254,8 @@ Arguments:
 - "mode": whether and how QEMU should create a new image
           (NewImageMode, optional, default 'absolute-paths')
 - "speed": the maximum speed, in bytes per second (json-int, optional)
+- "compress": true to compress data, if the target format supports it.
+              (json-bool, optional, default false)
 - "on-source-error": the action to take on an error on the source, default
                      'report'.  'stop' and 'enospc' can only be used
                      if the block device supports io-status.
@@ -1239,7 +1275,7 @@ EQMP
 
     {
         .name       = "blockdev-backup",
-        .args_type  = "sync:s,device:B,target:B,speed:i?,"
+        .args_type  = "job-id:s?,sync:s,device:B,target:B,speed:i?,compress:b?,"
                       "on-source-error:s?,on-target-error:s?",
         .mhandler.cmd_new = qmp_marshal_blockdev_backup,
     },
@@ -1253,7 +1289,9 @@ as backup target.
 
 Arguments:
 
-- "device": the name of the device which should be copied.
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": the device name or node-name of a root node which should be copied.
             (json-string)
 - "target": the name of the backup target device. (json-string)
 - "sync": what parts of the disk image should be copied to the destination;
@@ -1261,6 +1299,8 @@ Arguments:
           sectors allocated in the topmost image, or "none" to only replicate
           new I/O (MirrorSyncMode).
 - "speed": the maximum speed, in bytes per second (json-int, optional)
+- "compress": true to compress data, if the target format supports it.
+              (json-bool, optional, default false)
 - "on-source-error": the action to take on an error on the source, default
                      'report'.  'stop' and 'enospc' can only be used
                      if the block device supports io-status.
@@ -1372,7 +1412,8 @@ actions array:
       - "mode": whether and how QEMU should create the snapshot file
         (NewImageMode, optional, default "absolute-paths")
       When "type" is "blockdev-snapshot-internal-sync":
-      - "device": device name to snapshot (json-string)
+      - "device": the device name or node-name of a root node to snapshot
+                  (json-string)
       - "name": name of the new snapshot (json-string)
 
 Example:
@@ -1573,7 +1614,8 @@ name already exists, the operation will fail.
 
 Arguments:
 
-- "device": device name to snapshot (json-string)
+- "device": the device name or node-name of a root node to snapshot
+            (json-string)
 - "name": name of the new snapshot (json-string)
 
 Example:
@@ -1604,7 +1646,7 @@ fail.
 
 Arguments:
 
-- "device": device name (json-string)
+- "device": the device name or node-name of a root node (json-string)
 - "id": ID of the snapshot (json-string, optional)
 - "name": name of the snapshot (json-string, optional)
 
@@ -1629,8 +1671,8 @@ EQMP
 
     {
         .name       = "drive-mirror",
-        .args_type  = "sync:s,device:B,target:s,speed:i?,mode:s?,format:s?,"
-                      "node-name:s?,replaces:s?,"
+        .args_type  = "job-id:s?,sync:s,device:B,target:s,speed:i?,mode:s?,"
+                      "format:s?,node-name:s?,replaces:s?,"
                       "on-source-error:s?,on-target-error:s?,"
                       "unmap:b?,"
                       "granularity:i?,buf-size:i?",
@@ -1650,7 +1692,10 @@ of the source.
 
 Arguments:
 
-- "device": device name to operate on (json-string)
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": the device name or node-name of a root node whose writes should be
+            mirrored. (json-string)
 - "target": name of new image file (json-string)
 - "format": format of new image (json-string, optional)
 - "node-name": the name of the new block driver state in the node graph
@@ -1693,7 +1738,7 @@ EQMP
 
     {
         .name       = "blockdev-mirror",
-        .args_type  = "sync:s,device:B,target:B,replaces:s?,speed:i?,"
+        .args_type  = "job-id:s?,sync:s,device:B,target:B,replaces:s?,speed:i?,"
                       "on-source-error:s?,on-target-error:s?,"
                       "granularity:i?,buf-size:i?",
         .mhandler.cmd_new = qmp_marshal_blockdev_mirror,
@@ -1708,7 +1753,10 @@ specifies the target of mirror operation.
 
 Arguments:
 
-- "device": device name to operate on (json-string)
+- "job-id": Identifier for the newly-created block job. If omitted,
+            the device name will be used. (json-string, optional)
+- "device": The device name or node-name of a root node whose writes should be
+            mirrored (json-string)
 - "target": device name to mirror to (json-string)
 - "replaces": the block driver node name to replace when finished
               (json-string, optional)
@@ -1764,7 +1812,8 @@ Arguments:
                         "device".
                         (json-string, optional)
 
-- "device":             The name of the device.
+- "device":             The device name or node-name of the root node that owns
+                        image-node-name.
                         (json-string)
 
 - "backing-file":       The string to write as the backing file.  This string is
@@ -3747,10 +3796,10 @@ Set migration parameters
 - "compress-level": set compression level during migration (json-int)
 - "compress-threads": set compression thread count for migration (json-int)
 - "decompress-threads": set decompression thread count for migration (json-int)
-- "x-cpu-throttle-initial": set initial percentage of time guest cpus are
-                           throttled for auto-converge (json-int)
-- "x-cpu-throttle-increment": set throttle increasing percentage for
-                             auto-converge (json-int)
+- "cpu-throttle-initial": set initial percentage of time guest cpus are
+                          throttled for auto-converge (json-int)
+- "cpu-throttle-increment": set throttle increasing percentage for
+                            auto-converge (json-int)
 
 Arguments:
 
@@ -3764,7 +3813,7 @@ EQMP
     {
         .name       = "migrate-set-parameters",
         .args_type  =
-            "compress-level:i?,compress-threads:i?,decompress-threads:i?,x-cpu-throttle-initial:i?,x-cpu-throttle-increment:i?",
+            "compress-level:i?,compress-threads:i?,decompress-threads:i?,cpu-throttle-initial:i?,cpu-throttle-increment:i?",
         .mhandler.cmd_new = qmp_marshal_migrate_set_parameters,
     },
 SQMP
@@ -3777,10 +3826,10 @@ Query current migration parameters
          - "compress-level" : compression level value (json-int)
          - "compress-threads" : compression thread count value (json-int)
          - "decompress-threads" : decompression thread count value (json-int)
-         - "x-cpu-throttle-initial" : initial percentage of time guest cpus are
-                                      throttled (json-int)
-         - "x-cpu-throttle-increment" : throttle increasing percentage for
-                                        auto-converge (json-int)
+         - "cpu-throttle-initial" : initial percentage of time guest cpus are
+                                    throttled (json-int)
+         - "cpu-throttle-increment" : throttle increasing percentage for
+                                      auto-converge (json-int)
 
 Arguments:
 
@@ -3790,10 +3839,10 @@ Example:
 <- {
       "return": {
          "decompress-threads": 2,
-         "x-cpu-throttle-increment": 10,
+         "cpu-throttle-increment": 10,
          "compress-threads": 8,
          "compress-level": 1,
-         "x-cpu-throttle-initial": 20
+         "cpu-throttle-initial": 20
       }
    }
 
@@ -3900,6 +3949,24 @@ EQMP
         .name       = "query-cpu-definitions",
         .args_type  = "",
         .mhandler.cmd_new = qmp_marshal_query_cpu_definitions,
+    },
+
+    {
+        .name       = "query-cpu-model-expansion",
+        .args_type  = "type:s,model:q",
+        .mhandler.cmd_new = qmp_marshal_query_cpu_model_expansion,
+    },
+
+    {
+        .name       = "query-cpu-model-comparison",
+        .args_type  = "modela:q,modelb:q",
+        .mhandler.cmd_new = qmp_marshal_query_cpu_model_comparison,
+    },
+
+    {
+        .name       = "query-cpu-model-baseline",
+        .args_type  = "modela:q,modelb:q",
+        .mhandler.cmd_new = qmp_marshal_query_cpu_model_baseline,
     },
 
     {
@@ -4398,6 +4465,59 @@ Example:
 EQMP
 
     {
+        .name       = "x-blockdev-change",
+        .args_type  = "parent:B,child:B?,node:B?",
+        .mhandler.cmd_new = qmp_marshal_x_blockdev_change,
+    },
+
+SQMP
+x-blockdev-change
+-----------------
+
+Dynamically reconfigure the block driver state graph. It can be used
+to add, remove, insert or replace a graph node. Currently only the
+Quorum driver implements this feature to add or remove its child. This
+is useful to fix a broken quorum child.
+
+If @node is specified, it will be inserted under @parent. @child
+may not be specified in this case. If both @parent and @child are
+specified but @node is not, @child will be detached from @parent.
+
+Arguments:
+- "parent": the id or name of the parent node (json-string)
+- "child": the name of a child under the given parent node (json-string, optional)
+- "node": the name of the node that will be added (json-string, optional)
+
+Note: this command is experimental, and not a stable API. It doesn't
+support all kinds of operations, all kinds of children, nor all block
+drivers.
+
+Warning: The data in a new quorum child MUST be consistent with that of
+the rest of the array.
+
+Example:
+
+Add a new node to a quorum
+-> { "execute": "blockdev-add",
+     "arguments": { "options": { "driver": "raw",
+                                 "node-name": "new_node",
+                                 "file": { "driver": "file",
+                                           "filename": "test.raw" } } } }
+<- { "return": {} }
+-> { "execute": "x-blockdev-change",
+     "arguments": { "parent": "disk1",
+                    "node": "new_node" } }
+<- { "return": {} }
+
+Delete a quorum's node
+-> { "execute": "x-blockdev-change",
+     "arguments": { "parent": "disk1",
+                    "child": "children.1" } }
+<- { "return": {} }
+
+EQMP
+
+    {
         .name       = "query-named-block-nodes",
         .args_type  = "",
         .mhandler.cmd_new = qmp_marshal_query_named_block_nodes,
@@ -4623,7 +4743,7 @@ EQMP
 
     {
         .name       = "trace-event-get-state",
-        .args_type  = "name:s",
+        .args_type  = "name:s,vcpu:i?",
         .mhandler.cmd_new = qmp_marshal_trace_event_get_state,
     },
 
@@ -4633,6 +4753,20 @@ trace-event-get-state
 
 Query the state of events.
 
+Arguments:
+
+- "name": Event name pattern (json-string).
+- "vcpu": The vCPU to query, any vCPU by default (json-int, optional).
+
+An event is returned if:
+- its name matches the "name" pattern, and
+- if "vcpu" is given, the event has the "vcpu" property.
+
+Therefore, if "vcpu" is given, the operation will only match per-vCPU events,
+returning their state on the specified vCPU. Special case: if "name" is an exact
+match, "vcpu" is given and the event does not have the "vcpu" property, an error
+is returned.
+
 Example:
 
 -> { "execute": "trace-event-get-state", "arguments": { "name": "qemu_memalign" } }
@@ -4641,7 +4775,7 @@ EQMP
 
     {
         .name       = "trace-event-set-state",
-        .args_type  = "name:s,enable:b,ignore-unavailable:b?",
+        .args_type  = "name:s,enable:b,ignore-unavailable:b?,vcpu:i?",
         .mhandler.cmd_new = qmp_marshal_trace_event_set_state,
     },
 
@@ -4650,6 +4784,23 @@ trace-event-set-state
 ---------------------
 
 Set the state of events.
+
+Arguments:
+
+- "name": Event name pattern (json-string).
+- "enable": Whether to enable or disable the event (json-bool).
+- "ignore-unavailable": Whether to ignore errors for events that cannot be
+  changed (json-bool, optional).
+- "vcpu": The vCPU to act upon, all vCPUs by default (json-int, optional).
+
+An event's state is modified if:
+- its name matches the "name" pattern, and
+- if "vcpu" is given, the event has the "vcpu" property.
+
+Therefore, if "vcpu" is given, the operation will only match per-vCPU events,
+setting their state on the specified vCPU. Special case: if "name" is an exact
+match, "vcpu" is given and the event does not have the "vcpu" property, an error
+is returned.
 
 Example:
 
@@ -4678,8 +4829,6 @@ Arguments:
 The consoles are visible in the qom tree, under
 /backend/console[$index]. They have a device link and head property, so
 it is possible to map which console belongs to which device and display.
-
-Note: this command is experimental, and not a stable API.
 
 Example (1):
 
@@ -4853,3 +5002,68 @@ Example:
                  {"type": 0, "out-pport": 0, "pport": 0, "vlan-id": 3840,
                   "pop-vlan": 1, "id": 251658240}
    ]}
+
+EQMP
+
+#if defined TARGET_ARM
+    {
+        .name       = "query-gic-capabilities",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_query_gic_capabilities,
+    },
+#endif
+
+SQMP
+query-gic-capabilities
+---------------
+
+Return a list of GICCapability objects, describing supported GIC
+(Generic Interrupt Controller) versions.
+
+Arguments: None
+
+Example:
+
+-> { "execute": "query-gic-capabilities" }
+<- { "return": [{ "version": 2, "emulated": true, "kernel": false },
+                { "version": 3, "emulated": false, "kernel": true } ] }
+
+EQMP
+
+    {
+        .name       = "query-hotpluggable-cpus",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_query_hotpluggable_cpus,
+    },
+
+SQMP
+Show existing/possible CPUs
+---------------------------
+
+Arguments: None.
+
+Example for pseries machine type started with
+-smp 2,cores=2,maxcpus=4 -cpu POWER8:
+
+-> { "execute": "query-hotpluggable-cpus" }
+<- {"return": [
+     { "props": { "core-id": 8 }, "type": "POWER8-spapr-cpu-core",
+       "vcpus-count": 1 },
+     { "props": { "core-id": 0 }, "type": "POWER8-spapr-cpu-core",
+       "vcpus-count": 1, "qom-path": "/machine/unattached/device[0]"}
+   ]}'
+
+Example for pc machine type started with
+-smp 1,maxcpus=2:
+    -> { "execute": "query-hotpluggable-cpus" }
+    <- {"return": [
+         {
+            "type": "qemu64-x86_64-cpu", "vcpus-count": 1,
+            "props": {"core-id": 0, "socket-id": 1, "thread-id": 0}
+         },
+         {
+            "qom-path": "/machine/unattached/device[0]",
+            "type": "qemu64-x86_64-cpu", "vcpus-count": 1,
+            "props": {"core-id": 0, "socket-id": 0, "thread-id": 0}
+         }
+       ]}

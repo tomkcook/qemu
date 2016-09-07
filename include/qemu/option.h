@@ -23,12 +23,11 @@
  * THE SOFTWARE.
  */
 
-#ifndef QEMU_OPTIONS_H
-#define QEMU_OPTIONS_H
+#ifndef QEMU_OPTION_H
+#define QEMU_OPTION_H
 
 #include "qemu/queue.h"
 #include "qapi/qmp/qdict.h"
-#include "qemu/typedefs.h"
 
 const char *get_opt_name(char *buf, int buf_size, const char *p, char delim);
 const char *get_opt_value(char *buf, int buf_size, const char *p);

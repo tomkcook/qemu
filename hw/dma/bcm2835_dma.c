@@ -4,7 +4,9 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/dma/bcm2835_dma.h"
+#include "qemu/log.h"
 
 /* DMA CS Control and Status bits */
 #define BCM2708_DMA_ACTIVE      (1 << 0)

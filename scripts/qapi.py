@@ -63,12 +63,12 @@ returns_whitelist = [
 case_whitelist = [
     # From QMP:
     'ACPISlotType',         # DIMM, visible through query-acpi-ospm-status
-    'CpuInfoBase',          # CPU, visible through query-cpu
     'CpuInfoMIPS',          # PC, visible through query-cpu
     'CpuInfoTricore',       # PC, visible through query-cpu
     'QapiErrorClass',       # all members, visible through errors
     'UuidInfo',             # UUID, visible through query-uuid
     'X86CPURegister32',     # all members, visible indirectly through qom-get
+    'q_obj_CpuInfo-base',   # CPU, visible through query-cpu
 ]
 
 enum_types = []
@@ -327,6 +327,8 @@ class QAPISchemaParser(object):
 
 
 def find_base_members(base):
+    if isinstance(base, dict):
+        return base
     base_struct_define = find_struct(base)
     if not base_struct_define:
         return None
@@ -391,7 +393,8 @@ def check_name(expr_info, source, name, allow_optional=False,
     # code always prefixes it with the enum name
     if enum_member and membername[0].isdigit():
         membername = 'D' + membername
-    # Reserve the entire 'q_' namespace for c_name()
+    # Reserve the entire 'q_' namespace for c_name(), and for 'q_empty'
+    # and 'q_obj_*' implicit type names.
     if not valid_name.match(membername) or \
        c_name(membername, False).startswith('q_'):
         raise QAPIExprError(expr_info,
@@ -519,10 +522,14 @@ def check_type(expr_info, source, value, allow_array=False,
 
 def check_command(expr, expr_info):
     name = expr['command']
+    boxed = expr.get('boxed', False)
 
+    args_meta = ['struct']
+    if boxed:
+        args_meta += ['union', 'alternate']
     check_type(expr_info, "'data' for command '%s'" % name,
-               expr.get('data'), allow_dict=True, allow_optional=True,
-               allow_metas=['struct'])
+               expr.get('data'), allow_dict=not boxed, allow_optional=True,
+               allow_metas=args_meta)
     returns_meta = ['union', 'struct']
     if name in returns_whitelist:
         returns_meta += ['built-in', 'alternate', 'enum']
@@ -534,11 +541,15 @@ def check_command(expr, expr_info):
 def check_event(expr, expr_info):
     global events
     name = expr['event']
+    boxed = expr.get('boxed', False)
 
+    meta = ['struct']
+    if boxed:
+        meta += ['union', 'alternate']
     events.append(name)
     check_type(expr_info, "'data' for event '%s'" % name,
-               expr.get('data'), allow_dict=True, allow_optional=True,
-               allow_metas=['struct'])
+               expr.get('data'), allow_dict=not boxed, allow_optional=True,
+               allow_metas=meta)
 
 
 def check_union(expr, expr_info):
@@ -560,9 +571,10 @@ def check_union(expr, expr_info):
 
     # Else, it's a flat union.
     else:
-        # The object must have a string member 'base'.
+        # The object must have a string or dictionary 'base'.
         check_type(expr_info, "'base' for union '%s'" % name,
-                   base, allow_metas=['struct'])
+                   base, allow_dict=True, allow_optional=True,
+                   allow_metas=['struct'])
         if not base:
             raise QAPIExprError(expr_info,
                                 "Flat union '%s' must have a base"
@@ -607,6 +619,14 @@ def check_union(expr, expr_info):
                                     "Discriminator value '%s' is not found in "
                                     "enum '%s'" %
                                     (key, enum_define["enum_name"]))
+
+    # If discriminator is user-defined, ensure all values are covered
+    if enum_define:
+        for value in enum_define['enum_values']:
+            if value not in members.keys():
+                raise QAPIExprError(expr_info,
+                                    "Union '%s' data missing '%s' branch"
+                                    % (name, value))
 
 
 def check_alternate(expr, expr_info):
@@ -682,6 +702,10 @@ def check_keys(expr_elem, meta, required, optional=[]):
             raise QAPIExprError(info,
                                 "'%s' of %s '%s' should only use false value"
                                 % (key, meta, name))
+        if key == 'boxed' and value is not True:
+            raise QAPIExprError(info,
+                                "'%s' of %s '%s' should only use true value"
+                                % (key, meta, name))
     for key in required:
         if key not in expr:
             raise QAPIExprError(info,
@@ -713,10 +737,10 @@ def check_exprs(exprs):
             add_struct(expr, info)
         elif 'command' in expr:
             check_keys(expr_elem, 'command', [],
-                       ['data', 'returns', 'gen', 'success-response'])
+                       ['data', 'returns', 'gen', 'success-response', 'boxed'])
             add_name(expr['command'], info, 'command')
         elif 'event' in expr:
-            check_keys(expr_elem, 'event', [], ['data'])
+            check_keys(expr_elem, 'event', [], ['data', 'boxed'])
             add_name(expr['event'], info, 'event')
         else:
             raise QAPIExprError(expr_elem['info'],
@@ -814,19 +838,26 @@ class QAPISchemaVisitor(object):
         pass
 
     def visit_command(self, name, info, arg_type, ret_type,
-                      gen, success_response):
+                      gen, success_response, boxed):
         pass
 
-    def visit_event(self, name, info, arg_type):
+    def visit_event(self, name, info, arg_type, boxed):
         pass
 
 
 class QAPISchemaType(QAPISchemaEntity):
-    def c_type(self, is_param=False, is_unboxed=False):
-        return c_name(self.name) + pointer_suffix
+    # Return the C type for common use.
+    # For the types we commonly box, this is a pointer type.
+    def c_type(self):
+        pass
 
-    def c_null(self):
-        return 'NULL'
+    # Return the C type to be used in a parameter list.
+    def c_param_type(self):
+        return self.c_type()
+
+    # Return the C type to be used where we suppress boxing.
+    def c_unboxed_type(self):
+        return self.c_type()
 
     def json_type(self):
         pass
@@ -843,25 +874,24 @@ class QAPISchemaType(QAPISchemaEntity):
 
 
 class QAPISchemaBuiltinType(QAPISchemaType):
-    def __init__(self, name, json_type, c_type, c_null):
+    def __init__(self, name, json_type, c_type):
         QAPISchemaType.__init__(self, name, None)
         assert not c_type or isinstance(c_type, str)
         assert json_type in ('string', 'number', 'int', 'boolean', 'null',
                              'value')
         self._json_type_name = json_type
         self._c_type_name = c_type
-        self._c_null_val = c_null
 
     def c_name(self):
         return self.name
 
-    def c_type(self, is_param=False, is_unboxed=False):
-        if is_param and self.name == 'str':
-            return 'const ' + self._c_type_name
+    def c_type(self):
         return self._c_type_name
 
-    def c_null(self):
-        return self._c_null_val
+    def c_param_type(self):
+        if self.name == 'str':
+            return 'const ' + self._c_type_name
+        return self._c_type_name
 
     def json_type(self):
         return self._json_type_name
@@ -889,15 +919,11 @@ class QAPISchemaEnumType(QAPISchemaType):
         # See QAPISchema._make_implicit_enum_type()
         return self.name.endswith('Kind')
 
-    def c_type(self, is_param=False, is_unboxed=False):
+    def c_type(self):
         return c_name(self.name)
 
     def member_names(self):
         return [v.name for v in self.values]
-
-    def c_null(self):
-        return c_enum_const(self.name, (self.member_names() + ['_MAX'])[0],
-                            self.prefix)
 
     def json_type(self):
         return 'string'
@@ -920,6 +946,9 @@ class QAPISchemaArrayType(QAPISchemaType):
 
     def is_implicit(self):
         return True
+
+    def c_type(self):
+        return c_name(self.name) + pointer_suffix
 
     def json_type(self):
         return 'array'
@@ -978,18 +1007,24 @@ class QAPISchemaObjectType(QAPISchemaType):
             m.check_clash(info, seen)
 
     def is_implicit(self):
-        # See QAPISchema._make_implicit_object_type()
-        return self.name[0] == ':'
+        # See QAPISchema._make_implicit_object_type(), as well as
+        # _def_predefineds()
+        return self.name.startswith('q_')
+
+    def is_empty(self):
+        assert self.members is not None
+        return not self.members and not self.variants
 
     def c_name(self):
-        assert not self.is_implicit()
+        assert self.name != 'q_empty'
         return QAPISchemaType.c_name(self)
 
-    def c_type(self, is_param=False, is_unboxed=False):
+    def c_type(self):
         assert not self.is_implicit()
-        if is_unboxed:
-            return c_name(self.name)
         return c_name(self.name) + pointer_suffix
+
+    def c_unboxed_type(self):
+        return c_name(self.name)
 
     def json_type(self):
         return 'object'
@@ -1026,12 +1061,14 @@ class QAPISchemaMember(object):
 
     def _pretty_owner(self):
         owner = self.owner
-        if owner.startswith(':obj-'):
+        if owner.startswith('q_obj_'):
             # See QAPISchema._make_implicit_object_type() - reverse the
             # mapping there to create a nice human-readable description
-            owner = owner[5:]
+            owner = owner[6:]
             if owner.endswith('-arg'):
                 return '(parameter of %s)' % owner[:-4]
+            elif owner.endswith('-base'):
+                return '(base of %s)' % owner[:-5]
             else:
                 assert owner.endswith('-wrapper')
                 # Unreachable and not implemented
@@ -1072,7 +1109,7 @@ class QAPISchemaObjectTypeVariants(object):
         assert len(variants) > 0
         for v in variants:
             assert isinstance(v, QAPISchemaObjectTypeVariant)
-        self.tag_name = tag_name
+        self._tag_name = tag_name
         self.tag_member = tag_member
         self.variants = variants
 
@@ -1082,8 +1119,8 @@ class QAPISchemaObjectTypeVariants(object):
 
     def check(self, schema, seen):
         if not self.tag_member:    # flat union
-            self.tag_member = seen[c_name(self.tag_name)]
-            assert self.tag_name == self.tag_member.name
+            self.tag_member = seen[c_name(self._tag_name)]
+            assert self._tag_name == self.tag_member.name
         assert isinstance(self.tag_member.type, QAPISchemaEnumType)
         for v in self.variants:
             v.check(schema)
@@ -1108,22 +1145,12 @@ class QAPISchemaObjectTypeVariant(QAPISchemaObjectTypeMember):
     def __init__(self, name, typ):
         QAPISchemaObjectTypeMember.__init__(self, name, typ, False)
 
-    # This function exists to support ugly simple union special cases
-    # TODO get rid of them, and drop the function
-    def simple_union_type(self):
-        if (self.type.is_implicit() and
-                isinstance(self.type, QAPISchemaObjectType)):
-            assert len(self.type.members) == 1
-            assert not self.type.variants
-            return self.type.members[0].type
-        return None
-
 
 class QAPISchemaAlternateType(QAPISchemaType):
     def __init__(self, name, info, variants):
         QAPISchemaType.__init__(self, name, info)
         assert isinstance(variants, QAPISchemaObjectTypeVariants)
-        assert not variants.tag_name
+        assert variants.tag_member
         variants.set_owner(name)
         variants.tag_member.set_owner(self.name)
         self.variants = variants
@@ -1139,15 +1166,22 @@ class QAPISchemaAlternateType(QAPISchemaType):
         for v in self.variants.variants:
             v.check_clash(self.info, seen)
 
+    def c_type(self):
+        return c_name(self.name) + pointer_suffix
+
     def json_type(self):
         return 'value'
 
     def visit(self, visitor):
         visitor.visit_alternate_type(self.name, self.info, self.variants)
 
+    def is_empty(self):
+        return False
+
 
 class QAPISchemaCommand(QAPISchemaEntity):
-    def __init__(self, name, info, arg_type, ret_type, gen, success_response):
+    def __init__(self, name, info, arg_type, ret_type, gen, success_response,
+                 boxed):
         QAPISchemaEntity.__init__(self, name, info)
         assert not arg_type or isinstance(arg_type, str)
         assert not ret_type or isinstance(ret_type, str)
@@ -1157,12 +1191,24 @@ class QAPISchemaCommand(QAPISchemaEntity):
         self.ret_type = None
         self.gen = gen
         self.success_response = success_response
+        self.boxed = boxed
 
     def check(self, schema):
         if self._arg_type_name:
             self.arg_type = schema.lookup_type(self._arg_type_name)
-            assert isinstance(self.arg_type, QAPISchemaObjectType)
-            assert not self.arg_type.variants   # not implemented
+            assert (isinstance(self.arg_type, QAPISchemaObjectType) or
+                    isinstance(self.arg_type, QAPISchemaAlternateType))
+            self.arg_type.check(schema)
+            if self.boxed:
+                if self.arg_type.is_empty():
+                    raise QAPIExprError(self.info,
+                                        "Cannot use 'boxed' with empty type")
+            else:
+                assert not isinstance(self.arg_type, QAPISchemaAlternateType)
+                assert not self.arg_type.variants
+        elif self.boxed:
+            raise QAPIExprError(self.info,
+                                "Use of 'boxed' requires 'data'")
         if self._ret_type_name:
             self.ret_type = schema.lookup_type(self._ret_type_name)
             assert isinstance(self.ret_type, QAPISchemaType)
@@ -1170,24 +1216,36 @@ class QAPISchemaCommand(QAPISchemaEntity):
     def visit(self, visitor):
         visitor.visit_command(self.name, self.info,
                               self.arg_type, self.ret_type,
-                              self.gen, self.success_response)
+                              self.gen, self.success_response, self.boxed)
 
 
 class QAPISchemaEvent(QAPISchemaEntity):
-    def __init__(self, name, info, arg_type):
+    def __init__(self, name, info, arg_type, boxed):
         QAPISchemaEntity.__init__(self, name, info)
         assert not arg_type or isinstance(arg_type, str)
         self._arg_type_name = arg_type
         self.arg_type = None
+        self.boxed = boxed
 
     def check(self, schema):
         if self._arg_type_name:
             self.arg_type = schema.lookup_type(self._arg_type_name)
-            assert isinstance(self.arg_type, QAPISchemaObjectType)
-            assert not self.arg_type.variants   # not implemented
+            assert (isinstance(self.arg_type, QAPISchemaObjectType) or
+                    isinstance(self.arg_type, QAPISchemaAlternateType))
+            self.arg_type.check(schema)
+            if self.boxed:
+                if self.arg_type.is_empty():
+                    raise QAPIExprError(self.info,
+                                        "Cannot use 'boxed' with empty type")
+            else:
+                assert not isinstance(self.arg_type, QAPISchemaAlternateType)
+                assert not self.arg_type.variants
+        elif self.boxed:
+            raise QAPIExprError(self.info,
+                                "Use of 'boxed' requires 'data'")
 
     def visit(self, visitor):
-        visitor.visit_event(self.name, self.info, self.arg_type)
+        visitor.visit_event(self.name, self.info, self.arg_type, self.boxed)
 
 
 class QAPISchema(object):
@@ -1219,9 +1277,8 @@ class QAPISchema(object):
     def lookup_type(self, name):
         return self.lookup_entity(name, QAPISchemaType)
 
-    def _def_builtin_type(self, name, json_type, c_type, c_null):
-        self._def_entity(QAPISchemaBuiltinType(name, json_type,
-                                               c_type, c_null))
+    def _def_builtin_type(self, name, json_type, c_type):
+        self._def_entity(QAPISchemaBuiltinType(name, json_type, c_type))
         # TODO As long as we have QAPI_TYPES_BUILTIN to share multiple
         # qapi-types.h from a single .c, all arrays of builtins must be
         # declared in the first file whether or not they are used.  Nicer
@@ -1230,23 +1287,23 @@ class QAPISchema(object):
         self._make_array_type(name, None)
 
     def _def_predefineds(self):
-        for t in [('str',    'string',  'char' + pointer_suffix, 'NULL'),
-                  ('number', 'number',  'double',   '0'),
-                  ('int',    'int',     'int64_t',  '0'),
-                  ('int8',   'int',     'int8_t',   '0'),
-                  ('int16',  'int',     'int16_t',  '0'),
-                  ('int32',  'int',     'int32_t',  '0'),
-                  ('int64',  'int',     'int64_t',  '0'),
-                  ('uint8',  'int',     'uint8_t',  '0'),
-                  ('uint16', 'int',     'uint16_t', '0'),
-                  ('uint32', 'int',     'uint32_t', '0'),
-                  ('uint64', 'int',     'uint64_t', '0'),
-                  ('size',   'int',     'uint64_t', '0'),
-                  ('bool',   'boolean', 'bool',     'false'),
-                  ('any',    'value',   'QObject' + pointer_suffix, 'NULL')]:
+        for t in [('str',    'string',  'char' + pointer_suffix),
+                  ('number', 'number',  'double'),
+                  ('int',    'int',     'int64_t'),
+                  ('int8',   'int',     'int8_t'),
+                  ('int16',  'int',     'int16_t'),
+                  ('int32',  'int',     'int32_t'),
+                  ('int64',  'int',     'int64_t'),
+                  ('uint8',  'int',     'uint8_t'),
+                  ('uint16', 'int',     'uint16_t'),
+                  ('uint32', 'int',     'uint32_t'),
+                  ('uint64', 'int',     'uint64_t'),
+                  ('size',   'int',     'uint64_t'),
+                  ('bool',   'boolean', 'bool'),
+                  ('any',    'value',   'QObject' + pointer_suffix)]:
             self._def_builtin_type(*t)
-        self.the_empty_object_type = QAPISchemaObjectType(':empty', None, None,
-                                                          [], None)
+        self.the_empty_object_type = QAPISchemaObjectType('q_empty', None,
+                                                          None, [], None)
         self._def_entity(self.the_empty_object_type)
         qtype_values = self._make_enum_members(['none', 'qnull', 'qint',
                                                 'qstring', 'qdict', 'qlist',
@@ -1274,7 +1331,7 @@ class QAPISchema(object):
         if not members:
             return None
         # See also QAPISchemaObjectTypeMember._pretty_owner()
-        name = ':obj-%s-%s' % (name, role)
+        name = 'q_obj_%s-%s' % (name, role)
         if not self.lookup_entity(name, QAPISchemaObjectType):
             self._def_entity(QAPISchemaObjectType(name, info, None,
                                                   members, None))
@@ -1326,6 +1383,9 @@ class QAPISchema(object):
         base = expr.get('base')
         tag_name = expr.get('discriminator')
         tag_member = None
+        if isinstance(base, dict):
+            base = (self._make_implicit_object_type(
+                    name, info, 'base', self._make_members(base, info)))
         if tag_name:
             variants = [self._make_variant(key, value)
                         for (key, value) in data.iteritems()]
@@ -1361,6 +1421,7 @@ class QAPISchema(object):
         rets = expr.get('returns')
         gen = expr.get('gen', True)
         success_response = expr.get('success-response', True)
+        boxed = expr.get('boxed', False)
         if isinstance(data, OrderedDict):
             data = self._make_implicit_object_type(
                 name, info, 'arg', self._make_members(data, info))
@@ -1368,15 +1429,16 @@ class QAPISchema(object):
             assert len(rets) == 1
             rets = self._make_array_type(rets[0], info)
         self._def_entity(QAPISchemaCommand(name, info, data, rets, gen,
-                                           success_response))
+                                           success_response, boxed))
 
     def _def_event(self, expr, info):
         name = expr['event']
         data = expr.get('data')
+        boxed = expr.get('boxed', False)
         if isinstance(data, OrderedDict):
             data = self._make_implicit_object_type(
                 name, info, 'arg', self._make_members(data, info))
-        self._def_entity(QAPISchemaEvent(name, info, data))
+        self._def_entity(QAPISchemaEvent(name, info, data, boxed))
 
     def _def_exprs(self):
         for expr_elem in self.exprs:
@@ -1619,70 +1681,26 @@ extern const char *const %(c_name)s_lookup[];
     return ret
 
 
-def gen_params(arg_type, extra):
+def gen_params(arg_type, boxed, extra):
     if not arg_type:
+        assert not boxed
         return extra
-    assert not arg_type.variants
     ret = ''
     sep = ''
-    for memb in arg_type.members:
-        ret += sep
+    if boxed:
+        ret += '%s arg' % arg_type.c_param_type()
         sep = ', '
-        if memb.optional:
-            ret += 'bool has_%s, ' % c_name(memb.name)
-        ret += '%s %s' % (memb.type.c_type(is_param=True), c_name(memb.name))
+    else:
+        assert not arg_type.variants
+        for memb in arg_type.members:
+            ret += sep
+            sep = ', '
+            if memb.optional:
+                ret += 'bool has_%s, ' % c_name(memb.name)
+            ret += '%s %s' % (memb.type.c_param_type(),
+                              c_name(memb.name))
     if extra:
         ret += sep + extra
-    return ret
-
-
-def gen_err_check(label='out', skiperr=False):
-    if skiperr:
-        return ''
-    return mcgen('''
-    if (err) {
-        goto %(label)s;
-    }
-''',
-                 label=label)
-
-
-def gen_visit_members(members, prefix='', need_cast=False, skiperr=False,
-                      label='out'):
-    ret = ''
-    if skiperr:
-        errparg = 'NULL'
-    else:
-        errparg = '&err'
-
-    for memb in members:
-        if memb.optional:
-            ret += mcgen('''
-    if (visit_optional(v, "%(name)s", &%(prefix)shas_%(c_name)s)) {
-''',
-                         prefix=prefix, c_name=c_name(memb.name),
-                         name=memb.name)
-            push_indent()
-
-        # Ugly: sometimes we need to cast away const
-        if need_cast and memb.type.name == 'str':
-            cast = '(char **)'
-        else:
-            cast = ''
-
-        ret += mcgen('''
-    visit_type_%(c_type)s(v, "%(name)s", %(cast)s&%(prefix)s%(c_name)s, %(errp)s);
-''',
-                     c_type=memb.type.c_name(), prefix=prefix, cast=cast,
-                     c_name=c_name(memb.name), name=memb.name,
-                     errp=errparg)
-        ret += gen_err_check(skiperr=skiperr, label=label)
-
-        if memb.optional:
-            pop_indent()
-            ret += mcgen('''
-    }
-''')
     return ret
 
 

@@ -34,6 +34,8 @@
 #include "ui/console.h"
 #include "block/qapi.h"
 #include "qemu-io.h"
+#include "qemu/cutils.h"
+#include "qemu/error-report.h"
 
 #ifdef CONFIG_SPICE
 #include <spice/enums.h>
@@ -167,8 +169,15 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
     }
 
     if (info->has_status) {
-        monitor_printf(mon, "Migration status: %s\n",
+        monitor_printf(mon, "Migration status: %s",
                        MigrationStatus_lookup[info->status]);
+        if (info->status == MIGRATION_STATUS_FAILED &&
+            info->has_error_desc) {
+            monitor_printf(mon, " (%s)\n", info->error_desc);
+        } else {
+            monitor_printf(mon, "\n");
+        }
+
         monitor_printf(mon, "total time: %" PRIu64 " milliseconds\n",
                        info->total_time);
         if (info->has_expected_downtime) {
@@ -208,6 +217,10 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
             monitor_printf(mon, "dirty pages rate: %" PRIu64 " pages\n",
                            info->ram->dirty_pages_rate);
         }
+        if (info->ram->postcopy_requests) {
+            monitor_printf(mon, "postcopy request count: %" PRIu64 "\n",
+                           info->ram->postcopy_requests);
+        }
     }
 
     if (info->has_disk) {
@@ -234,9 +247,9 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
                        info->xbzrle_cache->overflow);
     }
 
-    if (info->has_x_cpu_throttle_percentage) {
+    if (info->has_cpu_throttle_percentage) {
         monitor_printf(mon, "cpu throttle percentage: %" PRIu64 "\n",
-                       info->x_cpu_throttle_percentage);
+                       info->cpu_throttle_percentage);
     }
 
     qapi_free_MigrationInfo(info);
@@ -280,11 +293,17 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
             MigrationParameter_lookup[MIGRATION_PARAMETER_DECOMPRESS_THREADS],
             params->decompress_threads);
         monitor_printf(mon, " %s: %" PRId64,
-            MigrationParameter_lookup[MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL],
-            params->x_cpu_throttle_initial);
+            MigrationParameter_lookup[MIGRATION_PARAMETER_CPU_THROTTLE_INITIAL],
+            params->cpu_throttle_initial);
         monitor_printf(mon, " %s: %" PRId64,
-            MigrationParameter_lookup[MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT],
-            params->x_cpu_throttle_increment);
+            MigrationParameter_lookup[MIGRATION_PARAMETER_CPU_THROTTLE_INCREMENT],
+            params->cpu_throttle_increment);
+        monitor_printf(mon, " %s: '%s'",
+            MigrationParameter_lookup[MIGRATION_PARAMETER_TLS_CREDS],
+            params->tls_creds ? : "");
+        monitor_printf(mon, " %s: '%s'",
+            MigrationParameter_lookup[MIGRATION_PARAMETER_TLS_HOSTNAME],
+            params->tls_hostname ? : "");
         monitor_printf(mon, "\n");
     }
 
@@ -857,7 +876,7 @@ void hmp_info_tpm(Monitor *mon, const QDict *qdict)
 
         switch (ti->options->type) {
         case TPM_TYPE_OPTIONS_KIND_PASSTHROUGH:
-            tpo = ti->options->u.passthrough;
+            tpo = ti->options->u.passthrough.data;
             monitor_printf(mon, "%s%s%s%s",
                            tpo->has_path ? ",path=" : "",
                            tpo->has_path ? tpo->path : "",
@@ -1058,31 +1077,28 @@ void hmp_block_resize(Monitor *mon, const QDict *qdict)
 
 void hmp_drive_mirror(Monitor *mon, const QDict *qdict)
 {
-    const char *device = qdict_get_str(qdict, "device");
     const char *filename = qdict_get_str(qdict, "target");
     const char *format = qdict_get_try_str(qdict, "format");
     bool reuse = qdict_get_try_bool(qdict, "reuse", false);
     bool full = qdict_get_try_bool(qdict, "full", false);
-    enum NewImageMode mode;
     Error *err = NULL;
+    DriveMirror mirror = {
+        .device = (char *)qdict_get_str(qdict, "device"),
+        .target = (char *)filename,
+        .has_format = !!format,
+        .format = (char *)format,
+        .sync = full ? MIRROR_SYNC_MODE_FULL : MIRROR_SYNC_MODE_TOP,
+        .has_mode = true,
+        .mode = reuse ? NEW_IMAGE_MODE_EXISTING : NEW_IMAGE_MODE_ABSOLUTE_PATHS,
+        .unmap = true,
+    };
 
     if (!filename) {
         error_setg(&err, QERR_MISSING_PARAMETER, "target");
         hmp_handle_error(mon, &err);
         return;
     }
-
-    if (reuse) {
-        mode = NEW_IMAGE_MODE_EXISTING;
-    } else {
-        mode = NEW_IMAGE_MODE_ABSOLUTE_PATHS;
-    }
-
-    qmp_drive_mirror(device, filename, !!format, format,
-                     false, NULL, false, NULL,
-                     full ? MIRROR_SYNC_MODE_FULL : MIRROR_SYNC_MODE_TOP,
-                     true, mode, false, 0, false, 0, false, 0,
-                     false, 0, false, 0, false, true, &err);
+    qmp_drive_mirror(&mirror, &err);
     hmp_handle_error(mon, &err);
 }
 
@@ -1093,8 +1109,19 @@ void hmp_drive_backup(Monitor *mon, const QDict *qdict)
     const char *format = qdict_get_try_str(qdict, "format");
     bool reuse = qdict_get_try_bool(qdict, "reuse", false);
     bool full = qdict_get_try_bool(qdict, "full", false);
-    enum NewImageMode mode;
+    bool compress = qdict_get_try_bool(qdict, "compress", false);
     Error *err = NULL;
+    DriveBackup backup = {
+        .device = (char *)device,
+        .target = (char *)filename,
+        .has_format = !!format,
+        .format = (char *)format,
+        .sync = full ? MIRROR_SYNC_MODE_FULL : MIRROR_SYNC_MODE_TOP,
+        .has_mode = true,
+        .mode = reuse ? NEW_IMAGE_MODE_EXISTING : NEW_IMAGE_MODE_ABSOLUTE_PATHS,
+        .has_compress = !!compress,
+        .compress = compress,
+    };
 
     if (!filename) {
         error_setg(&err, QERR_MISSING_PARAMETER, "target");
@@ -1102,16 +1129,7 @@ void hmp_drive_backup(Monitor *mon, const QDict *qdict)
         return;
     }
 
-    if (reuse) {
-        mode = NEW_IMAGE_MODE_EXISTING;
-    } else {
-        mode = NEW_IMAGE_MODE_ABSOLUTE_PATHS;
-    }
-
-    qmp_drive_backup(device, filename, !!format, format,
-                     full ? MIRROR_SYNC_MODE_FULL : MIRROR_SYNC_MODE_TOP,
-                     true, mode, false, 0, false, NULL,
-                     false, 0, false, 0, &err);
+    qmp_drive_backup(&backup, &err);
     hmp_handle_error(mon, &err);
 }
 
@@ -1234,13 +1252,17 @@ void hmp_migrate_set_capability(Monitor *mon, const QDict *qdict)
 void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
 {
     const char *param = qdict_get_str(qdict, "parameter");
-    int value = qdict_get_int(qdict, "value");
+    const char *valuestr = qdict_get_str(qdict, "value");
+    long valueint = 0;
     Error *err = NULL;
     bool has_compress_level = false;
     bool has_compress_threads = false;
     bool has_decompress_threads = false;
-    bool has_x_cpu_throttle_initial = false;
-    bool has_x_cpu_throttle_increment = false;
+    bool has_cpu_throttle_initial = false;
+    bool has_cpu_throttle_increment = false;
+    bool has_tls_creds = false;
+    bool has_tls_hostname = false;
+    bool use_int_value = false;
     int i;
 
     for (i = 0; i < MIGRATION_PARAMETER__MAX; i++) {
@@ -1248,25 +1270,46 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
             switch (i) {
             case MIGRATION_PARAMETER_COMPRESS_LEVEL:
                 has_compress_level = true;
+                use_int_value = true;
                 break;
             case MIGRATION_PARAMETER_COMPRESS_THREADS:
                 has_compress_threads = true;
+                use_int_value = true;
                 break;
             case MIGRATION_PARAMETER_DECOMPRESS_THREADS:
                 has_decompress_threads = true;
+                use_int_value = true;
                 break;
-            case MIGRATION_PARAMETER_X_CPU_THROTTLE_INITIAL:
-                has_x_cpu_throttle_initial = true;
+            case MIGRATION_PARAMETER_CPU_THROTTLE_INITIAL:
+                has_cpu_throttle_initial = true;
+                use_int_value = true;
                 break;
-            case MIGRATION_PARAMETER_X_CPU_THROTTLE_INCREMENT:
-                has_x_cpu_throttle_increment = true;
+            case MIGRATION_PARAMETER_CPU_THROTTLE_INCREMENT:
+                has_cpu_throttle_increment = true;
+                break;
+            case MIGRATION_PARAMETER_TLS_CREDS:
+                has_tls_creds = true;
+                break;
+            case MIGRATION_PARAMETER_TLS_HOSTNAME:
+                has_tls_hostname = true;
                 break;
             }
-            qmp_migrate_set_parameters(has_compress_level, value,
-                                       has_compress_threads, value,
-                                       has_decompress_threads, value,
-                                       has_x_cpu_throttle_initial, value,
-                                       has_x_cpu_throttle_increment, value,
+
+            if (use_int_value) {
+                if (qemu_strtol(valuestr, NULL, 10, &valueint) < 0) {
+                    error_setg(&err, "Unable to parse '%s' as an int",
+                               valuestr);
+                    goto cleanup;
+                }
+            }
+
+            qmp_migrate_set_parameters(has_compress_level, valueint,
+                                       has_compress_threads, valueint,
+                                       has_decompress_threads, valueint,
+                                       has_cpu_throttle_initial, valueint,
+                                       has_cpu_throttle_increment, valueint,
+                                       has_tls_creds, valuestr,
+                                       has_tls_hostname, valuestr,
                                        &err);
             break;
         }
@@ -1276,6 +1319,7 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
         error_setg(&err, QERR_INVALID_PARAMETER, param);
     }
 
+ cleanup:
     if (err) {
         error_report_err(err);
     }
@@ -1394,42 +1438,17 @@ void hmp_change(Monitor *mon, const QDict *qdict)
 void hmp_block_set_io_throttle(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
+    BlockIOThrottle throttle = {
+        .device = (char *) qdict_get_str(qdict, "device"),
+        .bps = qdict_get_int(qdict, "bps"),
+        .bps_rd = qdict_get_int(qdict, "bps_rd"),
+        .bps_wr = qdict_get_int(qdict, "bps_wr"),
+        .iops = qdict_get_int(qdict, "iops"),
+        .iops_rd = qdict_get_int(qdict, "iops_rd"),
+        .iops_wr = qdict_get_int(qdict, "iops_wr"),
+    };
 
-    qmp_block_set_io_throttle(qdict_get_str(qdict, "device"),
-                              qdict_get_int(qdict, "bps"),
-                              qdict_get_int(qdict, "bps_rd"),
-                              qdict_get_int(qdict, "bps_wr"),
-                              qdict_get_int(qdict, "iops"),
-                              qdict_get_int(qdict, "iops_rd"),
-                              qdict_get_int(qdict, "iops_wr"),
-                              false, /* no burst max via HMP */
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false, /* no burst length via HMP */
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false,
-                              0,
-                              false, /* No default I/O size */
-                              0,
-                              false,
-                              NULL, &err);
+    qmp_block_set_io_throttle(&throttle, &err);
     hmp_handle_error(mon, &err);
 }
 
@@ -1440,7 +1459,7 @@ void hmp_block_stream(Monitor *mon, const QDict *qdict)
     const char *base = qdict_get_try_str(qdict, "base");
     int64_t speed = qdict_get_try_int(qdict, "speed", 0);
 
-    qmp_block_stream(device, base != NULL, base, false, NULL,
+    qmp_block_stream(false, NULL, device, base != NULL, base, false, NULL,
                      qdict_haskey(qdict, "speed"), speed,
                      true, BLOCKDEV_ON_ERROR_REPORT, &error);
 
@@ -1531,6 +1550,9 @@ static void hmp_migrate_status_cb(void *opaque)
     } else {
         if (status->is_block_migration) {
             monitor_printf(status->mon, "\n");
+        }
+        if (info->has_error_desc) {
+            error_report("%s", info->error_desc);
         }
         monitor_resume(status->mon);
         timer_del(status->timer);
@@ -1674,7 +1696,7 @@ void hmp_object_add(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
     QemuOpts *opts;
-    OptsVisitor *ov;
+    Visitor *v;
     Object *obj = NULL;
 
     opts = qemu_opts_from_qdict(qemu_find_opts("object"), qdict, &err);
@@ -1683,9 +1705,9 @@ void hmp_object_add(Monitor *mon, const QDict *qdict)
         return;
     }
 
-    ov = opts_visitor_new(opts);
-    obj = user_creatable_add(qdict, opts_get_visitor(ov), &err);
-    opts_visitor_cleanup(ov);
+    v = opts_visitor_new(opts);
+    obj = user_creatable_add(qdict, v, &err);
+    visit_free(v);
     qemu_opts_del(opts);
 
     if (err) {
@@ -1753,14 +1775,14 @@ void hmp_sendkey(Monitor *mon, const QDict *qdict)
                 goto err_out;
             }
             keylist->value->type = KEY_VALUE_KIND_NUMBER;
-            keylist->value->u.number = value;
+            keylist->value->u.number.data = value;
         } else {
             int idx = index_from_key(keys, keyname_len);
             if (idx == Q_KEY_CODE__MAX) {
                 goto err_out;
             }
             keylist->value->type = KEY_VALUE_KIND_QCODE;
-            keylist->value->u.qcode = idx;
+            keylist->value->u.qcode.data = idx;
         }
 
         if (!separator) {
@@ -1901,18 +1923,36 @@ void hmp_chardev_remove(Monitor *mon, const QDict *qdict)
 void hmp_qemu_io(Monitor *mon, const QDict *qdict)
 {
     BlockBackend *blk;
+    BlockBackend *local_blk = NULL;
     const char* device = qdict_get_str(qdict, "device");
     const char* command = qdict_get_str(qdict, "command");
     Error *err = NULL;
 
     blk = blk_by_name(device);
+    if (!blk) {
+        BlockDriverState *bs = bdrv_lookup_bs(NULL, device, &err);
+        if (bs) {
+            blk = local_blk = blk_new();
+            blk_insert_bs(blk, bs);
+        } else {
+            goto fail;
+        }
+    }
+
     if (blk) {
+        AioContext *aio_context = blk_get_aio_context(blk);
+        aio_context_acquire(aio_context);
+
         qemuio_command(blk, command);
+
+        aio_context_release(aio_context);
     } else {
         error_set(&err, ERROR_CLASS_DEVICE_NOT_FOUND,
                   "Device '%s' not found", device);
     }
 
+fail:
+    blk_unref(local_blk);
     hmp_handle_error(mon, &err);
 }
 
@@ -1930,15 +1970,14 @@ void hmp_info_memdev(Monitor *mon, const QDict *qdict)
     Error *err = NULL;
     MemdevList *memdev_list = qmp_query_memdev(&err);
     MemdevList *m = memdev_list;
-    StringOutputVisitor *ov;
+    Visitor *v;
     char *str;
     int i = 0;
 
 
     while (m) {
-        ov = string_output_visitor_new(false);
-        visit_type_uint16List(string_output_get_visitor(ov), NULL,
-                              &m->value->host_nodes, NULL);
+        v = string_output_visitor_new(false, &str);
+        visit_type_uint16List(v, NULL, &m->value->host_nodes, NULL);
         monitor_printf(mon, "memory backend: %d\n", i);
         monitor_printf(mon, "  size:  %" PRId64 "\n", m->value->size);
         monitor_printf(mon, "  merge: %s\n",
@@ -1949,11 +1988,11 @@ void hmp_info_memdev(Monitor *mon, const QDict *qdict)
                        m->value->prealloc ? "true" : "false");
         monitor_printf(mon, "  policy: %s\n",
                        HostMemPolicy_lookup[m->value->policy]);
-        str = string_output_get_string(ov);
+        visit_complete(v, &str);
         monitor_printf(mon, "  host nodes: %s\n", str);
 
         g_free(str);
-        string_output_visitor_cleanup(ov);
+        visit_free(v);
         m = m->next;
         i++;
     }
@@ -1977,7 +2016,7 @@ void hmp_info_memory_devices(Monitor *mon, const QDict *qdict)
         if (value) {
             switch (value->type) {
             case MEMORY_DEVICE_INFO_KIND_DIMM:
-                di = value->u.dimm;
+                di = value->u.dimm.data;
 
                 monitor_printf(mon, "Memory device [%s]: \"%s\"\n",
                                MemoryDeviceInfoKind_lookup[value->type],
@@ -2379,4 +2418,46 @@ void hmp_info_dump(Monitor *mon, const QDict *qdict)
     }
 
     qapi_free_DumpQueryResult(result);
+}
+
+void hmp_hotpluggable_cpus(Monitor *mon, const QDict *qdict)
+{
+    Error *err = NULL;
+    HotpluggableCPUList *l = qmp_query_hotpluggable_cpus(&err);
+    HotpluggableCPUList *saved = l;
+    CpuInstanceProperties *c;
+
+    if (err != NULL) {
+        hmp_handle_error(mon, &err);
+        return;
+    }
+
+    monitor_printf(mon, "Hotpluggable CPUs:\n");
+    while (l) {
+        monitor_printf(mon, "  type: \"%s\"\n", l->value->type);
+        monitor_printf(mon, "  vcpus_count: \"%" PRIu64 "\"\n",
+                       l->value->vcpus_count);
+        if (l->value->has_qom_path) {
+            monitor_printf(mon, "  qom_path: \"%s\"\n", l->value->qom_path);
+        }
+
+        c = l->value->props;
+        monitor_printf(mon, "  CPUInstance Properties:\n");
+        if (c->has_node_id) {
+            monitor_printf(mon, "    node-id: \"%" PRIu64 "\"\n", c->node_id);
+        }
+        if (c->has_socket_id) {
+            monitor_printf(mon, "    socket-id: \"%" PRIu64 "\"\n", c->socket_id);
+        }
+        if (c->has_core_id) {
+            monitor_printf(mon, "    core-id: \"%" PRIu64 "\"\n", c->core_id);
+        }
+        if (c->has_thread_id) {
+            monitor_printf(mon, "    thread-id: \"%" PRIu64 "\"\n", c->thread_id);
+        }
+
+        l = l->next;
+    }
+
+    qapi_free_HotpluggableCPUList(saved);
 }

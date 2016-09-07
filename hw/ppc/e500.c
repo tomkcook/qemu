@@ -15,6 +15,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "qemu-common.h"
 #include "e500.h"
 #include "e500-ccsr.h"
@@ -600,7 +601,7 @@ static int ppce500_prep_device_tree(MachineState *machine,
 }
 
 /* Create -kernel TLB entries for BookE.  */
-static inline hwaddr booke206_page_size_to_tlb(uint64_t size)
+hwaddr booke206_page_size_to_tlb(uint64_t size)
 {
     return 63 - clz64(size >> 10);
 }

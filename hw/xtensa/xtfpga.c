@@ -26,6 +26,9 @@
  */
 
 #include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu-common.h"
+#include "cpu.h"
 #include "sysemu/sysemu.h"
 #include "hw/boards.h"
 #include "hw/loader.h"
@@ -162,7 +165,7 @@ static pflash_t *xtfpga_flash_init(MemoryRegion *address_space,
     qdev_prop_set_uint32(dev, "num-blocks",
                          board->flash_size / board->flash_sector_size);
     qdev_prop_set_uint64(dev, "sector-length", board->flash_sector_size);
-    qdev_prop_set_uint8(dev, "width", 4);
+    qdev_prop_set_uint8(dev, "width", 2);
     qdev_prop_set_bit(dev, "big-endian", be);
     qdev_prop_set_string(dev, "name", "lx60.io.flash");
     qdev_init_nofail(dev);
@@ -510,4 +513,4 @@ static void xtensa_lx_machines_init(void)
     type_register_static(&xtensa_kc705_type);
 }
 
-machine_init(xtensa_lx_machines_init)
+type_init(xtensa_lx_machines_init)

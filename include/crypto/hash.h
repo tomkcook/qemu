@@ -18,10 +18,10 @@
  *
  */
 
-#ifndef QCRYPTO_HASH_H__
-#define QCRYPTO_HASH_H__
+#ifndef QCRYPTO_HASH_H
+#define QCRYPTO_HASH_H
 
-#include "qemu-common.h"
+#include "qapi-types.h"
 
 /* See also "QCryptoHashAlgorithm" defined in qapi/crypto.json */
 
@@ -189,4 +189,4 @@ int qcrypto_hash_base64(QCryptoHashAlgorithm alg,
                         char **base64,
                         Error **errp);
 
-#endif /* QCRYPTO_HASH_H__ */
+#endif /* QCRYPTO_HASH_H */

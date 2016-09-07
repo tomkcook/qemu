@@ -18,10 +18,10 @@
  *
  */
 
-#ifndef QCRYPTO_CIPHER_H__
-#define QCRYPTO_CIPHER_H__
+#ifndef QCRYPTO_CIPHER_H
+#define QCRYPTO_CIPHER_H
 
-#include "qemu-common.h"
+#include "qapi-types.h"
 
 typedef struct QCryptoCipher QCryptoCipher;
 
@@ -230,4 +230,4 @@ int qcrypto_cipher_setiv(QCryptoCipher *cipher,
                          const uint8_t *iv, size_t niv,
                          Error **errp);
 
-#endif /* QCRYPTO_CIPHER_H__ */
+#endif /* QCRYPTO_CIPHER_H */

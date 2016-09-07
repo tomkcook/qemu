@@ -27,6 +27,7 @@
 #include "ui/console.h"
 #include "qemu/timer.h"
 #include "hw/input/hid.h"
+#include "trace.h"
 
 #define HID_USAGE_ERROR_ROLLOVER        0x01
 #define HID_USAGE_POSTFAIL              0x02
@@ -96,7 +97,7 @@ void hid_set_next_idle(HIDState *hs)
 {
     if (hs->idle) {
         uint64_t expire_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                               get_ticks_per_sec() * hs->idle * 4 / 1000;
+                               NANOSECONDS_PER_SECOND * hs->idle * 4 / 1000;
         if (!hs->idle_timer) {
             hs->idle_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, hid_idle_timer, hs);
         }
@@ -124,7 +125,7 @@ static void hid_pointer_event(DeviceState *dev, QemuConsole *src,
 
     switch (evt->type) {
     case INPUT_EVENT_KIND_REL:
-        move = evt->u.rel;
+        move = evt->u.rel.data;
         if (move->axis == INPUT_AXIS_X) {
             e->xdx += move->value;
         } else if (move->axis == INPUT_AXIS_Y) {
@@ -133,7 +134,7 @@ static void hid_pointer_event(DeviceState *dev, QemuConsole *src,
         break;
 
     case INPUT_EVENT_KIND_ABS:
-        move = evt->u.abs;
+        move = evt->u.abs.data;
         if (move->axis == INPUT_AXIS_X) {
             e->xdx = move->value;
         } else if (move->axis == INPUT_AXIS_Y) {
@@ -142,7 +143,7 @@ static void hid_pointer_event(DeviceState *dev, QemuConsole *src,
         break;
 
     case INPUT_EVENT_KIND_BTN:
-        btn = evt->u.btn;
+        btn = evt->u.btn.data;
         if (btn->down) {
             e->buttons_state |= bmap[btn->button];
             if (btn->button == INPUT_BUTTON_WHEEL_UP) {
@@ -228,13 +229,13 @@ static void hid_keyboard_event(DeviceState *dev, QemuConsole *src,
     HIDState *hs = (HIDState *)dev;
     int scancodes[3], i, count;
     int slot;
-    InputKeyEvent *key = evt->u.key;
+    InputKeyEvent *key = evt->u.key.data;
 
     count = qemu_input_key_value_to_scancode(key->key,
                                              key->down,
                                              scancodes);
     if (hs->n + count > QUEUE_LENGTH) {
-        fprintf(stderr, "usb-kbd: warning: key event queue full\n");
+        trace_hid_kbd_queue_full();
         return;
     }
     for (i = 0; i < count; i++) {

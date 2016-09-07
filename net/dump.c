@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "clients.h"
+#include "qapi/error.h"
 #include "qemu-common.h"
 #include "qemu/error-report.h"
 #include "qemu/iov.h"
@@ -171,14 +172,14 @@ static void dumpclient_cleanup(NetClientState *nc)
 }
 
 static NetClientInfo net_dump_info = {
-    .type = NET_CLIENT_OPTIONS_KIND_DUMP,
+    .type = NET_CLIENT_DRIVER_DUMP,
     .size = sizeof(DumpNetClient),
     .receive = dumpclient_receive,
     .receive_iov = dumpclient_receive_iov,
     .cleanup = dumpclient_cleanup,
 };
 
-int net_init_dump(const NetClientOptions *opts, const char *name,
+int net_init_dump(const Netdev *netdev, const char *name,
                   NetClientState *peer, Error **errp)
 {
     int len, rc;
@@ -188,8 +189,8 @@ int net_init_dump(const NetClientOptions *opts, const char *name,
     NetClientState *nc;
     DumpNetClient *dnc;
 
-    assert(opts->type == NET_CLIENT_OPTIONS_KIND_DUMP);
-    dump = opts->u.dump;
+    assert(netdev->type == NET_CLIENT_DRIVER_DUMP);
+    dump = &netdev->u.dump;
 
     assert(peer);
 
